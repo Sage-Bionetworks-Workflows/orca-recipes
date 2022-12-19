@@ -28,10 +28,6 @@ def nf_validate_test_dag():
             dict: TowerUtils class instance within dictionary for easy variable passing
         """
         tower_token = Variable.get("TOWER_ACCESS_TOKEN", default_var="undefined")
-        logging.info(f"--------------------------------------------------------")
-        logging.info(f"tower token: {tower_token}")
-        logging.info(f"--------------------------------------------------------")
-
         client_args = TowerUtils.bundle_client_args(
             tower_token, platform="sage-dev", debug_mode=False
         )
