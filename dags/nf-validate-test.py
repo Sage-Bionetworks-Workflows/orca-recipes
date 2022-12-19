@@ -1,12 +1,9 @@
-import os
 from datetime import datetime, timedelta
 
 from airflow.decorators import dag, task
 from airflow.models import Variable
 
 from sagetasks.nextflowtower.utils import TowerUtils
-
-import logging
 
 
 @dag(
