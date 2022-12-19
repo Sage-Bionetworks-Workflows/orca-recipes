@@ -1,7 +1,7 @@
-import os
 from datetime import datetime, timedelta
 
 from airflow.decorators import dag, task
+from airflow.models import Variable
 
 from sagetasks.nextflowtower.utils import TowerUtils
 
@@ -24,7 +24,7 @@ def nf_hello_test_dag():
         Returns:
             dict: TowerUtils class instance within dictionary for easy variable passing
         """
-        tower_token = os.environ["TOWER_ACCESS_TOKEN"]
+        tower_token = Variable.get("TOWER_ACCESS_TOKEN", default_var="undefined")
         client_args = TowerUtils.bundle_client_args(
             tower_token, platform="sage-dev", debug_mode=False
         )
