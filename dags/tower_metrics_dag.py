@@ -421,6 +421,7 @@ def tower_metrics_dag():
                 )  # wait a further minute per try if the database still exists
             except:
                 # we actually want an error - or here an 'except'. this indicates that the database does not exist
+                # TODO add logic to look for the expected error message
                 break
 
     @task()
