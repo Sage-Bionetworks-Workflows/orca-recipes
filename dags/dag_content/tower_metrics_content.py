@@ -21,12 +21,12 @@ AWS_CREDS = {
         "AWS_SESSION_TOKEN"
     ),
 }
+#AWS region
+AWS_REGION = "us-east-1"
 
 # cluster names
 DATABASE_NAME = "tower"
-CLONE_DATABASE_NAME = DATABASE_NAME + "-clone"
-# database name - name of actual database within cluster
-DATABASE_NAME = "tower"
+CLONE_DATABASE_NAME = "tower-clone"
 
 # query dictionary - maps query names to queries
 QUERY_DICT = {
@@ -128,6 +128,7 @@ def create_rds_client(aws_creds):
         aws_access_key_id=aws_creds["AWS_ACCESS_KEY_ID"],
         aws_secret_access_key=aws_creds["AWS_SECRET_ACCESS_KEY"],
         aws_session_token=aws_creds["AWS_SESSION_TOKEN"],
+        region_name=AWS_REGION
     )
     return rds
 
@@ -139,6 +140,7 @@ def create_rds_data_client(aws_creds):
         aws_access_key_id=aws_creds["AWS_ACCESS_KEY_ID"],
         aws_secret_access_key=aws_creds["AWS_SECRET_ACCESS_KEY"],
         aws_session_token=aws_creds["AWS_SESSION_TOKEN"],
+        region_name=AWS_REGION
     )
     return rdsData
 
@@ -150,6 +152,7 @@ def create_secret_client(aws_creds):
         aws_access_key_id=aws_creds["AWS_ACCESS_KEY_ID"],
         aws_secret_access_key=aws_creds["AWS_SECRET_ACCESS_KEY"],
         aws_session_token=aws_creds["AWS_SESSION_TOKEN"],
+        region_name=AWS_REGION
     )
     return secrets
 
@@ -168,7 +171,7 @@ def check_database_process_complete(client, waiter_type, db_name):
 
 #TASKS
 
-@task
+@task(multiple_outputs=True)
 def get_database_info(aws_creds: dict, db_name: str) -> str:
     """
     Gets DBSubnetGroup and VpcSecurityGroupId from production database needed for later requests
@@ -241,8 +244,8 @@ def clone_tower_database(
     }
     # ensure cloning is complete before moving on
     check_database_process_complete(client=rds,
-        waiter_type='db_instance_available',
-        resource_arn=clone_name
+        waiter_type='db_cluster_available',
+        db_name=clone_name
     )
 
     return clone_db_info
@@ -292,7 +295,7 @@ def modify_cloned_cluster(aws_creds: dict, clone_name: str, password: str):
     # ensure modification is complete before moving on
     check_database_process_complete(client=rds,
         waiter_type='db_cluster_available',
-        resource_arn=clone_name
+        db_name=clone_name
     )
 
 @task
@@ -323,6 +326,10 @@ def update_secret(
         SecretId="Programmatic-DB-Clone-Access", SecretString=secret_string
     )
     secret_arn = response["ARN"]
+
+    # HACK need a way to know if the secret has been updated and is ready to use - I think this is the reason that query_database usually fails on the first attempt
+    time.sleep(180) #give a few minutes buffer
+
     return secret_arn
 
 @task
@@ -371,7 +378,7 @@ def delete_clone_database(aws_creds: dict, clone_name: str):
     # ensure deleting is complete before moving on
     check_database_process_complete(client=rds,
         waiter_type='db_cluster_deleted',
-        resource_arn=clone_name
+        db_name=clone_name
     )
 
 @task
@@ -401,12 +408,13 @@ def send_synapse_notification():
         "bwmac",  # Brad
         # "thomas.yu", #tom
     ]
+
+    syn = create_synapse_session()
+
     id_list = []
     for user in user_list:
         id_list.append(syn.getUserProfile(user).get("ownerId"))
     user_list
-
-    syn = create_synapse_session()
 
     syn.sendMessage(
         id_list,
