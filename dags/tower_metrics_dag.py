@@ -1,6 +1,7 @@
 import os
 import json
 import time
+from datetime import datetime
 
 from airflow.decorators import dag, task
 from airflow.models import Variable
@@ -189,7 +190,7 @@ def create_synapse_session():
 
 @dag(
     schedule_interval="@weekly",
-    start_date=(2022, 11, 11),
+    start_date=datetime(2022, 11, 11),
     catchup=False,
     default_args={
         "retries": 3,
@@ -197,7 +198,7 @@ def create_synapse_session():
     tags=["Nextflow Tower Metrics"],
 )
 def tower_metrics_dag():
-    @task(multiple_outputs=True)
+    @task
     def get_database_info(aws_creds: dict, db_name: str) -> str:
         """
         Gets DBSubnetGroup and VpcSecurityGroupId from production database needed for later requests
@@ -220,7 +221,7 @@ def tower_metrics_dag():
         )
         return {"subnet_group": subnet_group, "security_group": security_group}
 
-    @task(multiple_outputs=True)
+    @task
     def clone_tower_database(
         aws_creds: dict,
         db_name: str,
@@ -283,7 +284,7 @@ def tower_metrics_dag():
 
         return clone_db_info
 
-    @task()
+    @task
     def generate_random_password(aws_creds: dict) -> str:
         """
         generates random string password using boto3 secret client
@@ -294,19 +295,21 @@ def tower_metrics_dag():
         Returns:
             str: generated password
         """
-        secrets = create_secret_client(aws_creds)
+        # secrets = create_secret_client(aws_creds)
 
-        response = secrets.get_random_password(
-            PasswordLength=30,
-            ExcludeCharacters="@",
-            ExcludePunctuation=True,
-            IncludeSpace=False,
-            RequireEachIncludedType=True,
-        )
-        password = response["RandomPassword"]
+        # response = secrets.get_random_password(
+        #     PasswordLength=30,
+        #     ExcludeCharacters="@",
+        #     ExcludePunctuation=True,
+        #     IncludeSpace=False,
+        #     RequireEachIncludedType=True,
+        # )
+        # password = response["RandomPassword"]
+        password = "password"
+        print(password)
         return password
 
-    @task()
+    @task
     def modify_cloned_cluster(aws_creds: dict, clone_name: str, password: str):
         """
         takes 1-2 minutes
@@ -338,7 +341,7 @@ def tower_metrics_dag():
                     60
                 )  # wait a further minute per loop if modification is not complete
 
-    @task()
+    @task
     def update_secret(
         aws_creds: dict, clone_name: str, db_info: dict, password: str
     ) -> str:
@@ -368,7 +371,7 @@ def tower_metrics_dag():
         secret_arn = response["ARN"]
         return secret_arn
 
-    @task(multiple_ouputs=True)
+    @task
     def query_database(aws_creds: dict, resource_arn: str, secret_arn: str):
         """
         queries cloned database cluster with all desired queries. appends data to json_list for json export
@@ -395,7 +398,7 @@ def tower_metrics_dag():
 
         return json_list
 
-    @task()
+    @task
     def delete_clone_database(aws_creds: dict, clone_name: str):
         """
         deletes the cloned database cluster. takes ~2 min
@@ -424,7 +427,7 @@ def tower_metrics_dag():
                 # TODO add logic to look for the expected error message
                 break
 
-    @task()
+    @task
     def export_json_to_synapse(json_list: list):
         """
         dumps JSON data to local file, uploads to synapse location, removes local file
@@ -442,7 +445,7 @@ def tower_metrics_dag():
         data = syn.store(data)
         os.remove(file_name)
 
-    @task()
+    @task
     def send_synapse_notification():
         """
         sends email notification to chosen synapse users that report has been uploaded
@@ -477,7 +480,7 @@ def tower_metrics_dag():
     # generate new password while clone is spinning up
     password = generate_random_password(aws_creds=AWS_CREDS)
     # update cloned database to have new password - wait until modification has completed to move on to querying
-    modify_cloned_cluster(
+    modify = modify_cloned_cluster(
         aws_creds=AWS_CREDS, clone_name=CLONE_DATABASE_NAME, password=password
     )
     # update secret with new password and cloned database info while it is being modified
@@ -494,11 +497,19 @@ def tower_metrics_dag():
         secret_arn=secret_arn,
     )
     # export json report to synapse
-    export_json_to_synapse(json_list=json_list)
+    export = export_json_to_synapse(json_list=json_list)
     # notify interested parties of the new report
-    send_synapse_notification()
+    send = send_synapse_notification()
     # delete cloned database - wait for it to be gone before completing process
-    delete_clone_database(aws_creds=AWS_CREDS, clone_name=CLONE_DATABASE_NAME)
+    delete = delete_clone_database(aws_creds=AWS_CREDS, clone_name=CLONE_DATABASE_NAME)
 
+
+    #add missing dependencies
+    prod_db_info >> clone_db_info
+    [clone_db_info, password] >> modify
+    [clone_db_info, password] >> secret_arn
+    [secret_arn, modify] >> json_list
+    json_list >> [export, delete]
+    export >> send
 
 tower_metrics_dag = tower_metrics_dag()
