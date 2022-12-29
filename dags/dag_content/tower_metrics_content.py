@@ -153,42 +153,18 @@ def create_secret_client(aws_creds):
     )
     return secrets
 
-
-def wait_seconds(seconds: int):
-    """
-    wait for number of seconds provided to 'seconds' argument of function
-
-    Args:
-        seconds (int): number of seconds to wait
-    """
-    time.sleep(seconds)
-
-
-def check_database_status(aws_creds: dict, db_name: str) -> str:
-    """
-    Checks availability status of database cluster
-
-    Args:
-        aws_creds (dict): dictionary containing aws credentials
-        db_name (str):  name of database cluster to be checked
-
-    Returns:
-        str: status of database cluster
-    """
-    rds = create_rds_client(aws_creds)
-
-    response = rds.describe_db_clusters(
-        DBClusterIdentifier=db_name,
-    )
-    status = response["DBClusters"][0].get("Status")
-    return status
-
-
 # create authenticated synapse session
 def create_synapse_session():
     syn = synapseclient.Synapse()
     syn.login(authToken=Variable.get("SYNAPSE_AUTH_TOKEN"))
     return syn
+
+#check if database instance is available
+def check_database_process_complete(client, waiter_type, db_name):
+    waiter = client.get_waiter(waiter_type)
+    waiter.wait(
+        DBClusterIdentifier = db_name
+    )
 
 #TASKS
 
@@ -264,17 +240,10 @@ def clone_tower_database(
         "resource_arn": response["DBCluster"].get("DBClusterArn"),
     }
     # ensure cloning is complete before moving on
-    wait_seconds(360)  # it takes six minutes on average for clone to spin up
-    while True:
-        status = check_database_status(
-            aws_creds=AWS_CREDS, db_name=CLONE_DATABASE_NAME
-        )
-        if status == "available":
-            break
-        else:
-            wait_seconds(
-                60
-            )  # wait a further minute per loop if modification is not complete
+    check_database_process_complete(client=rds,
+        waiter_type='db_instance_available',
+        resource_arn=clone_name
+    )
 
     return clone_db_info
 
@@ -289,18 +258,16 @@ def generate_random_password(aws_creds: dict) -> str:
     Returns:
         str: generated password
     """
-    # secrets = create_secret_client(aws_creds)
+    secrets = create_secret_client(aws_creds)
 
-    # response = secrets.get_random_password(
-    #     PasswordLength=30,
-    #     ExcludeCharacters="@",
-    #     ExcludePunctuation=True,
-    #     IncludeSpace=False,
-    #     RequireEachIncludedType=True,
-    # )
-    # password = response["RandomPassword"]
-    password = "password"
-    print(password)
+    response = secrets.get_random_password(
+        PasswordLength=30,
+        ExcludeCharacters="@",
+        ExcludePunctuation=True,
+        IncludeSpace=False,
+        RequireEachIncludedType=True,
+    )
+    password = response["RandomPassword"]
     return password
 
 @task
@@ -323,17 +290,10 @@ def modify_cloned_cluster(aws_creds: dict, clone_name: str, password: str):
         EnableHttpEndpoint=True,
     )
     # ensure modification is complete before moving on
-    wait_seconds(120)  # it takes two minutes on average for clone to be modified
-    while True:
-        status = check_database_status(
-            aws_creds=AWS_CREDS, db_name=CLONE_DATABASE_NAME
-        )
-        if status == "available":
-            break
-        else:
-            wait_seconds(
-                60
-            )  # wait a further minute per loop if modification is not complete
+    check_database_process_complete(client=rds,
+        waiter_type='db_cluster_available',
+        resource_arn=clone_name
+    )
 
 @task
 def update_secret(
@@ -409,17 +369,10 @@ def delete_clone_database(aws_creds: dict, clone_name: str):
     )
 
     # ensure deleting is complete before moving on
-    wait_seconds(120)  # it takes two minutes on average for clone to spin down
-    while True:
-        try:
-            check_database_status(aws_creds=AWS_CREDS, db_name=CLONE_DATABASE_NAME)
-            wait_seconds(
-                60
-            )  # wait a further minute per try if the database still exists
-        except:
-            # we actually want an error - or here an 'except'. this indicates that the database does not exist
-            # TODO add logic to look for the expected error message
-            break
+    check_database_process_complete(client=rds,
+        waiter_type='db_cluster_deleted',
+        resource_arn=clone_name
+    )
 
 @task
 def export_json_to_synapse(json_list: list):
