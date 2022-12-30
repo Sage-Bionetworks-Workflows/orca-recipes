@@ -11,15 +11,12 @@ import synapseclient
 
 # AWS creds
 AWS_CREDS = {
-    "AWS_ACCESS_KEY_ID": os.environ.get(
-        "AWS_ACCESS_KEY_ID"
+    "AWS_ACCESS_KEY_ID": Variable.get(
+        "TOWER_DB_ACCESS_KEY"
     ),
-    "AWS_SECRET_ACCESS_KEY": os.environ.get(
-        "AWS_SECRET_ACCESS_KEY"
-    ),
-    "AWS_SESSION_TOKEN": os.environ.get(
-        "AWS_SESSION_TOKEN"
-    ),
+    "AWS_SECRET_ACCESS_KEY": Variable.get(
+        "TOWER_DB_SECRET_ACCESS_KEY"
+    )
 }
 #AWS region
 AWS_REGION = "us-east-1"
@@ -121,37 +118,34 @@ def package_query_data(query_name: str, response: dict) -> dict:
         return final_dict
 
 
-# creates RDS boto3 client
+# creates RDS boto3 client inside task
 def create_rds_client(aws_creds):
     rds = boto3.client(
         "rds",
         aws_access_key_id=aws_creds["AWS_ACCESS_KEY_ID"],
         aws_secret_access_key=aws_creds["AWS_SECRET_ACCESS_KEY"],
-        aws_session_token=aws_creds["AWS_SESSION_TOKEN"],
         region_name=AWS_REGION
     )
     return rds
 
 
-# creates RDS Data boto3 client
+# creates RDS Data boto3 client inside task
 def create_rds_data_client(aws_creds):
     rdsData = boto3.client(
         "rds-data",
         aws_access_key_id=aws_creds["AWS_ACCESS_KEY_ID"],
         aws_secret_access_key=aws_creds["AWS_SECRET_ACCESS_KEY"],
-        aws_session_token=aws_creds["AWS_SESSION_TOKEN"],
         region_name=AWS_REGION
     )
     return rdsData
 
 
-# creates Secrets Manager boto3 client
+# creates Secrets Manager boto3 client inside task
 def create_secret_client(aws_creds):
     secrets = boto3.client(
         "secretsmanager",
         aws_access_key_id=aws_creds["AWS_ACCESS_KEY_ID"],
         aws_secret_access_key=aws_creds["AWS_SECRET_ACCESS_KEY"],
-        aws_session_token=aws_creds["AWS_SESSION_TOKEN"],
         region_name=AWS_REGION
     )
     return secrets
@@ -159,11 +153,12 @@ def create_secret_client(aws_creds):
 # create authenticated synapse session
 def create_synapse_session():
     syn = synapseclient.Synapse()
-    syn.login(authToken=Variable.get("SYNAPSE_AUTH_TOKEN"))
+    syn.login(authToken=Variable.get("SYNAPSE_AUTH_TOKEN")) # TODO - this is currently Brad's synapse token
     return syn
 
-#check if database instance is available
+#check if database process is complete - can be used for clone creation, modification and deletion
 def check_database_process_complete(client, waiter_type, db_name):
+    time.sleep(20) #allow process time to start before starting waiter
     waiter = client.get_waiter(waiter_type)
     waiter.wait(
         DBClusterIdentifier = db_name
@@ -204,10 +199,7 @@ def clone_tower_database(
 ) -> dict:
 
     """
-    clone db - takes 5-7 min
     creates complete db clone from latest restorable time.
-    this function was chosen over others as it has the least overhead through only
-    using the parent db itself, no snapshot or full recreation required.
 
     Args:
         aws_creds (dict): dictionary containing aws credentials
@@ -243,7 +235,8 @@ def clone_tower_database(
         "resource_arn": response["DBCluster"].get("DBClusterArn"),
     }
     # ensure cloning is complete before moving on
-    check_database_process_complete(client=rds,
+    check_database_process_complete(
+        client=rds,
         waiter_type='db_cluster_available',
         db_name=clone_name
     )
@@ -274,9 +267,8 @@ def generate_random_password(aws_creds: dict) -> str:
     return password
 
 @task
-def modify_cloned_cluster(aws_creds: dict, clone_name: str, password: str):
+def modify_database_clone(aws_creds: dict, clone_name: str, password: str):
     """
-    takes 1-2 minutes
     modifies cloned database cluster to have new master password
 
     Args:
@@ -303,8 +295,7 @@ def update_secret(
     aws_creds: dict, clone_name: str, db_info: dict, password: str
 ) -> str:
     """
-    takes 1-2 minutes
-    updates secret in secretmanager with formatted string includung new database info and random password
+    updates secret in secret manager with formatted string includung new database info and random password
 
     Args:
         aws_creds (dict): dictionary containing aws credentials
@@ -313,7 +304,7 @@ def update_secret(
         password (str): randomly generated password assigned to cloned database
 
     Returns:
-        str: secret arn string
+        str: secret arn string needed to access clone for queries
     """
     secrets = create_secret_client(aws_creds)
 
@@ -326,9 +317,6 @@ def update_secret(
         SecretId="Programmatic-DB-Clone-Access", SecretString=secret_string
     )
     secret_arn = response["ARN"]
-
-    # HACK need a way to know if the secret has been updated and is ready to use - I think this is the reason that query_database usually fails on the first attempt
-    time.sleep(180) #give a few minutes buffer
 
     return secret_arn
 
@@ -365,8 +353,8 @@ def delete_clone_database(aws_creds: dict, clone_name: str):
     deletes the cloned database cluster. takes ~2 min
 
     Args:
-        aws_creds (dict): _description_
-        db_info (dict): _description_
+        aws_creds (dict):  dictionary containing aws credentials
+        clone_name (str): name of the cloned database to be deleted
     """
     rds = create_rds_client(aws_creds)
 
@@ -395,18 +383,19 @@ def export_json_to_synapse(json_list: list):
         json.dump(json_list, file)
     data = synapseclient.File(
         file_name, parent="syn48186663"
-    )  # investigate how dump can work without creating json file on disk
+    )
     data = syn.store(data)
     os.remove(file_name)
 
 @task
 def send_synapse_notification():
     """
-    sends email notification to chosen synapse users that report has been uploaded
+    sends email notification to synapse users in user_list that report has been uploaded
     """
     user_list = [
         "bwmac",  # Brad
-        # "thomas.yu", #tom
+        # "thomas.yu", # Tom
+        # "bgrande", # Bruno
     ]
 
     syn = create_synapse_session()
@@ -414,7 +403,6 @@ def send_synapse_notification():
     id_list = []
     for user in user_list:
         id_list.append(syn.getUserProfile(user).get("ownerId"))
-    user_list
 
     syn.sendMessage(
         id_list,

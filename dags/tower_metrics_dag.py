@@ -17,7 +17,7 @@ from dag_content.tower_metrics_content import *
 def tower_metrics_dag():
     # get needed info from production database for cloining
     prod_db_info = get_database_info(aws_creds=AWS_CREDS, db_name=DATABASE_NAME)
-    # clone production database - wait until it is completes to move on to modification
+    # clone tower database
     clone_db_info = clone_tower_database(
         aws_creds=AWS_CREDS,
         db_name=DATABASE_NAME,
@@ -27,8 +27,8 @@ def tower_metrics_dag():
     )
     # generate new password while clone is spinning up
     password = generate_random_password(aws_creds=AWS_CREDS)
-    # update cloned database to have new password - wait until modification has completed to move on to querying
-    modify = modify_cloned_cluster(
+    # update cloned database to have new password
+    modify = modify_database_clone(
         aws_creds=AWS_CREDS, clone_name=CLONE_DATABASE_NAME, password=password
     )
     # update secret with new password and cloned database info while it is being modified
