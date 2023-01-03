@@ -174,10 +174,11 @@ def get_database_info(aws_creds: dict, db_name: str) -> str:
     response = rds.describe_db_clusters(
         DBClusterIdentifier=db_name,
     )
-    subnet_group = response["DBClusters"][0].get("DBSubnetGroup")
-    security_group = response["DBClusters"][0]["VpcSecurityGroups"][0].get(
+    subnet_group = response["DBClusters"][0]["DBSubnetGroup"]
+    security_group = response["DBClusters"][0]["VpcSecurityGroups"][0][
         "VpcSecurityGroupId"
-    )
+    ]
+
     return {"subnet_group": subnet_group, "security_group": security_group}
 
 
@@ -221,10 +222,10 @@ def clone_tower_database(
         CopyTagsToSnapshot=False,
     )
     clone_db_info = {
-        "user": response["DBCluster"].get("MasterUsername"),
-        "host": response["DBCluster"].get("Endpoint"),
-        "resource_id": response["DBCluster"].get("DbClusterResourceId"),
-        "resource_arn": response["DBCluster"].get("DBClusterArn"),
+        "user": response["DBCluster"]["MasterUsername"],
+        "host": response["DBCluster"]["Endpoint"],
+        "resource_id": response["DBCluster"]["DbClusterResourceId"],
+        "resource_arn": response["DBCluster"]["DBClusterArn"],
     }
     # ensure cloning is complete before moving on
     check_database_process_complete(
