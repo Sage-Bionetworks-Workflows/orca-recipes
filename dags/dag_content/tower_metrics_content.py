@@ -1,24 +1,22 @@
 import os
 import json
 import time
+from itertools import chain
+from typing import Any
 
 from airflow.decorators import task
 from airflow.models import Variable
 import boto3
 import synapseclient
 
-#VARIABLES
+# VARIABLES
 
 # AWS creds
 AWS_CREDS = {
-    "AWS_ACCESS_KEY_ID": Variable.get(
-        "TOWER_DB_ACCESS_KEY"
-    ),
-    "AWS_SECRET_ACCESS_KEY": Variable.get(
-        "TOWER_DB_SECRET_ACCESS_KEY"
-    )
+    "AWS_ACCESS_KEY_ID": Variable.get("TOWER_DB_ACCESS_KEY"),
+    "AWS_SECRET_ACCESS_KEY": Variable.get("TOWER_DB_SECRET_ACCESS_KEY"),
 }
-#AWS region
+# AWS region
 AWS_REGION = "us-east-1"
 
 # cluster names
@@ -84,38 +82,27 @@ QUERY_DICT = {
             """,
 }
 
-#FUNCTIONS
+# FUNCTIONS
 
-# takes responses from query requests and packages them into dictionaries to be combined into JSON later
-def package_query_data(query_name: str, response: dict) -> dict:
+
+def package_query_data(query_name: str, response: dict) -> list[dict[str, Any]]:
     """
-    takes responses from query requests and packages them into dictionaries to be combined into JSON later
+    takes responses from query requests and packages them into JSON friendly list of dictionaries
 
     Args:
         query_name (string): name of the query to be used as the key in output JSON file
         response (dict): dictionary request response from boto3
 
     Returns:
-        dict: JSON-ready dictionary to be exported as report file
+        dict: JSON-ready list of dictionaries
     """
-    col_headers = []
-    for item in response["columnMetadata"]:
-        col_headers.append(item.get("name"))
-    # handle single-value queries
-    if len(col_headers) < 2:
-        final_dict = {query_name: list(response["records"][0][0].values())[0]}
-        return final_dict
-    # handle n-value queries
-    else:
-        data_dict = {}
-        for item in response["records"]:
-            key = list(item[0].values())[0]
-            sub_dict = {key: {}}
-            for i in [x for x in range(len(col_headers)) if x != 0]:
-                sub_dict[key].update({col_headers[i]: list(item[i].values())[0]})
-            data_dict.update(sub_dict)
-        final_dict = {query_name: data_dict}
-        return final_dict
+    col_names = [col["name"] for col in response["columnMetadata"]]
+    result = []
+    for row in response["records"]:
+        row_values = chain.from_interable(field.values() for field in row)
+        row_dict = dict(zip(col_names, row_values))
+        result.append(row_dict)
+    return result
 
 
 # creates RDS boto3 client inside task
@@ -124,7 +111,7 @@ def create_rds_client(aws_creds):
         "rds",
         aws_access_key_id=aws_creds["AWS_ACCESS_KEY_ID"],
         aws_secret_access_key=aws_creds["AWS_SECRET_ACCESS_KEY"],
-        region_name=AWS_REGION
+        region_name=AWS_REGION,
     )
     return rds
 
@@ -135,7 +122,7 @@ def create_rds_data_client(aws_creds):
         "rds-data",
         aws_access_key_id=aws_creds["AWS_ACCESS_KEY_ID"],
         aws_secret_access_key=aws_creds["AWS_SECRET_ACCESS_KEY"],
-        region_name=AWS_REGION
+        region_name=AWS_REGION,
     )
     return rdsData
 
@@ -146,25 +133,29 @@ def create_secret_client(aws_creds):
         "secretsmanager",
         aws_access_key_id=aws_creds["AWS_ACCESS_KEY_ID"],
         aws_secret_access_key=aws_creds["AWS_SECRET_ACCESS_KEY"],
-        region_name=AWS_REGION
+        region_name=AWS_REGION,
     )
     return secrets
+
 
 # create authenticated synapse session
 def create_synapse_session():
     syn = synapseclient.Synapse()
-    syn.login(authToken=Variable.get("SYNAPSE_AUTH_TOKEN")) # TODO - this is currently Brad's synapse token
+    syn.login(
+        authToken=Variable.get("SYNAPSE_AUTH_TOKEN")
+    )  # TODO - this is currently Brad's synapse token
     return syn
 
-#check if database process is complete - can be used for clone creation, modification and deletion
-def check_database_process_complete(client, waiter_type, db_name):
-    time.sleep(20) #allow process time to start before starting waiter
-    waiter = client.get_waiter(waiter_type)
-    waiter.wait(
-        DBClusterIdentifier = db_name
-    )
 
-#TASKS
+# check if database process is complete - can be used for clone creation, modification and deletion
+def check_database_process_complete(client, waiter_type, db_name):
+    time.sleep(20)  # allow process time to start before starting waiter
+    waiter = client.get_waiter(waiter_type)
+    waiter.wait(DBClusterIdentifier=db_name)
+
+
+# TASKS
+
 
 @task(multiple_outputs=True)
 def get_database_info(aws_creds: dict, db_name: str) -> str:
@@ -188,6 +179,7 @@ def get_database_info(aws_creds: dict, db_name: str) -> str:
         "VpcSecurityGroupId"
     )
     return {"subnet_group": subnet_group, "security_group": security_group}
+
 
 @task
 def clone_tower_database(
@@ -236,12 +228,11 @@ def clone_tower_database(
     }
     # ensure cloning is complete before moving on
     check_database_process_complete(
-        client=rds,
-        waiter_type='db_cluster_available',
-        db_name=clone_name
+        client=rds, waiter_type="db_cluster_available", db_name=clone_name
     )
 
     return clone_db_info
+
 
 @task
 def generate_random_password(aws_creds: dict) -> str:
@@ -266,6 +257,7 @@ def generate_random_password(aws_creds: dict) -> str:
     password = response["RandomPassword"]
     return password
 
+
 @task
 def modify_database_clone(aws_creds: dict, clone_name: str, password: str):
     """
@@ -285,10 +277,10 @@ def modify_database_clone(aws_creds: dict, clone_name: str, password: str):
         EnableHttpEndpoint=True,
     )
     # ensure modification is complete before moving on
-    check_database_process_complete(client=rds,
-        waiter_type='db_cluster_available',
-        db_name=clone_name
+    check_database_process_complete(
+        client=rds, waiter_type="db_cluster_available", db_name=clone_name
     )
+
 
 @task
 def update_secret(
@@ -325,6 +317,7 @@ def update_secret(
 
     return secret_arn
 
+
 @task
 def query_database(aws_creds: dict, resource_arn: str, secret_arn: str):
     """
@@ -348,9 +341,12 @@ def query_database(aws_creds: dict, resource_arn: str, secret_arn: str):
             sql=query,
         )
 
-        json_list.append(package_query_data(query_name, response))
+        query_data = package_query_data(response)
+        query_dict = {query_name: query_data}
+        json_list.append(query_dict)
 
     return json_list
+
 
 @task
 def delete_clone_database(aws_creds: dict, clone_name: str):
@@ -369,10 +365,10 @@ def delete_clone_database(aws_creds: dict, clone_name: str):
     )
 
     # ensure deleting is complete before moving on
-    check_database_process_complete(client=rds,
-        waiter_type='db_cluster_deleted',
-        db_name=clone_name
+    check_database_process_complete(
+        client=rds, waiter_type="db_cluster_deleted", db_name=clone_name
     )
+
 
 @task
 def export_json_to_synapse(json_list: list):
@@ -386,11 +382,10 @@ def export_json_to_synapse(json_list: list):
     file_name = "tower_metrics_report.json"
     with open(file_name, "w") as file:
         json.dump(json_list, file)
-    data = synapseclient.File(
-        file_name, parent="syn48186663"
-    )
+    data = synapseclient.File(file_name, parent="syn48186663")
     data = syn.store(data)
     os.remove(file_name)
+
 
 @task
 def send_synapse_notification():
