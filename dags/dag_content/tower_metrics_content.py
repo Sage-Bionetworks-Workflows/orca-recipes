@@ -308,11 +308,16 @@ def update_secret(
     """
     secrets = create_secret_client(aws_creds)
 
-    secret_string = (
-        "{"
-        + f'"dbInstanceIdentifier":"{clone_name}","engine":"aurora-mysql","host":"{db_info["host"]}","port":3306,"resourceId":"{db_info["resource_id"]}","username":"{db_info["user"]}","password":"{password}"'
-        + "}"
-    )
+    secret_dict = {
+        "dbInstanceIdentifier": clone_name,
+        "resourceId": db_info["resource_id"],
+        "engine": "aurora-mysql",
+        "host": db_info["host"],
+        "port": 3306,
+        "username": db_info["user"],
+        "password": password,
+    }
+    secret_string = json.dumps(secret_dict)
     response = secrets.update_secret(
         SecretId="Programmatic-DB-Clone-Access", SecretString=secret_string
     )
