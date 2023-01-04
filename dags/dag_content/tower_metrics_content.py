@@ -85,7 +85,7 @@ QUERY_DICT = {
 # FUNCTIONS
 
 
-def package_query_data(query_name: str, response: dict) -> list[dict[str, Any]]:
+def package_query_data(response: dict) -> list[dict[str, Any]]:
     """
     takes responses from query requests and packages them into JSON friendly list of dictionaries
 
@@ -99,7 +99,7 @@ def package_query_data(query_name: str, response: dict) -> list[dict[str, Any]]:
     col_names = [col["name"] for col in response["columnMetadata"]]
     result = []
     for row in response["records"]:
-        row_values = chain.from_interable(field.values() for field in row)
+        row_values = chain.from_iterable(field.values() for field in row)
         row_dict = dict(zip(col_names, row_values))
         result.append(row_dict)
     return result
