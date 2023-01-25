@@ -4,6 +4,7 @@ import boto3
 import synapseclient
 from airflow.decorators import dag, task
 from airflow.models import Variable
+from airflow.operators.python import get_current_context
 from dag_content.tower_metrics_content import AWS_CREDS, AWS_REGION
 from sagetasks.nextflowtower.utils import TowerUtils
 
@@ -27,9 +28,11 @@ def htan_nf_dcqc_dag():
         Returns:
             dict: Dictionary containing the path to the downloaded file and the name of the file.
         """
+        #simple param passing from run with config - sets my test file as default for now
+        syn_id = get_current_context()["params"].get("syn_id") if get_current_context()["params"].get("syn_id") is not None else "syn50919899"
         syn_token = Variable.get("SYNAPSE_AUTH_TOKEN")
         syn = synapseclient.login(authToken=syn_token)
-        file_path = syn.get("syn50919899").path
+        file_path = syn.get(syn_id).path
         file_name = file_path.split("/")[-1]
         return {"file_path":file_path, "file_name":file_name}
 
@@ -87,7 +90,7 @@ def htan_nf_dcqc_dag():
         tower_utils.open_workspace(workspace_id)
         tower_utils.launch_workflow(
             compute_env_id="635ROvIWp5w17QVdRy0jkk",
-            pipeline="Sage-Bionetworks-Workflows/nf-dcqc-poc",
+            pipeline="Sage-Bionetworks-Workflows/nf-dcqc",
             run_name="nf-dcqc-test",
             params_json={"input_path_s3": s3_path, "required_tests": [], "skip_tests": []}
         )
