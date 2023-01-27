@@ -66,14 +66,14 @@ def htan_nf_dcqc_dag():
         return url
 
     @task(multiple_outputs=True)
-    def open_tower_workspace():
+    def open_tower_workspace() -> dict:
         """
         Opens tower workspace - things are hard coded for the moment that would be parameterized in future versions
 
         Returns:
             dict: TowerUtils class instance within dictionary for easy variable passing
         """
-        tower_token = Variable.get("TOWER_ACCESS_TOKEN", default_var="undefined")
+        tower_token = Variable.get("TOWER_ACCESS_TOKEN")
         client_args = TowerUtils.bundle_client_args(
             tower_token, platform="sage-dev", debug_mode=False
         )
@@ -98,9 +98,9 @@ def htan_nf_dcqc_dag():
             profiles=["docker"],
             workspace_secrets=["SYNAPSE_AUTH_TOKEN"],
             revision="bgrande/ORCA-119/nf-dcqc",
-            params_yaml=''''
+            params_yaml=f''''
                 outdir: results/
-                input: s3://example-dev-project-tower-bucket/input_test.csv
+                input: {s3_path}
                 '''
         )
 
