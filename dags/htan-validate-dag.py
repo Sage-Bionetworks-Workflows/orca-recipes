@@ -1,12 +1,11 @@
 from datetime import datetime
 
-import boto3
 import synapseclient
 from airflow.decorators import dag, task
 from airflow.models import Variable
 from airflow.operators.python import get_current_context
-from dag_content.tower_metrics_content import AWS_CREDS, AWS_REGION
-from sagetasks.nextflowtower.utils import TowerUtils
+from services.NextflowTowerService import create_and_open_tower_workspace
+from services.AWSService import upload_file_s3
 
 
 @dag(
@@ -19,14 +18,14 @@ from sagetasks.nextflowtower.utils import TowerUtils
     tags=["nextflow_tower"],
 )
 def htan_nf_dcqc_dag():
-    @task(multiple_outputs=True)
-    def get_synapse_input_file() -> dict:
+    @task()
+    def get_synapse_input_file() -> str:
         """
         Gets synapse file (input csv) from synapse and saves it in buffer.
         Passes along dict object with the path to the downloaded file and the name of the file.
 
         Returns:
-            dict: Dictionary containing the path to the downloaded file and the name of the file.
+            str: String containing the path to the downloaded file and the name of the file.
         """
         # simple param passing from run with config - sets my test file as default for now
         if get_current_context()["params"].get("syn_id") is not None:
@@ -36,52 +35,24 @@ def htan_nf_dcqc_dag():
         syn_token = Variable.get("SYNAPSE_AUTH_TOKEN")
         syn = synapseclient.login(authToken=syn_token)
         file_path = syn.get(syn_id).path
-        file_name = file_path.split("/")[-1]
-        return {"file_path": file_path, "file_name": file_name}
+        return file_path
 
     @task()
-    def stage_input_in_s3(syn_file_dict: dict, aws_creds: dict, aws_region: str) -> str:
+    def stage_input_in_s3(file_path: str) -> str:
         """
         Uploads file to Nextflow Tower S3 bucket, returns string path to file
         Args:
-            syn_file_dict (dict): Dictionary containing file_path and file_name from get_synapse_file_path
-            aws_creds (dict): Dictionary containing AWS credentials
-            aws_region (str): String containing AWS region
+            file_path (str): String containing the path to the downloaded file to be uploaded to S3
 
         Returns:
             s3_uri (str): Path to S3 bucket location of file
         """
-        bucket_name = "orca-dev-project-tower-bucket"
-        file_path = syn_file_dict["file_path"]
-        file_name = syn_file_dict["file_name"]
-
-        s3 = boto3.client(
-            "s3",
-            aws_access_key_id=aws_creds["AWS_ACCESS_KEY_ID"],
-            aws_secret_access_key=aws_creds["AWS_SECRET_ACCESS_KEY"],
-            region_name=aws_region,
-        )
-        s3.upload_file(file_path, bucket_name, file_name)
-        s3_uri = f"s3://{bucket_name}/{file_name}"
+        s3_uri = upload_file_s3(file_path=file_path, bucket_name="orca-dev-project-tower-bucket")
         return s3_uri
 
-    @task(multiple_outputs=True)
-    def open_tower_workspace() -> dict:
-        """
-        Opens tower workspace - things are hard coded for the moment that would be parameterized in future versions
-
-        Returns:
-            dict: TowerUtils class instance within dictionary for easy variable passing
-        """
-        tower_token = Variable.get("TOWER_ACCESS_TOKEN")
-        client_args = TowerUtils.bundle_client_args(
-            tower_token, platform="sage-dev", debug_mode=False
-        )
-        tower_utils = TowerUtils(client_args)
-        return {"tower_utils": tower_utils}
 
     @task()
-    def launch_tower_workflow(tower_utils: TowerUtils, workspace_id: str, s3_uri: str):
+    def launch_tower_workflow(workspace_id: str, s3_uri: str):
         """
         Launches tower workflow
 
@@ -90,7 +61,7 @@ def htan_nf_dcqc_dag():
             workspace_id (str): Workspace ID for tower run
             s3_path (str): Path to S3 location of input file
         """
-        tower_utils.open_workspace(workspace_id)
+        tower_utils = create_and_open_tower_workspace(platform="sage-dev", workspace_id=workspace_id)
         tower_utils.launch_workflow(
             compute_env_id="635ROvIWp5w17QVdRy0jkk",
             pipeline="Sage-Bionetworks-Workflows/nf-dcqc",
@@ -104,13 +75,9 @@ def htan_nf_dcqc_dag():
                 '''
         )
 
-    tower_utils = open_tower_workspace()
-    file_info = get_synapse_input_file()
-    s3_uri = stage_input_in_s3(
-        syn_file_dict=file_info, aws_creds=AWS_CREDS, aws_region=AWS_REGION
-    )
+    file_path = get_synapse_input_file()
+    s3_uri = stage_input_in_s3(file_path=file_path)
     launch_tower_workflow(
-        tower_utils=tower_utils["tower_utils"],
         workspace_id="4034472240746",
         s3_uri=s3_uri,
     )
