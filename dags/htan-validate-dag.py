@@ -29,11 +29,10 @@ def htan_nf_dcqc_dag():
             dict: Dictionary containing the path to the downloaded file and the name of the file.
         """
         # simple param passing from run with config - sets my test file as default for now
-        syn_id = (
-            get_current_context()["params"].get("syn_id")
-            if get_current_context()["params"].get("syn_id") is not None
-            else "syn50919899"
-        )
+        if get_current_context()["params"].get("syn_id") is not None:
+            syn_id=get_current_context()["params"].get("syn_id")
+        else:
+            syn_id="syn50919899"
         syn_token = Variable.get("SYNAPSE_AUTH_TOKEN")
         syn = synapseclient.login(authToken=syn_token)
         file_path = syn.get(syn_id).path
@@ -99,12 +98,10 @@ def htan_nf_dcqc_dag():
             profiles=["docker"],
             workspace_secrets=["SYNAPSE_AUTH_TOKEN"],
             revision="bgrande/ORCA-119/nf-dcqc",
-            params_json={
-                "outdir": "results/",
-                "input": s3_path,
-                # "required_tests": [],
-                # "skip_tests": [],
-            },
+            params_yaml=''''
+                outdir: results/
+                input: s3://example-dev-project-tower-bucket/input_test.csv
+                '''
         )
 
     tower_utils = open_tower_workspace()
