@@ -49,9 +49,9 @@ def htan_nf_dcqc_dag():
             aws_region (str): String containing AWS region
 
         Returns:
-            url (str): Path to S3 bucket location of file
+            s3_uri (str): Path to S3 bucket location of file
         """
-        bucket_name = "example-dev-project-tower-bucket"
+        bucket_name = "orca-dev-project-tower-bucket"
         file_path = syn_file_dict["file_path"]
         file_name = syn_file_dict["file_name"]
 
@@ -62,8 +62,8 @@ def htan_nf_dcqc_dag():
             region_name=aws_region,
         )
         s3.upload_file(file_path, bucket_name, file_name)
-        url = f"https://{bucket_name}.s3.amazonaws.com/{file_name}"
-        return url
+        s3_uri = f"s3://{bucket_name}/{file_name}"
+        return s3_uri
 
     @task(multiple_outputs=True)
     def open_tower_workspace() -> dict:
@@ -81,7 +81,7 @@ def htan_nf_dcqc_dag():
         return {"tower_utils": tower_utils}
 
     @task()
-    def launch_tower_workflow(tower_utils: TowerUtils, workspace_id: str, s3_path: str):
+    def launch_tower_workflow(tower_utils: TowerUtils, workspace_id: str, s3_uri: str):
         """
         Launches tower workflow
 
@@ -98,21 +98,21 @@ def htan_nf_dcqc_dag():
             profiles=["docker"],
             workspace_secrets=["SYNAPSE_AUTH_TOKEN"],
             revision="bgrande/ORCA-119/nf-dcqc",
-            params_yaml=f''''
+            params_yaml=f'''
                 outdir: results/
-                input: {s3_path}
+                input: {s3_uri}
                 '''
         )
 
     tower_utils = open_tower_workspace()
     file_info = get_synapse_file_path()
-    s3_path = upload_file_to_s3(
+    s3_uri = upload_file_to_s3(
         syn_file_dict=file_info, aws_creds=AWS_CREDS, aws_region=AWS_REGION
     )
     launch_tower_workflow(
         tower_utils=tower_utils["tower_utils"],
         workspace_id="4034472240746",
-        s3_path=s3_path,
+        s3_uri=s3_uri,
     )
 
 
