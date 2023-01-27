@@ -20,7 +20,7 @@ from sagetasks.nextflowtower.utils import TowerUtils
 )
 def htan_nf_dcqc_dag():
     @task(multiple_outputs=True)
-    def get_synapse_file_path() -> dict:
+    def get_synapse_input_file() -> dict:
         """
         Gets synapse file (input csv) from synapse and saves it in buffer.
         Passes along dict object with the path to the downloaded file and the name of the file.
@@ -40,7 +40,7 @@ def htan_nf_dcqc_dag():
         return {"file_path": file_path, "file_name": file_name}
 
     @task()
-    def upload_file_to_s3(syn_file_dict: dict, aws_creds: dict, aws_region: str) -> str:
+    def stage_input_in_s3(syn_file_dict: dict, aws_creds: dict, aws_region: str) -> str:
         """
         Uploads file to Nextflow Tower S3 bucket, returns string path to file
         Args:
@@ -105,8 +105,8 @@ def htan_nf_dcqc_dag():
         )
 
     tower_utils = open_tower_workspace()
-    file_info = get_synapse_file_path()
-    s3_uri = upload_file_to_s3(
+    file_info = get_synapse_input_file()
+    s3_uri = stage_input_in_s3(
         syn_file_dict=file_info, aws_creds=AWS_CREDS, aws_region=AWS_REGION
     )
     launch_tower_workflow(
