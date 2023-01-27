@@ -70,7 +70,6 @@ def htan_nf_dcqc_dag():
             workspace_secrets=["SYNAPSE_AUTH_TOKEN"],
             revision="bgrande/ORCA-119/nf-dcqc",
             params_yaml=f'''
-                outdir: results/
                 input: {s3_uri}
                 '''
         )
