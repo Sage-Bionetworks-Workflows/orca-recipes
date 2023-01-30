@@ -44,9 +44,8 @@ def htan_nf_dcqc_dag():
         Launches tower workflow
 
         Args:
-            tower_utils (sagetasks.nextflowtower.utils.TowerUtils): TowerUtils class instance
             workspace_id (str): Workspace ID for tower run
-            s3_path (str): Path to S3 location of input file
+            s3_uri (str): Path to S3 location of input file
         """
         tower_utils = create_and_open_tower_workspace(platform="sage-dev", workspace_id=workspace_id)
         tower_utils.launch_workflow(
