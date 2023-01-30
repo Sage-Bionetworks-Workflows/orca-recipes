@@ -62,12 +62,13 @@ def htan_nf_dcqc_dag():
         tower_utils.launch_workflow(
             compute_env_id="635ROvIWp5w17QVdRy0jkk",
             pipeline="Sage-Bionetworks-Workflows/nf-dcqc",
-            run_name="nf-dcqc-test",
+            run_name="nf-dcqc-airflow-test",
             profiles=["docker"],
             workspace_secrets=["SYNAPSE_AUTH_TOKEN"],
-            revision="bgrande/ORCA-119/nf-dcqc",
+            revision="main",
             params_yaml=f'''
                 input: {s3_uri}
+                outdir: results/
                 '''
         )
 
