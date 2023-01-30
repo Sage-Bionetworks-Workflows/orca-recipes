@@ -1,5 +1,6 @@
 import boto3
 from airflow.models import Variable
+from pathlib import Path
 
 # AWS creds
 AWS_CREDS = {
@@ -24,7 +25,7 @@ def initialize_aws_client(resource: str, aws_creds: dict = AWS_CREDS, aws_region
         region_name=aws_region,
     )
 
-def upload_file_s3(file_path: str, bucket_name: str) -> str:
+def upload_file_s3(file_path: Path, bucket_name: str) -> str:
     """Uploads file from file_path to s3 bucket_name
 
     Args:
@@ -35,6 +36,5 @@ def upload_file_s3(file_path: str, bucket_name: str) -> str:
         str: uri pointing to new uploaded file location in s3
     """
     s3_client = initialize_aws_client(resource="s3", aws_creds=AWS_CREDS, aws_region=AWS_REGION)
-    file_name = file_path.split("/")[-1]
-    s3_client.upload_file(file_path, bucket_name, file_name)
-    return f"s3://{bucket_name}/{file_name}"
+    s3_client.upload_file(file_path, bucket_name, file_path.name)
+    return f"s3://{bucket_name}/{file_path.name}"
