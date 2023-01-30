@@ -4,6 +4,7 @@ import synapseclient
 from airflow.decorators import dag, task
 from airflow.models import Variable
 from airflow.operators.python import get_current_context
+from tempfile import TemporaryDirectory
 from services.NextflowTowerService import create_and_open_tower_workspace
 from services.AWSService import upload_file_s3
 from pathlib import Path
@@ -19,32 +20,21 @@ from pathlib import Path
 )
 def htan_nf_dcqc_dag():
     @task()
-    def get_synapse_input_file() -> Path:
+    def stage_input_synapse_to_s3() -> Path:
         """
-        Gets synapse file (input csv) from synapse and saves it in buffer.
-        Passes along dict object with the path to the downloaded file and the name of the file.
-
-        Returns:
-            Path: Path object containing the path to the downloaded file and the name of the file.
-        """
-        # simple param passing from run with config - sets my test file as default for now
-        syn_id = get_current_context()["params"].get("syn_id", "syn50919899")
-        syn_token = Variable.get("SYNAPSE_AUTH_TOKEN")
-        syn = synapseclient.login(authToken=syn_token)
-        file_path = Path(syn.get(syn_id).path)
-        return file_path
-
-    @task()
-    def stage_input_in_s3(file_path: str) -> str:
-        """
-        Uploads file to Nextflow Tower S3 bucket, returns string path to file
-        Args:
-            file_path (str): String containing the path to the downloaded file to be uploaded to S3
+        Gets synapse file (input csv) from synapse and saves it in temp_dir. Then stages file in S3
+        Passes along path to S3 location of file and cleans up temp_dir.
 
         Returns:
             s3_uri (str): Path to S3 bucket location of file
         """
+        syn_id = get_current_context()["params"].get("syn_id", "syn50919899")
+        syn_token = Variable.get("SYNAPSE_AUTH_TOKEN")
+        syn = synapseclient.login(authToken=syn_token)
+        temp_dir = TemporaryDirectory()
+        file_path = Path(syn.get(syn_id, downloadLocation=temp_dir.name).path)
         s3_uri = upload_file_s3(file_path=file_path, bucket_name="orca-dev-project-tower-bucket")
+        temp_dir.cleanup()
         return s3_uri
 
 
@@ -71,8 +61,7 @@ def htan_nf_dcqc_dag():
                 '''
         )
 
-    file_path = get_synapse_input_file()
-    s3_uri = stage_input_in_s3(file_path=file_path)
+    s3_uri = stage_input_synapse_to_s3()
     launch_tower_workflow(
         workspace_id="4034472240746",
         s3_uri=s3_uri,
