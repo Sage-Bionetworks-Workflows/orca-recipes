@@ -5,8 +5,8 @@ from airflow.decorators import dag, task
 from airflow.models import Variable
 from airflow.operators.python import get_current_context
 from tempfile import TemporaryDirectory
-from services.NextflowTowerService import create_and_open_tower_workspace
-from services.AWSService import upload_file_s3
+from dags.services.nextflow_tower_service import create_and_open_tower_workspace
+from dags.services.aws_service import upload_file_s3
 from pathlib import Path
 
 @dag(
@@ -52,7 +52,7 @@ def htan_nf_dcqc_dag():
         tower_utils.launch_workflow(
             compute_env_id="635ROvIWp5w17QVdRy0jkk",
             pipeline="Sage-Bionetworks-Workflows/nf-dcqc",
-            run_name="airflow_nf_dcqc_run"
+            run_name="airflow_nf_dcqc_run",
             profiles=["docker"],
             workspace_secrets=["SYNAPSE_AUTH_TOKEN"],
             revision="main",
