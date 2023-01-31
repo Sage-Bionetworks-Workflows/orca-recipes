@@ -52,6 +52,7 @@ def htan_nf_dcqc_dag():
         tower_utils.launch_workflow(
             compute_env_id="635ROvIWp5w17QVdRy0jkk",
             pipeline="Sage-Bionetworks-Workflows/nf-dcqc",
+            run_name="airflow_nf_dcqc_run"
             profiles=["docker"],
             workspace_secrets=["SYNAPSE_AUTH_TOKEN"],
             revision="main",
