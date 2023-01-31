@@ -20,7 +20,7 @@ from pathlib import Path
 )
 def htan_nf_dcqc_dag():
     @task()
-    def stage_input_synapse_to_s3() -> Path:
+    def stage_input_synapse_to_s3() -> str:
         """
         Gets synapse file (input csv) from synapse and saves it in temp_dir. Then stages file in S3
         Passes along path to S3 location of file and cleans up temp_dir.
