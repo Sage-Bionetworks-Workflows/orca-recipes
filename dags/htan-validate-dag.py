@@ -32,7 +32,8 @@ def htan_nf_dcqc_dag():
         syn_token = Variable.get("SYNAPSE_AUTH_TOKEN")
         syn = synapseclient.login(authToken=syn_token)
         temp_dir = TemporaryDirectory()
-        file_path = Path(syn.get(syn_id, downloadLocation=temp_dir.name).path)
+        syn_file = syn.get(syn_id, downloadLocation=temp_dir.name)
+        file_path = Path(syn_file.path)
         s3_uri = upload_file_s3(file_path=file_path, bucket_name="orca-dev-project-tower-bucket")
         temp_dir.cleanup()
         return s3_uri
