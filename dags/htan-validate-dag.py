@@ -5,8 +5,8 @@ from airflow.decorators import dag, task
 from airflow.models import Variable
 from airflow.operators.python import get_current_context
 from tempfile import TemporaryDirectory
-from dags.services.nextflow_tower_service import create_and_open_tower_workspace
-from dags.services.aws_service import upload_file_s3
+from services.nextflow_tower_service import create_and_open_tower_workspace
+from services.aws_service import upload_file_s3
 from pathlib import Path
 
 @dag(
