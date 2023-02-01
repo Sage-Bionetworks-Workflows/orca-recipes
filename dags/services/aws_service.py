@@ -1,40 +1,53 @@
-import boto3
-from airflow.models import Variable
 from pathlib import Path
 
-# AWS creds
-AWS_CREDS = {
-    "AWS_ACCESS_KEY_ID": Variable.get("TOWER_DB_ACCESS_KEY"),
-    "AWS_SECRET_ACCESS_KEY": Variable.get("TOWER_DB_SECRET_ACCESS_KEY"),
-}
-# AWS region
-AWS_REGION = "us-east-1"
+import boto3
+from airflow.models import Variable
 
-def initialize_aws_client(resource: str, aws_creds: dict = AWS_CREDS, aws_region: str = AWS_REGION):
-    """Initializes aws client
 
-    Args:
-        resource (str): resource type to be initialized
-        aws_creds (dict): AWS access key and secret access key dictionary
-        aws_region (str): Regoin for client to be initialized in
-    """
-    return boto3.client(
-        resource,
-        aws_access_key_id=aws_creds["AWS_ACCESS_KEY_ID"],
-        aws_secret_access_key=aws_creds["AWS_SECRET_ACCESS_KEY"],
-        region_name=aws_region,
-    )
+class AWSService:
+    def __init__(self, config_name):
+        # AWS creds
+        AWS_CREDS_CONFIG = {
+            "tower_db_prod": {
+                "AWS_ACCESS_KEY_ID": Variable.get("TOWER_DB_ACCESS_KEY"),
+                "AWS_SECRET_ACCESS_KEY": Variable.get("TOWER_DB_SECRET_ACCESS_KEY"),
+            },
+            "tower_db_dev": {
+                "AWS_ACCESS_KEY_ID": Variable.get("TOWER_DEV_DB_ACCESS_KEY"),
+                "AWS_SECRET_ACCESS_KEY": Variable.get("TOWER_DEV_DB_SECRET_ACCESS_KEY"),
+            },
+        }
 
-def upload_file_s3(file_path: Path, bucket_name: str) -> str:
-    """Uploads file from file_path to s3 bucket_name
+        self.AWS_ACCESS_KEY = AWS_CREDS_CONFIG[config_name]["AWS_ACCESS_KEY"]
+        self.AWS_SECRET_ACCESS_KEY = AWS_CREDS_CONFIG[config_name][
+            "AWS_SECRET_ACCESS_KEY"
+        ]
+        # AWS region
+        self.AWS_REGION = "us-east-1"
 
-    Args:
-        file_path (str): Path to file to be uploaded
-        bucket_name (str): Location in S3 for file to be uploaded
-    
-    Returns:
-        str: uri pointing to new uploaded file location in s3
-    """
-    s3_client = initialize_aws_client(resource="s3", aws_creds=AWS_CREDS, aws_region=AWS_REGION)
-    s3_client.upload_file(file_path, bucket_name, file_path.name)
-    return f"s3://{bucket_name}/{file_path.name}"
+    def initialize_aws_client(self, resource: str):
+        """Initializes aws client
+
+        Args:
+            resource (str): resource type to be initialized
+        """
+        return boto3.client(
+            resource,
+            aws_access_key_id=self.AWS_ACCESS_KEY,
+            aws_secret_access_key=self.AWS_SECRET_ACCESS_KEY,
+            region_name=self.AWS_REGION,
+        )
+
+    def upload_file_s3(self, file_path: Path, bucket_name: str) -> str:
+        """Uploads file from file_path to s3 bucket_name
+
+        Args:
+            file_path (str): Path to file to be uploaded
+            bucket_name (str): Location in S3 for file to be uploaded
+
+        Returns:
+            str: uri pointing to new uploaded file location in s3
+        """
+        s3_client = self.initialize_aws_client(resource="s3")
+        s3_client.upload_file(file_path, bucket_name, file_path.name)
+        return f"s3://{bucket_name}/{file_path.name}"
