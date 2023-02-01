@@ -12,9 +12,9 @@ class AWSService:
                 "AWS_ACCESS_KEY_ID": Variable.get("TOWER_DB_ACCESS_KEY"),
                 "AWS_SECRET_ACCESS_KEY": Variable.get("TOWER_DB_SECRET_ACCESS_KEY"),
             },
-            "tower_db_dev": {
-                "AWS_ACCESS_KEY_ID": Variable.get("TOWER_DEV_DB_ACCESS_KEY"),
-                "AWS_SECRET_ACCESS_KEY": Variable.get("TOWER_DEV_DB_SECRET_ACCESS_KEY"),
+            "tower_db_dev": {  # TODO add new secrets when it is time to switch to prod account
+                "AWS_ACCESS_KEY_ID": Variable.get("TOWER_DB_ACCESS_KEY"),
+                "AWS_SECRET_ACCESS_KEY": Variable.get("TOWER_DB_ACCESS_KEY"),
             },
         }
 
