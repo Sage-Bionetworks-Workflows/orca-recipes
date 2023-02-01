@@ -9,12 +9,12 @@ class AWSService:
         # AWS creds
         AWS_CREDS_CONFIG = {
             "tower_db_prod": {
-                "AWS_ACCESS_KEY_ID": Variable.get("TOWER_DB_ACCESS_KEY"),
+                "AWS_ACCESS_KEY": Variable.get("TOWER_DB_ACCESS_KEY"),
                 "AWS_SECRET_ACCESS_KEY": Variable.get("TOWER_DB_SECRET_ACCESS_KEY"),
             },
             "tower_db_dev": {  # TODO add new secrets when it is time to switch to prod account
-                "AWS_ACCESS_KEY_ID": Variable.get("TOWER_DB_ACCESS_KEY"),
-                "AWS_SECRET_ACCESS_KEY": Variable.get("TOWER_DB_ACCESS_KEY"),
+                "AWS_ACCESS_KEY": Variable.get("TOWER_DB_ACCESS_KEY"),
+                "AWS_SECRET_ACCESS_KEY": Variable.get("TOWER_DB_SECRET_ACCESS_KEY"),
             },
         }
 
@@ -46,8 +46,9 @@ class AWSService:
             bucket_name (str): Location in S3 for file to be uploaded
 
         Returns:
-            str: uri pointing to new uploaded file location in s3
+            s3_uri (str): uri pointing to new uploaded file location in s3
         """
         s3_client = self.initialize_aws_client(resource="s3")
-        s3_client.upload_file(file_path, bucket_name, file_path.name)
-        return f"s3://{bucket_name}/{file_path.name}"
+        s3_client.upload_file(str(file_path), bucket_name, file_path.name)
+        s3_uri =  f"s3://{bucket_name}/{file_path.name}"
+        return s3_uri
