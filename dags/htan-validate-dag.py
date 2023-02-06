@@ -17,7 +17,7 @@ from services.nextflow_tower_service import create_and_open_tower_workspace
     default_args={
         "retries": 2,
     },
-    tags=["nextflow_tower"],
+    tags=["nextflow_tower_metrics"],
 )
 def htan_nf_dcqc_dag():
     @task()

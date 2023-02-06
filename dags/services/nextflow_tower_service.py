@@ -14,7 +14,9 @@ def create_and_open_tower_workspace(platform: str, workspace_id: str) -> TowerUt
     
     """
     config_dict = {
-        #"sage": {} placeholder for prod platform, will need refactor with migration
+        #"sage": {
+        # "token": Variable.get("TOWER_ACCESS_TOKEN"),
+        # } placeholder for prod platform, will need refactor with migration
         "sage-dev": {
             "token": Variable.get("TOWER_ACCESS_TOKEN"),
         }
