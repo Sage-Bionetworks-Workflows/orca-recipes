@@ -6,9 +6,23 @@ import synapseclient
 from airflow.decorators import dag, task
 from airflow.models import Variable
 from airflow.operators.python import get_current_context
-from services.aws_service import AWSService
+from airflow.providers.amazon.aws.hooks.s3 import S3Hook
+
 from services.nextflow_tower_service import create_and_open_tower_workspace
 
+
+def upload_file_s3(file_path: Path, bucket_name: str) -> str:
+    """Uploads file from file_path to s3 bucket_name
+    Args:
+        file_path (str): Path to file to be uploaded
+        bucket_name (str): Location in S3 for file to be uploaded
+    
+    Returns:
+        str: uri pointing to new uploaded file location in s3
+    """
+    s3_hook = S3Hook(aws_conn_id="TOWER_DB_CONNECTION", region_name="us-east-1")
+    s3_hook.load_file(filename=file_path, key=file_path.name, bucket_name=bucket_name, replace=True)
+    return f"s3://{bucket_name}/{file_path.name}"
 
 @dag(
     schedule_interval=None,
@@ -35,9 +49,7 @@ def htan_nf_dcqc_dag():
         temp_dir = TemporaryDirectory()
         syn_file = syn.get(syn_id, downloadLocation=temp_dir.name)
         file_path = Path(syn_file.path)
-        s3_uri = AWSService("tower_db_dev").upload_file_s3(
-            file_path=file_path, bucket_name="orca-dev-project-tower-bucket"
-        )
+        s3_uri = upload_file_s3(file_path=file_path, bucket_name="orca-dev-project-tower-bucket")
         temp_dir.cleanup()
         return s3_uri
 
