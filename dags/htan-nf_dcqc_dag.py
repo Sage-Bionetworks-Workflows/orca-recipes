@@ -2,13 +2,12 @@ from datetime import datetime
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-import synapseclient
 from airflow.decorators import dag, task
-from airflow.models import Variable
 from airflow.operators.python import get_current_context
 from airflow.providers.amazon.aws.hooks.s3 import S3Hook
 
-from services.nextflow_tower_service import create_and_open_tower_workspace
+from dag_content.nextflow_tower_functions import create_and_open_tower_workspace
+from dag_content.utils import create_synapse_session
 
 
 def upload_file_s3(file_path: Path, bucket_name: str) -> str:
@@ -44,8 +43,7 @@ def htan_nf_dcqc_dag():
             s3_uri (str): Path to S3 bucket location of file
         """
         syn_id = get_current_context()["params"].get("syn_id", "syn50919899")
-        syn_token = Variable.get("SYNAPSE_AUTH_TOKEN")
-        syn = synapseclient.login(authToken=syn_token)
+        syn = create_synapse_session()
         temp_dir = TemporaryDirectory()
         syn_file = syn.get(syn_id, downloadLocation=temp_dir.name)
         file_path = Path(syn_file.path)

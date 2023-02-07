@@ -9,7 +9,7 @@ from airflow.decorators import task
 from airflow.providers.amazon.aws.hooks.base_aws import AwsBaseHook
 from airflow.providers.amazon.aws.hooks.rds import RdsHook
 from airflow.providers.amazon.aws.hooks.secrets_manager import SecretsManagerHook
-from services.utils import create_synapse_session
+from dag_content.utils import create_synapse_session
 
 # VARIABLES
 
@@ -281,6 +281,7 @@ def update_secret(
         SecretId="Programmatic-DB-Clone-Access", SecretString=secret_string
     )
     secret_arn = response["ARN"]
+    time.sleep(300) #see if time is the issue
     return secret_arn
 
 
