@@ -13,7 +13,7 @@ from services.utils import create_synapse_session
 
 # VARIABLES
 
-# AWS creds
+# AWS conn
 AWS_CONN_ID = "TOWER_DB_CONNECTION"
 # AWS region
 AWS_REGION = "us-east-1"
@@ -105,21 +105,24 @@ def package_query_data(response: dict) -> list[dict[str, Any]]:
 
 
 # creates RDS boto3 hook inside task
-def create_rds_hook(aws_conn_id: str = AWS_CONN_ID, region_name: str = AWS_REGION):
+def create_rds_connection(aws_conn_id: str = AWS_CONN_ID, region_name: str = AWS_REGION):
     rds_hook = RdsHook(aws_conn_id=aws_conn_id, region_name=region_name)
-    return rds_hook
+    rds_client = rds_hook.get_conn()
+    return rds_hook, rds_client
 
 
 # creates RDS Data boto3 hook inside task
-def create_rds_data_hook(aws_conn_id: str = AWS_CONN_ID, client_type:str = "rds-data", region_name: str = AWS_REGION):
+def create_rds_data_connection(aws_conn_id: str = AWS_CONN_ID, client_type:str = "rds-data", region_name: str = AWS_REGION):
     rds_data_hook = AwsBaseHook(aws_conn_id=aws_conn_id, client_type=client_type, region_name=region_name)
-    return rds_data_hook
+    rds_data_client = rds_data_hook.get_conn()
+    return rds_data_hook, rds_data_client
 
 
 # creates Secrets Manager boto3 hook inside task
-def create_secret_hook(aws_conn_id: str = AWS_CONN_ID, region_name: str = AWS_REGION):
+def create_secret_connection(aws_conn_id: str = AWS_CONN_ID, region_name: str = AWS_REGION):
     secrets_hook = SecretsManagerHook(aws_conn_id=aws_conn_id, region_name=region_name)
-    return secrets_hook
+    secrets_client = secrets_hook.get_conn()
+    return secrets_hook, secrets_client
 
 
 
@@ -138,8 +141,7 @@ def get_database_info(db_name: str) -> str:
     Returns:
         str: DBSubnetGroup and VpcSecurityGroupId from production database
     """
-    rds_hook = create_rds_hook()
-    rds_client = rds_hook.get_conn()
+    rds_client = create_rds_connection()[1]
     response = rds_client.describe_db_clusters(
         DBClusterIdentifier=db_name,
     )
@@ -171,9 +173,7 @@ def clone_tower_database(
     Returns:
         dict: dictionary containing information gathered from the request response necessary for later steps
     """
-    rds_hook = create_rds_hook()
-    rds_client = rds_hook.get_conn()
-
+    rds_hook, rds_client = create_rds_connection()
     response = rds_client.restore_db_cluster_to_point_in_time(
         SourceDBClusterIdentifier=db_name,
         DBClusterIdentifier=clone_name,
@@ -214,9 +214,7 @@ def generate_random_password() -> str:
     Returns:
         str: generated password
     """
-    secrets_hook = create_secret_hook()
-    secrets_client = secrets_hook.get_conn()
-
+    secrets_client = create_secret_connection()[1]
     response = secrets_client.get_random_password(
         PasswordLength=30,
         ExcludeCharacters="@",
@@ -238,9 +236,7 @@ def modify_database_clone(clone_name: str, password: str):
         clone_name (str): name of cloned database cluster
         password (str): password generated in previous step
     """
-    rds_hook = create_rds_hook()
-    rds_client =  rds_hook.get_conn()
-
+    rds_hook, rds_client = create_rds_connection()
     rds_client.modify_db_cluster(
         ApplyImmediately=True,
         DBClusterIdentifier=clone_name,
@@ -270,9 +266,7 @@ def update_secret(
     Returns:
         str: secret arn string needed to access clone for queries
     """
-    secrets_hook = create_secret_hook()
-    secrets_client = secrets_hook.get_conn()
-
+    secrets_client = create_secret_connection()[1]
     secret_dict = {
         "dbInstanceIdentifier": clone_name,
         "resourceId": db_info["resource_id"],
@@ -287,7 +281,6 @@ def update_secret(
         SecretId="Programmatic-DB-Clone-Access", SecretString=secret_string
     )
     secret_arn = response["ARN"]
-
     return secret_arn
 
 
@@ -301,11 +294,8 @@ def query_database(resource_arn: str, secret_arn: str):
         resource_arn (string): string containing the resource arn for the cloned database
         secret_arn (str): string containing secret arn from update_secret task
     """
-    rds_data_hook = create_rds_data_hook()
-    rds_data_client = rds_data_hook.get_conn()
-
+    rds_data_client = create_rds_data_connection()[1]
     json_list = []
-
     for query_name, query in QUERY_DICT.items():
         response = rds_data_client.execute_statement(
             resourceArn=resource_arn,
@@ -331,9 +321,7 @@ def delete_clone_database(clone_name: str):
         aws_creds (dict):  dictionary containing aws credentials
         clone_name (str): name of the cloned database to be deleted
     """
-    rds_hook = create_rds_hook()
-    rds_client = rds_hook.get_conn()
-
+    rds_client = create_rds_connection()[1]
     rds_client.delete_db_cluster(
         DBClusterIdentifier=clone_name,
         SkipFinalSnapshot=True,
