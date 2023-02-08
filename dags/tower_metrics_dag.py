@@ -2,7 +2,7 @@ from datetime import datetime
 
 from airflow.decorators import dag
 
-from dag_content.tower_metrics_functions import *
+from dag_content.tower_metrics_content import *
 
 
 @dag(
