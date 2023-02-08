@@ -119,7 +119,7 @@ def create_rds_data_connection(aws_conn_id: str = AWS_CONN_ID, client_type:str =
 
 
 # creates Secrets Manager boto3 hook inside task
-def create_secret_connection(aws_conn_id: str = AWS_CONN_ID, region_name: str = AWS_REGION):
+def create_secrets_manager_connection(aws_conn_id: str = AWS_CONN_ID, region_name: str = AWS_REGION):
     secrets_hook = SecretsManagerHook(aws_conn_id=aws_conn_id, region_name=region_name)
     secrets_client = secrets_hook.get_conn()
     return secrets_hook, secrets_client
@@ -214,7 +214,7 @@ def generate_random_password() -> str:
     Returns:
         str: generated password
     """
-    secrets_client = create_secret_connection()[1]
+    secrets_client = create_secrets_manager_connection()[1]
     response = secrets_client.get_random_password(
         PasswordLength=30,
         ExcludeCharacters="@",
@@ -266,7 +266,7 @@ def update_secret(
     Returns:
         str: secret arn string needed to access clone for queries
     """
-    secrets_client = create_secret_connection()[1]
+    secrets_client = create_secrets_manager_connection()[1]
     secret_dict = {
         "dbInstanceIdentifier": clone_name,
         "resourceId": db_info["resource_id"],
@@ -281,7 +281,7 @@ def update_secret(
         SecretId="Programmatic-DB-Clone-Access", SecretString=secret_string
     )
     secret_arn = response["ARN"]
-    time.sleep(300) #see if time is the issue
+    time.sleep(30) #query_database always fails the first time because secret modification isnt done yet
     return secret_arn
 
 
@@ -322,12 +322,16 @@ def delete_clone_database(clone_name: str):
         aws_creds (dict):  dictionary containing aws credentials
         clone_name (str): name of the cloned database to be deleted
     """
-    rds_client = create_rds_connection()[1]
+    rds_hook, rds_client = create_rds_connection()
+    # ensure cluster is available - was failing inconsistently
+    rds_hook.wait_for_db_cluster_state(
+        db_cluster_id=clone_name,
+        target_state="available",
+    )
     rds_client.delete_db_cluster(
         DBClusterIdentifier=clone_name,
         SkipFinalSnapshot=True,
     )
-
     time.sleep(20)  # allow process time to start before starting waiter
     waiter = rds_client.get_waiter("db_cluster_deleted") #no provider waiter for this status
     waiter.wait(DBClusterIdentifier=clone_name)
