@@ -1,21 +1,20 @@
-import os
 import json
+import os
 import time
 from itertools import chain
 from typing import Any
 
-from airflow.decorators import task
-from airflow.models import Variable
-import boto3
 import synapseclient
+from airflow.decorators import task
+from airflow.providers.amazon.aws.hooks.base_aws import AwsBaseHook
+from airflow.providers.amazon.aws.hooks.rds import RdsHook
+from airflow.providers.amazon.aws.hooks.secrets_manager import SecretsManagerHook
+from dag_content.utils import create_synapse_session
 
 # VARIABLES
 
-# AWS creds
-AWS_CREDS = {
-    "AWS_ACCESS_KEY_ID": Variable.get("TOWER_DB_ACCESS_KEY"),
-    "AWS_SECRET_ACCESS_KEY": Variable.get("TOWER_DB_SECRET_ACCESS_KEY"),
-}
+# AWS conn
+AWS_CONN_ID = "TOWER_DB_CONNECTION"
 # AWS region
 AWS_REGION = "us-east-1"
 
@@ -105,60 +104,33 @@ def package_query_data(response: dict) -> list[dict[str, Any]]:
     return result
 
 
-# creates RDS boto3 client inside task
-def create_rds_client(aws_creds):
-    rds = boto3.client(
-        "rds",
-        aws_access_key_id=aws_creds["AWS_ACCESS_KEY_ID"],
-        aws_secret_access_key=aws_creds["AWS_SECRET_ACCESS_KEY"],
-        region_name=AWS_REGION,
-    )
-    return rds
+# creates RDS boto3 hook inside task
+def create_rds_connection(aws_conn_id: str = AWS_CONN_ID, region_name: str = AWS_REGION):
+    rds_hook = RdsHook(aws_conn_id=aws_conn_id, region_name=region_name)
+    rds_client = rds_hook.get_conn()
+    return rds_hook, rds_client
 
 
-# creates RDS Data boto3 client inside task
-def create_rds_data_client(aws_creds):
-    rdsData = boto3.client(
-        "rds-data",
-        aws_access_key_id=aws_creds["AWS_ACCESS_KEY_ID"],
-        aws_secret_access_key=aws_creds["AWS_SECRET_ACCESS_KEY"],
-        region_name=AWS_REGION,
-    )
-    return rdsData
+# creates RDS Data boto3 hook inside task
+def create_rds_data_connection(aws_conn_id: str = AWS_CONN_ID, client_type:str = "rds-data", region_name: str = AWS_REGION):
+    rds_data_hook = AwsBaseHook(aws_conn_id=aws_conn_id, client_type=client_type, region_name=region_name)
+    rds_data_client = rds_data_hook.get_conn()
+    return rds_data_hook, rds_data_client
 
 
-# creates Secrets Manager boto3 client inside task
-def create_secret_client(aws_creds):
-    secrets = boto3.client(
-        "secretsmanager",
-        aws_access_key_id=aws_creds["AWS_ACCESS_KEY_ID"],
-        aws_secret_access_key=aws_creds["AWS_SECRET_ACCESS_KEY"],
-        region_name=AWS_REGION,
-    )
-    return secrets
+# creates Secrets Manager boto3 hook inside task
+def create_secrets_manager_connection(aws_conn_id: str = AWS_CONN_ID, region_name: str = AWS_REGION):
+    secrets_hook = SecretsManagerHook(aws_conn_id=aws_conn_id, region_name=region_name)
+    secrets_client = secrets_hook.get_conn()
+    return secrets_hook, secrets_client
 
-
-# create authenticated synapse session
-def create_synapse_session():
-    syn = synapseclient.Synapse()
-    syn.login(
-        authToken=Variable.get("SYNAPSE_AUTH_TOKEN")
-    )  # TODO - this is currently Brad's synapse token
-    return syn
-
-
-# check if database process is complete - can be used for clone creation, modification and deletion
-def check_database_process_complete(client, waiter_type, db_name):
-    time.sleep(20)  # allow process time to start before starting waiter
-    waiter = client.get_waiter(waiter_type)
-    waiter.wait(DBClusterIdentifier=db_name)
 
 
 # TASKS
 
 
 @task(multiple_outputs=True)
-def get_database_info(aws_creds: dict, db_name: str) -> str:
+def get_database_info(db_name: str) -> str:
     """
     Gets DBSubnetGroup and VpcSecurityGroupId from production database needed for later requests
 
@@ -169,22 +141,19 @@ def get_database_info(aws_creds: dict, db_name: str) -> str:
     Returns:
         str: DBSubnetGroup and VpcSecurityGroupId from production database
     """
-    rds = create_rds_client(aws_creds)
-
-    response = rds.describe_db_clusters(
+    rds_client = create_rds_connection()[1]
+    response = rds_client.describe_db_clusters(
         DBClusterIdentifier=db_name,
     )
     subnet_group = response["DBClusters"][0]["DBSubnetGroup"]
     security_group = response["DBClusters"][0]["VpcSecurityGroups"][0][
         "VpcSecurityGroupId"
     ]
-
     return {"subnet_group": subnet_group, "security_group": security_group}
 
 
 @task
 def clone_tower_database(
-    aws_creds: dict,
     db_name: str,
     clone_name: str,
     subnet_group: str,
@@ -204,9 +173,8 @@ def clone_tower_database(
     Returns:
         dict: dictionary containing information gathered from the request response necessary for later steps
     """
-    rds = create_rds_client(aws_creds)
-
-    response = rds.restore_db_cluster_to_point_in_time(
+    rds_hook, rds_client = create_rds_connection()
+    response = rds_client.restore_db_cluster_to_point_in_time(
         SourceDBClusterIdentifier=db_name,
         DBClusterIdentifier=clone_name,
         RestoreType="copy-on-write",
@@ -228,15 +196,15 @@ def clone_tower_database(
         "resource_arn": response["DBCluster"]["DBClusterArn"],
     }
     # ensure cloning is complete before moving on
-    check_database_process_complete(
-        client=rds, waiter_type="db_cluster_available", db_name=clone_name
+    rds_hook.wait_for_db_cluster_state(
+        db_cluster_id=clone_name,
+        target_state="available",
     )
-
     return clone_db_info
 
 
 @task
-def generate_random_password(aws_creds: dict) -> str:
+def generate_random_password() -> str:
     """
     generates random string password using boto3 secret client
 
@@ -246,9 +214,8 @@ def generate_random_password(aws_creds: dict) -> str:
     Returns:
         str: generated password
     """
-    secrets = create_secret_client(aws_creds)
-
-    response = secrets.get_random_password(
+    secrets_client = create_secrets_manager_connection()[1]
+    response = secrets_client.get_random_password(
         PasswordLength=30,
         ExcludeCharacters="@",
         ExcludePunctuation=True,
@@ -260,7 +227,7 @@ def generate_random_password(aws_creds: dict) -> str:
 
 
 @task
-def modify_database_clone(aws_creds: dict, clone_name: str, password: str):
+def modify_database_clone(clone_name: str, password: str):
     """
     modifies cloned database cluster to have new master password
 
@@ -269,23 +236,23 @@ def modify_database_clone(aws_creds: dict, clone_name: str, password: str):
         clone_name (str): name of cloned database cluster
         password (str): password generated in previous step
     """
-    rds = create_rds_client(aws_creds)
-
-    rds.modify_db_cluster(
+    rds_hook, rds_client = create_rds_connection()
+    rds_client.modify_db_cluster(
         ApplyImmediately=True,
         DBClusterIdentifier=clone_name,
         MasterUserPassword=password,
         EnableHttpEndpoint=True,
     )
     # ensure modification is complete before moving on
-    check_database_process_complete(
-        client=rds, waiter_type="db_cluster_available", db_name=clone_name
+    rds_hook.wait_for_db_cluster_state(
+        db_cluster_id=clone_name,
+        target_state="available",
     )
 
 
 @task
 def update_secret(
-    aws_creds: dict, clone_name: str, db_info: dict, password: str
+    clone_name: str, db_info: dict, password: str
 ) -> str:
     """
     updates secret in secret manager with formatted string includung new database info and random password
@@ -299,8 +266,7 @@ def update_secret(
     Returns:
         str: secret arn string needed to access clone for queries
     """
-    secrets = create_secret_client(aws_creds)
-
+    secrets_client = create_secrets_manager_connection()[1]
     secret_dict = {
         "dbInstanceIdentifier": clone_name,
         "resourceId": db_info["resource_id"],
@@ -311,16 +277,16 @@ def update_secret(
         "password": password,
     }
     secret_string = json.dumps(secret_dict)
-    response = secrets.update_secret(
+    response = secrets_client.update_secret(
         SecretId="Programmatic-DB-Clone-Access", SecretString=secret_string
     )
     secret_arn = response["ARN"]
-
+    time.sleep(30) #query_database always fails the first time because secret modification isnt done yet
     return secret_arn
 
 
 @task
-def query_database(aws_creds: dict, resource_arn: str, secret_arn: str):
+def query_database(resource_arn: str, secret_arn: str):
     """
     queries cloned database cluster with all desired queries. appends data to json_list for json export
 
@@ -329,12 +295,10 @@ def query_database(aws_creds: dict, resource_arn: str, secret_arn: str):
         resource_arn (string): string containing the resource arn for the cloned database
         secret_arn (str): string containing secret arn from update_secret task
     """
-    rdsData = create_rds_data_client(aws_creds)
-
+    rds_data_client = create_rds_data_connection()[1]
     json_list = []
-
     for query_name, query in QUERY_DICT.items():
-        response = rdsData.execute_statement(
+        response = rds_data_client.execute_statement(
             resourceArn=resource_arn,
             secretArn=secret_arn,
             database="tower",
@@ -350,7 +314,7 @@ def query_database(aws_creds: dict, resource_arn: str, secret_arn: str):
 
 
 @task
-def delete_clone_database(aws_creds: dict, clone_name: str):
+def delete_clone_database(clone_name: str):
     """
     deletes the cloned database cluster. takes ~2 min
 
@@ -358,18 +322,19 @@ def delete_clone_database(aws_creds: dict, clone_name: str):
         aws_creds (dict):  dictionary containing aws credentials
         clone_name (str): name of the cloned database to be deleted
     """
-    rds = create_rds_client(aws_creds)
-
-    rds.delete_db_cluster(
+    rds_hook, rds_client = create_rds_connection()
+    # ensure cluster is available - was failing inconsistently
+    rds_hook.wait_for_db_cluster_state(
+        db_cluster_id=clone_name,
+        target_state="available",
+    )
+    rds_client.delete_db_cluster(
         DBClusterIdentifier=clone_name,
         SkipFinalSnapshot=True,
     )
-
-    # ensure deleting is complete before moving on
-    check_database_process_complete(
-        client=rds, waiter_type="db_cluster_deleted", db_name=clone_name
-    )
-
+    time.sleep(20)  # allow process time to start before starting waiter
+    waiter = rds_client.get_waiter("db_cluster_deleted") #no provider waiter for this status
+    waiter.wait(DBClusterIdentifier=clone_name)
 
 @task
 def export_json_to_synapse(json_list: list):
