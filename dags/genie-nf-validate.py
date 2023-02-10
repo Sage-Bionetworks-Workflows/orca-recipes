@@ -24,7 +24,7 @@ def genie_nf_validate_dag():
             workspace_id (str): Workspace ID for tower run
         """
         tower_utils = create_and_open_tower_workspace(
-            platform="sage-dev", workspace_id=workspace_id
+            tower_access_token="TOWER_ACCESS_TOKEN_GENIE", platform="sage-dev", workspace_id=workspace_id
         )
         tower_utils.launch_workflow(
             compute_env_id="1IEIFEJSVdDzQhwQlZRrHW",
