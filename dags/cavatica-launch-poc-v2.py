@@ -29,7 +29,6 @@ dag_args = {
 def cavatica_launch_poc_v2():
     @task
     def create_task(params=None, run_id=None):
-        clean_run_id = run_id.replace("+00:00", "Z").replace(":", ".")
         hook = SevenBridgesHook(params["conn_id"])
         task_inputs = {
             "input_type": "FASTQ",
@@ -40,8 +39,9 @@ def cavatica_launch_poc_v2():
             "sample_name": "HCC1187_1M",
             "rmats_read_length": 101,
             "outSAMattrRGline": "ID:HCC1187_1M\tLB:Not_Reported\tPL:Illumina\tSM:HCC1187_1M",
-            "output_basename": clean_run_id,
+            "output_basename": "cavatica_launch_poc_v2",
         }
+        clean_run_id = run_id.replace("+00:00", "Z").replace(":", ".")
         task_id = hook.ops.create_task(clean_run_id, params["app_id"], task_inputs)
         return task_id
 
