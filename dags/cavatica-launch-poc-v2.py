@@ -3,6 +3,7 @@ from typing import Any
 
 from airflow.decorators import dag, task
 from airflow.models.param import Param
+from airflow.operators.python import get_current_context
 from airflow.sensors.base import PokeReturnValue
 from orca.services.sevenbridges import SevenBridgesHook
 
@@ -28,6 +29,7 @@ dag_args = {
 def cavatica_launch_poc_v2():
     @task
     def create_task(params=None, run_id=None):
+        clean_run_id = run_id.replace("+00:00", "Z").replace(":", ".")
         hook = SevenBridgesHook(params["conn_id"])
         task_inputs = {
             "input_type": "FASTQ",
@@ -38,19 +40,31 @@ def cavatica_launch_poc_v2():
             "sample_name": "HCC1187_1M",
             "rmats_read_length": 101,
             "outSAMattrRGline": "ID:HCC1187_1M\tLB:Not_Reported\tPL:Illumina\tSM:HCC1187_1M",
-            "output_basename": run_id,
+            "output_basename": clean_run_id,
         }
-        task_id = hook.ops.create_task(run_id, params["app_id"], task_inputs)
+        task_id = hook.ops.create_task(clean_run_id, params["app_id"], task_inputs)
         return task_id
 
-    @task.sensor(poke_interval=60, timeout=604800, mode="reschedule")
-    def monitor_task(task_name, params=None):
-        hook = SevenBridgesHook(params["conn_id"])
+    @task.sensor(poke_interval=30, timeout=604800, mode="poke")
+    def monitor_task(task_name):
+        # TODO: Once the following PR is merged, use `params` argument
+        # (like `create_task()`) instead of `get_current_context()`.
+        # Open PR: https://github.com/apache/airflow/pull/29146
+        # Using this approach for retrieving the context/params because
+        # @task.sensor don't yet support template variables as arguments
+        # Issue: https://github.com/apache/airflow/issues/29137
+        context = get_current_context()
+        hook = SevenBridgesHook(context["params"]["conn_id"])
         task_status, is_done = hook.ops.get_task_status(task_name)
         return PokeReturnValue(is_done, task_status)
 
+    @task
+    def the_end(task_final_status) -> None:
+        print(task_final_status)
+
     task_id = create_task()
-    task_final_status = monitor_task(task_id)
+    task_status = monitor_task(task_id)
+    the_end(task_status)
 
 
 cavatica_launch_poc_v2()
