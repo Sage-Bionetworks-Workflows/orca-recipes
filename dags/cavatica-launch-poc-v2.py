@@ -8,7 +8,7 @@ from orca.services.sevenbridges import SevenBridgesHook
 
 params = {
     "conn_id": Param("cavatica_test", type="string"),
-    "app_id": Param("bgrande/include-sandbox/kfdrc-rnaseq-workflow-3", type="string"),
+    "app_id": Param("orca-service/test-project/kfdrc-rnaseq-workflow", type="string"),
 }
 
 dag_args: dict[str, Any]
@@ -25,20 +25,20 @@ dag_args = {
 
 
 @dag(**dag_args)
-def cavatica_launch_poc():
+def cavatica_launch_poc_v2():
     @task
     def create_task(params=None, run_id=None):
         hook = SevenBridgesHook(params["conn_id"])
         task_inputs = {
             "input_type": "FASTQ",
-            "reads1": hook.client.files.get("62d99af7074179790775fda5"),
-            "reads2": hook.client.files.get("62d99afe074179790775fda9"),
+            "reads1": hook.client.files.get("63e569217a0654635c558c84"),
+            "reads2": hook.client.files.get("63e5694ebfc712185ac37a27"),
             "runThreadN": 36,
             "wf_strand_param": "default",
             "sample_name": "HCC1187_1M",
             "rmats_read_length": 101,
             "outSAMattrRGline": "ID:HCC1187_1M\tLB:Not_Reported\tPL:Illumina\tSM:HCC1187_1M",
-            "output_basename": "cavatica_launch_poc",
+            "output_basename": run_id,
         }
         task_id = hook.ops.create_task(run_id, params["app_id"], task_inputs)
         return task_id
@@ -53,4 +53,4 @@ def cavatica_launch_poc():
     task_final_status = monitor_task(task_id)
 
 
-cavatica_launch_poc()
+cavatica_launch_poc_v2()
