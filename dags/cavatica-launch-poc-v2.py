@@ -10,6 +10,7 @@ from orca.services.sevenbridges import SevenBridgesHook
 params = {
     "conn_id": Param("cavatica_test", type="string"),
     "app_id": Param("orca-service/test-project/kfdrc-rnaseq-workflow", type="string"),
+    "output_basename": Param("cavatica_launch_poc_v2", type="string"),
 }
 
 dag_args: dict[str, Any]
@@ -39,7 +40,7 @@ def cavatica_launch_poc_v2():
             "sample_name": "HCC1187_1M",
             "rmats_read_length": 101,
             "outSAMattrRGline": "ID:HCC1187_1M\tLB:Not_Reported\tPL:Illumina\tSM:HCC1187_1M",
-            "output_basename": "cavatica_launch_poc_v2",
+            "output_basename": params["output_basename"],
         }
         clean_run_id = run_id.replace("+00:00", "Z").replace(":", ".")
         task_id = hook.ops.create_task(clean_run_id, params["app_id"], task_inputs)
