@@ -15,7 +15,7 @@ def create_and_open_tower_workspace(tower_access_token : str, platform: str, wor
 
     """
     client_args = TowerUtils.bundle_client_args(
-        tower_access_token="TOWER_ACCESS_TOKEN", auth_token=Variable.get(tower_access_token), platform=platform
+        auth_token=Variable.get(tower_access_token), platform=platform
     )
     tower_utils = TowerUtils(client_args)
     tower_utils.open_workspace(workspace_id=workspace_id)
