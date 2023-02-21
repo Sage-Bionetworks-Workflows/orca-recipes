@@ -1,22 +1,38 @@
 from datetime import datetime
 
 from airflow.decorators import dag, task
+from airflow.models.param import Param
 
 from dag_content.nextflow_tower_functions import create_and_open_tower_workspace
 
+dag_params = {
+    "compute_env_id": Param("tJLngX5lvcm4EKhCVtAT", type="string"),
+    "pipeline": Param("Sage-Bionetworks-Workflows/nf-genie", type="string"),
+    "run_name": Param("airflow-genie-validate", type="string"),
+    "revision": Param("main", type="string"),
+    "profile": Param("aws_prod", type="string"),
+    "only_validate": Param("true", type="string"),
+    "production": Param("true", type="string"),
+    "release": Param("13.3-consortium", type="string"),
+}
 
-@dag(
-    schedule_interval="@daily",
-    start_date=datetime(2023, 2, 9),
-    catchup=False,
-    default_args={
+
+dag_config = {
+    "schedule_interval": "@daily",
+    "start_date": datetime(2023, 2, 21),
+    "catchup": False,
+    "default_args": {
         "retries": 1,
     },
-    tags=["nextflow_tower"],
-)
+    "tags": ["nextflow_tower"],
+    "params": dag_params,
+}
+
+
+@dag(**dag_config)
 def genie_nf_validate_dag():
     @task()
-    def launch_tower_workflow(workspace_id: str):
+    def launch_tower_workflow(workspace_id: str, **context):
         """
         Launches tower workflow
 
@@ -24,19 +40,22 @@ def genie_nf_validate_dag():
             workspace_id (str): Workspace ID for tower run
         """
         tower_utils = create_and_open_tower_workspace(
-            tower_access_token="TOWER_ACCESS_TOKEN_GENIE", platform="sage-dev", workspace_id=workspace_id
+            tower_access_token="TOWER_ACCESS_TOKEN_GENIE",
+            platform="sage",
+            workspace_id=workspace_id,
         )
+
         tower_utils.launch_workflow(
-            compute_env_id="1IEIFEJSVdDzQhwQlZRrHW",
-            pipeline="Sage-Bionetworks-Workflows/nf-genie",
-            run_name="airflow-genie-validate-test",
-            revision="main",
-            profiles=["aws_test"],
+            compute_env_id=context["params"]["compute_env_id"],
+            pipeline=context["params"]["pipeline"],
+            run_name=context["params"]["run_name"],
+            revision=context["params"]["revision"],
+            profiles=[context["params"]["profile"]],
             workspace_secrets=["SYNAPSE_AUTH_TOKEN"],
             params_yaml=f"""
-                only_validate: true,
-                production: false,
-                release: TEST.consortium
+                only_validate: {context["params"]["only_validate"]},
+                production: {context["params"]["production"]},
+                release: {context["params"]["release"]}
                 """,
         )
 
