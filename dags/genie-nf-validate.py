@@ -40,7 +40,7 @@ def genie_nf_validate_dag():
             workspace_id (str): Workspace ID for tower run
         """
         tower_utils = create_and_open_tower_workspace(
-            tower_access_token="TOWER_ACCESS_TOKEN_GENIE",
+            tower_secret_key="TOWER_ACCESS_TOKEN_GENIE",
             platform="sage",
             workspace_id=workspace_id,
         )
@@ -53,8 +53,8 @@ def genie_nf_validate_dag():
             profiles=[context["params"]["profile"]],
             workspace_secrets=["SYNAPSE_AUTH_TOKEN"],
             params_yaml=f"""
-                only_validate: {context["params"]["only_validate"]},
-                production: {context["params"]["production"]},
+                only_validate: {context["params"]["only_validate"]}
+                production: {context["params"]["production"]}
                 release: {context["params"]["release"]}
                 """,
         )
