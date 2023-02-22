@@ -14,6 +14,7 @@ dag_params = {
     "only_validate": Param("true", type="string"),
     "production": Param("true", type="string"),
     "release": Param("13.3-consortium", type="string"),
+    "work_dir": Param("s3://genie-bpc-project-tower-scratch/10days", type="string")
 }
 
 
@@ -50,6 +51,7 @@ def genie_nf_validate_dag():
             pipeline=context["params"]["pipeline"],
             run_name=context["params"]["run_name"],
             revision=context["params"]["revision"],
+            work_dir=context["params"]["work_dir"],
             profiles=[context["params"]["profile"]],
             workspace_secrets=["SYNAPSE_AUTH_TOKEN"],
             params_yaml=f"""
