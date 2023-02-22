@@ -23,7 +23,7 @@ def nf_validate_test_dag():
             workspace_id (str): Workspace ID for tower run
         """
         tower_utils = create_and_open_tower_workspace(
-            platform="sage-dev", workspace_id=workspace_id
+            tower_secret_key="TOWER_ACCESS_TOKEN", platform="sage-dev", workspace_id=workspace_id
         )
         tower_utils.launch_workflow(
             compute_env_id="635ROvIWp5w17QVdRy0jkk",
