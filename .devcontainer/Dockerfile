@@ -1,4 +1,4 @@
-FROM apache/airflow:2.5.1-python3.10
+FROM mcr.microsoft.com/devcontainers/python:0-3.10
 
 RUN pip install --no-cache-dir pipenv
 
@@ -8,3 +8,5 @@ COPY ../Pipfile* "$PIPFOLDER"
 
 RUN cd "$PIPFOLDER" \
   && pipenv install --dev --system
+
+CMD ["bash"]
