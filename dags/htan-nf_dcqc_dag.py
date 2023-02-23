@@ -61,7 +61,7 @@ def htan_nf_dcqc_dag():
             s3_uri (str): Path to S3 location of input file
         """
         tower_utils = create_and_open_tower_workspace(
-            platform="sage-dev", workspace_id=workspace_id
+            tower_secret_key="TOWER_ACCESS_TOKEN", platform="sage-dev", workspace_id=workspace_id
         )
         tower_utils.launch_workflow(
             compute_env_id="635ROvIWp5w17QVdRy0jkk",
