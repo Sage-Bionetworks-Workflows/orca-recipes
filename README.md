@@ -7,6 +7,8 @@ This repository contains Airflow recipes (DAGs) for data processing and engineer
 This assumes that you have Docker installed with [Docker Compose V2](https://docs.docker.com/compose/compose-v2/). It's recommended that you leverage the included Dev Container definition (_i.e._ `devcontainer.json`) to standardize your development environment. You can use the [Dev Containers](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-containers) VS Code extension or GitHub Codespaces.
 
 ```console
+# Duplicate example `.env` file and edit as needed
+cp .env.example .env
 docker compose up --build --detach
 ```
 
