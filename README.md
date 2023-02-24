@@ -16,19 +16,24 @@ After you're done editing your DAG, you can restart the containers so Airflow ca
 docker compose restart
 ```
 
-If you edit `Dockerfile`, `docker-compose.yaml`, or `requirements.txt`, you'll need to rebuild the custom container as follows. 
+If you edit `Dockerfile`, `docker-compose.yaml`, or `Pipfile`/`Pipfile.lock`, you'll need to rebuild the containers as follows. 
 
 ```console
+# For example, you can update the dependencies in Pipfile.lock using:
+# pipenv lock --dev
 docker compose down
 docker compose up --build --detach
 ```
 
-If you want to update package versions (_e.g._ for `orca`) without needing to update the `requirements.txt` file, you will need to use a special option to avoid cached container image layers.
+If you want to run commands in the "Airflow context" (_i.e._ within the custom containers), you can use the included `airflow.sh as follows.
 
 ```console
-docker compose down
-docker compose build --no-cache
-docker compose up --detach
-```
+# Start a shell inside one of the containers
+./airflow.sh bash
 
-**N.B.** For example, if the `requirements.txt` file lists `orca~=1.0` and `orca==1.1` is released, the `~=1.0` version spec will automatically match `==1.1`, so you just need to re-run the `pip install` command. However, as far as Docker is concerned, the `requirements.txt` file hasn't changed, so it normally caches that container image layer. Hence, we need to use `--no-cache` to avoid this behavior.
+# Start a Python REPL inside one of the containers
+./airflow.sh python
+
+# Run an Airflow CLI command
+./airflow.sh info
+```

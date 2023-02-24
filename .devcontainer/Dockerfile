@@ -8,5 +8,3 @@ COPY ../Pipfile* "$PIPFOLDER"
 
 RUN cd "$PIPFOLDER" \
   && pipenv install --dev --system
-
-CMD ["bash"]
