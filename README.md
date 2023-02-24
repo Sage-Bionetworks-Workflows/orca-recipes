@@ -1,22 +1,41 @@
-# orca-recipes-airflow
-This repo will serve as a prototype for basic airflow for the DPE team
+# ORCA Airflow Recipes
 
-## start up
-To run airflow, you will need Docker and Docker-Compose installed on your machine.
+This repository contains Airflow recipes (DAGs) for data processing and engineering at Sage Bionetworks.
 
-Once you have the prerequisites installed, you simply need to navigate into the `orca-recipes-airflow` directory and run the following commands.
+## Quick Start
 
-### Build Docker Containers
+This assumes that you have Docker installed with [Docker Compose V2](https://docs.docker.com/compose/compose-v2/). It's recommended that you leverage the included Dev Container definition (_i.e._ `devcontainer.json`) to standardize your development environment. You can use the [Dev Containers](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-containers) VS Code extension or GitHub Codespaces.
+
+```console
+# Duplicate example `.env` file and edit as needed
+cp .env.example .env
+docker compose up --build --detach
 ```
-docker-compose build
+
+Any edits to your DAG should get picked up by Airflow automatically. If you're not seeing that happen, you can try restarting the containers as follows.
+
+```console
+docker compose restart
 ```
 
-### Start Docker Containers
-```
-docker-compose up
-```
- - you may want to run the containers in detached mode, so that you can still use the terminal while airflow is running. to do so you need to add `-d` to the end of the command above
+If you edit `Dockerfile`, `docker-compose.yaml`, `Pipfile`/`Pipfile.lock`, `airflow.cfg`, or `.env`, you'll need to rebuild the containers as follows.
 
- ### Restarting Airflow
+```console
+# For example, you can update the dependencies in Pipfile.lock using:
+# pipenv lock --dev
+docker compose down
+docker compose up --build --detach
+```
 
-When developing, if you make changes to the python code only, you need only to run `docker-compose up` again, but if anything that impacts the docker image changes you must rebuild with `docker-compose build`
+If you want to run commands in the "Airflow context" (_i.e._ within the custom containers), you can use the included `airflow.sh as follows.
+
+```console
+# Start a shell inside one of the containers
+./airflow.sh bash
+
+# Start a Python REPL inside one of the containers
+./airflow.sh python
+
+# Run an Airflow CLI command
+./airflow.sh info
+```

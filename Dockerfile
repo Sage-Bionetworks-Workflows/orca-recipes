@@ -1,8 +1,11 @@
-FROM apache/airflow:2.5.1-python3.10
+ARG BASE_IMAGE=apache/airflow:2.5.1-python3.10
+FROM $BASE_IMAGE
 
-# #update pip
-RUN pip install --user --upgrade pip
+RUN pip install --no-cache-dir pipenv
 
-#install requirements
-COPY requirements.txt /requirements.txt
-RUN pip install --no-cache-dir --user -r /requirements.txt --no-deps
+ARG PIPFOLDER=/tmp/pipfile/
+
+COPY Pipfile* "$PIPFOLDER"
+
+RUN cd "$PIPFOLDER" \
+  && pipenv install --dev --system

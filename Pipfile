@@ -4,10 +4,10 @@ verify_ssl = true
 name = "pypi"
 
 [packages]
-apache-airflow = "*"
-sagetasks = "*"
-boto3 = "*"
-apache-airflow-providers-amazon = "*"
+apache-airflow = "~=2.5"
+apache-airflow-providers-amazon = "~=7.2"
+sagetasks = "~=0.4"
+py-orca = "~=1.0"
 
 [dev-packages]
 
