@@ -14,7 +14,7 @@ There is a helper script in this repository for accessing these Airflow servers.
 
 ## Development
 
-To develop on this repository, it's recommended that you use the Dev Containers setup online using GitHub Codespaces. If you must, you can use the VS Code "Dev Containers" extension to develop locally, but this would require you to configure your secrets (_e.g._ using the `.env` file).
+To develop on this repository, it's recommended that you use the Dev Containers setup online using GitHub Codespaces. While the entry-level machine type (2-core, 4GB RAM) in Codespaces supports basic editing, you should use a bigger machine type (at least 4-core, 8GB RAM) if you plan on running Airflow using Docker Compose.
 
 ## Secrets
 
