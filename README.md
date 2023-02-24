@@ -12,13 +12,13 @@ cp .env.example .env
 docker compose up --build --detach
 ```
 
-After you're done editing your DAG, you can restart the containers so Airflow can pick up on the latest version as follows.
+Any edits to your DAG should get picked up by Airflow automatically. If you're not seeing that happen, you can try restarting the containers as follows.
 
 ```console
 docker compose restart
 ```
 
-If you edit `Dockerfile`, `docker-compose.yaml`, or `Pipfile`/`Pipfile.lock`, you'll need to rebuild the containers as follows. 
+If you edit `Dockerfile`, `docker-compose.yaml`, `Pipfile`/`Pipfile.lock`, `airflow.cfg`, or `.env`, you'll need to rebuild the containers as follows.
 
 ```console
 # For example, you can update the dependencies in Pipfile.lock using:
