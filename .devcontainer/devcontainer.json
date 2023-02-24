@@ -1,42 +1,44 @@
 // For format details, see https://aka.ms/devcontainer.json. For config options, see the
 // README at: https://github.com/devcontainers/templates/tree/main/src/ubuntu
 {
-	"name": "Airflow - Orca",
+    "name": "Airflow - Orca",
 
-	// TODO: Install Python dependencies for VS Code
-	// "image": "mcr.microsoft.com/devcontainers/python:0-3.11",
-	// Or use a Dockerfile or Docker Compose file. More info: https://containers.dev/guide/dockerfile
-	"build": {
+    // TODO: Install Python dependencies for VS Code
+    // "image": "mcr.microsoft.com/devcontainers/python:0-3.11",
+    // Or use a Dockerfile or Docker Compose file. More info: https://containers.dev/guide/dockerfile
+    "build": {
         // Path is relataive to the devcontainer.json file.
-        "dockerfile": "Dockerfile",
-		"context": ".."
+        "dockerfile": "../Dockerfile",
+        "args": {
+            "BASE_IMAGE": "mcr.microsoft.com/devcontainers/python:0-3.10"
+        }
     },
 
-	// Features to add to the dev container. More info: https://containers.dev/features.
-	"features": {
-		"ghcr.io/devcontainers/features/docker-in-docker:2": {}
-	},
+    // Features to add to the dev container. More info: https://containers.dev/features.
+    "features": {
+        "ghcr.io/devcontainers/features/docker-in-docker:2": {}
+    },
 
-	// Use 'forwardPorts' to make a list of ports inside the container available locally.
-	"forwardPorts": [
-		8080
-	],
+    // Use 'forwardPorts' to make a list of ports inside the container available locally.
+    "forwardPorts": [
+        8080
+    ],
 
-	"portsAttributes": {
-		"8080": {
-			"label": "airflow-ui",
-			"onAutoForward": "silent"
-		}
-	},
+    "portsAttributes": {
+        "8080": {
+            "label": "airflow-ui",
+            "onAutoForward": "silent"
+        }
+    },
 
-	// Use 'postCreateCommand' to run commands after the container is created.
-	// "postCreateCommand": "docker compose up --build --detach",
+    // Use 'postCreateCommand' to run commands after the container is created.
+    // "postCreateCommand": "docker compose up --build --detach",
 
-	"postStartCommand": "git config --global --add safe.directory ${containerWorkspaceFolder}",
+    "postStartCommand": "git config --global --add safe.directory ${containerWorkspaceFolder}",
 
-	// Configure tool-specific properties.
-	// "customizations": {},
+    // Configure tool-specific properties.
+    // "customizations": {},
 
-	// Uncomment to connect as root instead. More info: https://aka.ms/dev-containers-non-root.
-	"remoteUser": "vscode"
+    // Uncomment to connect as root instead. More info: https://aka.ms/dev-containers-non-root.
+    "remoteUser": "vscode"
 }
