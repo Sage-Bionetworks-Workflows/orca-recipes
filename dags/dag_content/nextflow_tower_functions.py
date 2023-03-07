@@ -1,8 +1,10 @@
-from typing import Dict, Iterator, List, Optional, Sequence, Set, Tuple
+from typing import Dict, Optional
 
 from airflow.models import Variable
 from sagetasks.nextflowtower.utils import TowerUtils
 
+# add new compute env models here
+COMPUTE_ENV_MODELS = {"EC2": "ondemand", "SPOT": "spot"}
 
 def create_and_open_tower_workspace(
     tower_secret_key: str, platform: str, workspace_id: str
@@ -28,51 +30,77 @@ def create_and_open_tower_workspace(
 
 def get_latest_compute_environment(
     tower_utils: TowerUtils,
+    compute_env_model: str,
     stack_name: str,
     workspace_id: str,
-) -> Dict[str, Optional[str]]:
-    """Gets the latest compute environments in the Nextflow Tower Workspace for a given stack
-    and workspace
+) -> str:
+    """Gets the latest compute environment in the Nextflow Tower Workspace for given stack
 
     Args:
         tower_utils (TowerUtils): Authenticated TowerUtils object that contains tower client for use
+        compute_env_model (str): Short name of the compute environment model to use
         stack_name (str): Name of the Tower stack
-        workspace_id (str): The ID number of the workspace you wish to retrieve the compute env for
+        workspace_id (str): The ID number of the workspace you wish to retrieve the env for
 
     Returns:
-        compute_env_ids (Dict): Latest SPOT and EC2 compute environments in a dictionary
+        compute_env_id (str): Latest compute environment id for the given args specified
     """
-    compute_env_ids: dict[str, Optional[str]] = {"SPOT": None, "EC2": None}
-    endpoint = "/compute-envs"
-    params = {"workspaceId": workspace_id}
-    response = tower_utils.client.request("GET", endpoint, params=params)
-
-    # figure out highest compute env version by name
+    available_envs = get_available_compute_environments(
+        tower_utils=tower_utils, workspace_id=workspace_id
+    )
+    compute_env_prefix = f"{stack_name}-{COMPUTE_ENV_MODELS[compute_env_model]}-v"
+    # gets the latest compute environment version number
     try:
-        ce_version = max(
-            [
-                int(comp_env["name"].split("-")[-1].replace("v", ""))
-                for comp_env in response["computeEnvs"]
-                if comp_env["platform"] == "aws-batch"
-                and comp_env["status"] == "AVAILABLE"
-            ]
+        max_ce_version = max(
+            list(
+                set(
+                    [
+                        int(comp_env.split("-")[-1].replace("v", ""))
+                        for comp_env in available_envs.keys()
+                        if comp_env.startswith(compute_env_prefix)
+                    ]
+                )
+            )
         )
-    except:
-        raise ValueError(
-            f"Cannot get compute environment version from Tower API request"
-        )
-    # set env names
-    comp_env_spot = f"{stack_name}-spot-v{ce_version}"
-    comp_env_ec2 = f"{stack_name}-ondemand-v{ce_version}"
+    except Exception as error:
+        message = "Cannot get compute environment version from Tower API request"
+        raise ValueError(message) from error
 
-    # check for compute env id
-    for comp_env in response["computeEnvs"]:
-        if comp_env["platform"] == "aws-batch" and comp_env["status"] == "AVAILABLE":
-            if comp_env["name"] == comp_env_spot:
-                compute_env_ids["SPOT"] = comp_env["id"]
-            elif comp_env["name"] == comp_env_ec2:
-                compute_env_ids["EC2"] = comp_env["id"]
-    assert (
-        compute_env_ids["SPOT"] is not None and compute_env_ids["EC2"] is not None
-    ), "You have no available active compute environments for this workspace"
-    return compute_env_ids
+    compute_env_name = (
+        f"{stack_name}-{COMPUTE_ENV_MODELS[compute_env_model]}-v{max_ce_version}"
+    )
+
+    try:
+        compute_env_id = available_envs[compute_env_name]
+    except Exception as error:
+        message = (
+            f"{compute_env_name} doesn't exist as an available compute environment. "
+            f"See available compute environments here:{list(available_envs.keys())}"
+        )
+        raise KeyError(message) from error
+    return compute_env_id
+
+
+def get_available_compute_environments(
+    tower_utils: TowerUtils,
+    workspace_id: str,
+) -> dict:
+    """Gets the available compute environments for the given workspace
+
+    Args:
+        tower_utils (TowerUtils): Authenticated TowerUtils object that contains tower client for use
+        workspace_id (str):  The ID number of the workspace you wish to retrieve the env for
+
+    Returns:
+       dict: dictionary where the keys are the compute environment names and the values are the compute environment ids
+    """
+    endpoint = "/compute-envs"
+    params = {"workspaceId": workspace_id, "status": "AVAILABLE"}
+    response = tower_utils.client.request("GET", endpoint, params=params)
+    # filter for requirements in env
+    available_envs = {
+        comp_env["name"]: comp_env["id"]
+        for comp_env in response["computeEnvs"]
+        if comp_env["platform"] == "aws-batch"
+    }
+    return available_envs

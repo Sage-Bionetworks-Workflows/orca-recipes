@@ -9,7 +9,7 @@ from dag_content.nextflow_tower_functions import (
 )
 
 dag_params = {
-    "compute_env_type": Param("EC2", type="string"),
+    "compute_env_model": Param("EC2", type="string"),
     "stack_name": Param("genie-bpc-project", type="string"),
     "pipeline": Param("Sage-Bionetworks-Workflows/nf-genie", type="string"),
     "run_name": Param("airflow-genie-validate", type="string"),
@@ -55,7 +55,7 @@ def genie_nf_validate_dag():
         )
 
         tower_utils.launch_workflow(
-            compute_env_id=compute_envs[context["params"]["compute_env_type"]],
+            compute_env_id=compute_envs[context["params"]["compute_env_model"]],
             pipeline=context["params"]["pipeline"],
             run_name=context["params"]["run_name"],
             revision=context["params"]["revision"],
