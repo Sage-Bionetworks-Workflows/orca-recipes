@@ -3,10 +3,14 @@ from datetime import datetime
 from airflow.decorators import dag, task
 from airflow.models.param import Param
 
-from dag_content.nextflow_tower_functions import create_and_open_tower_workspace
+from dag_content.nextflow_tower_functions import (
+    create_and_open_tower_workspace,
+    get_latest_compute_environment
+)
 
 dag_params = {
-    "compute_env_id": Param("tJLngX5lvcm4EKhCVtAT", type="string"),
+    "compute_env_model": Param("EC2", type="string"),
+    "stack_name": Param("genie-bpc-project", type="string"),
     "pipeline": Param("Sage-Bionetworks-Workflows/nf-genie", type="string"),
     "run_name": Param("airflow-genie-validate", type="string"),
     "revision": Param("main", type="string"),
@@ -16,7 +20,6 @@ dag_params = {
     "release": Param("13.3-consortium", type="string"),
     "work_dir": Param("s3://genie-bpc-project-tower-scratch/10days", type="string")
 }
-
 
 dag_config = {
     "schedule_interval": "@daily",
@@ -45,9 +48,15 @@ def genie_nf_validate_dag():
             platform="sage",
             workspace_id=workspace_id,
         )
+        compute_env_id = get_latest_compute_environment(
+            tower_utils = tower_utils,
+            compute_env_model = context["params"]["compute_env_model"],
+            stack_name = context["params"]["stack_name"],
+            workspace_id = workspace_id
+        )
 
         tower_utils.launch_workflow(
-            compute_env_id=context["params"]["compute_env_id"],
+            compute_env_id=compute_env_id,
             pipeline=context["params"]["pipeline"],
             run_name=context["params"]["run_name"],
             revision=context["params"]["revision"],
