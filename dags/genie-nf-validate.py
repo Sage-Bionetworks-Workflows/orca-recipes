@@ -48,14 +48,15 @@ def genie_nf_validate_dag():
             platform="sage",
             workspace_id=workspace_id,
         )
-        compute_envs = get_latest_compute_environment(
+        compute_env_id = get_latest_compute_environment(
             tower_utils = tower_utils,
+            compute_env_model = context["params"]["compute_env_model"],
             stack_name = context["params"]["stack_name"],
             workspace_id = workspace_id
         )
 
         tower_utils.launch_workflow(
-            compute_env_id=compute_envs[context["params"]["compute_env_model"]],
+            compute_env_id=compute_env_id,
             pipeline=context["params"]["pipeline"],
             run_name=context["params"]["run_name"],
             revision=context["params"]["revision"],
