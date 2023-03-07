@@ -1,10 +1,9 @@
-from typing import Dict, Optional
-
 from airflow.models import Variable
 from sagetasks.nextflowtower.utils import TowerUtils
 
 # add new compute env models here
 COMPUTE_ENV_MODELS = {"EC2": "ondemand", "SPOT": "spot"}
+
 
 def create_and_open_tower_workspace(
     tower_secret_key: str, platform: str, workspace_id: str
@@ -52,15 +51,11 @@ def get_latest_compute_environment(
     # gets the latest compute environment version number
     try:
         max_ce_version = max(
-            list(
-                set(
-                    [
-                        int(comp_env.split("-")[-1].replace("v", ""))
-                        for comp_env in available_envs.keys()
-                        if comp_env.startswith(compute_env_prefix)
-                    ]
-                )
-            )
+            [
+                int(comp_env.split("-")[-1].replace("v", ""))
+                for comp_env in available_envs
+                if comp_env.startswith(compute_env_prefix)
+            ]
         )
     except Exception as error:
         message = "Cannot get compute environment version from Tower API request"
@@ -72,7 +67,7 @@ def get_latest_compute_environment(
 
     try:
         compute_env_id = available_envs[compute_env_name]
-    except Exception as error:
+    except KeyError as error:
         message = (
             f"{compute_env_name} doesn't exist as an available compute environment. "
             f"See available compute environments here:{list(available_envs.keys())}"
