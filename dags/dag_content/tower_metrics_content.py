@@ -6,6 +6,7 @@ from typing import Any
 
 import synapseclient
 from airflow.decorators import task
+from airflow.operators.python import get_current_context
 from airflow.providers.amazon.aws.hooks.base_aws import AwsBaseHook
 from airflow.providers.amazon.aws.hooks.rds import RdsHook
 from airflow.providers.amazon.aws.hooks.secrets_manager import SecretsManagerHook
@@ -366,18 +367,16 @@ def export_json_to_synapse(json_list: list):
 
 
 @task
-def send_synapse_notification(user_list: list):
+def send_synapse_notification():
     """
-    sends email notification to synapse users in user_list that report has been uploaded
-
-    Args:
-        user_list(list): list of Synapse usernames to send report notification message to.
+    sends email notification to synapse users in user_list that report has been uploaded.
+    requires a parameter passed to the dag with the id "user_list"
     """
 
     syn = create_synapse_session()
 
     id_list = []
-    for user in user_list:
+    for user in get_current_context()["params"]["user_list"]:
         id_list.append(syn.getUserProfile(user).get("ownerId"))
 
     syn.sendMessage(
