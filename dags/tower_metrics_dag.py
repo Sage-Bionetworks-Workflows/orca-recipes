@@ -46,13 +46,13 @@ def tower_metrics_dag():
     # delete cloned database - wait for it to be gone before completing process
     delete = delete_clone_database(clone_name=CLONE_DATABASE_NAME)
 
-
-    #add missing dependencies
+    # add missing dependencies
     prod_db_info >> clone_db_info
     [clone_db_info, password] >> modify
     [clone_db_info, password] >> secret_arn
     [secret_arn, modify] >> json_list
     json_list >> [export, delete]
     export >> send
+
 
 tower_metrics_dag = tower_metrics_dag()
