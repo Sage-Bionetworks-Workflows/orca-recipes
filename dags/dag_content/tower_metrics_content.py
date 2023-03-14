@@ -6,7 +6,6 @@ from typing import Any
 
 import synapseclient
 from airflow.decorators import task
-from airflow.operators.python import get_current_context
 from airflow.providers.amazon.aws.hooks.base_aws import AwsBaseHook
 from airflow.providers.amazon.aws.hooks.rds import RdsHook
 from airflow.providers.amazon.aws.hooks.secrets_manager import SecretsManagerHook
