@@ -367,17 +367,15 @@ def export_json_to_synapse(json_list: list):
 
 
 @task
-def send_synapse_notification():
+def send_synapse_notification(**context):
     """
-    sends email notification to synapse users in user_list that report has been uploaded.
-    requires a parameter passed to the dag with the id "user_list"
+    sends email notification to synapse users in user_list that report has been uploaded
     """
+    user_list = context["params"]["user_list"].split(",")
 
     syn = create_synapse_session()
 
-    id_list = []
-    for user in get_current_context()["params"]["user_list"]:
-        id_list.append(syn.getUserProfile(user).get("ownerId"))
+    id_list = [syn.getUserProfile(user).get("ownerId") for user in user_list]
 
     syn.sendMessage(
         id_list,
