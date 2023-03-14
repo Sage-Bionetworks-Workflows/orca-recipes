@@ -105,25 +105,34 @@ def package_query_data(response: dict) -> list[dict[str, Any]]:
 
 
 # creates RDS boto3 hook inside task
-def create_rds_connection(aws_conn_id: str = AWS_CONN_ID, region_name: str = AWS_REGION):
+def create_rds_connection(
+    aws_conn_id: str = AWS_CONN_ID, region_name: str = AWS_REGION
+):
     rds_hook = RdsHook(aws_conn_id=aws_conn_id, region_name=region_name)
     rds_client = rds_hook.get_conn()
     return rds_hook, rds_client
 
 
 # creates RDS Data boto3 hook inside task
-def create_rds_data_connection(aws_conn_id: str = AWS_CONN_ID, client_type:str = "rds-data", region_name: str = AWS_REGION):
-    rds_data_hook = AwsBaseHook(aws_conn_id=aws_conn_id, client_type=client_type, region_name=region_name)
+def create_rds_data_connection(
+    aws_conn_id: str = AWS_CONN_ID,
+    client_type: str = "rds-data",
+    region_name: str = AWS_REGION,
+):
+    rds_data_hook = AwsBaseHook(
+        aws_conn_id=aws_conn_id, client_type=client_type, region_name=region_name
+    )
     rds_data_client = rds_data_hook.get_conn()
     return rds_data_hook, rds_data_client
 
 
 # creates Secrets Manager boto3 hook inside task
-def create_secrets_manager_connection(aws_conn_id: str = AWS_CONN_ID, region_name: str = AWS_REGION):
+def create_secrets_manager_connection(
+    aws_conn_id: str = AWS_CONN_ID, region_name: str = AWS_REGION
+):
     secrets_hook = SecretsManagerHook(aws_conn_id=aws_conn_id, region_name=region_name)
     secrets_client = secrets_hook.get_conn()
     return secrets_hook, secrets_client
-
 
 
 # TASKS
@@ -251,9 +260,7 @@ def modify_database_clone(clone_name: str, password: str):
 
 
 @task
-def update_secret(
-    clone_name: str, db_info: dict, password: str
-) -> str:
+def update_secret(clone_name: str, db_info: dict, password: str) -> str:
     """
     updates secret in secret manager with formatted string includung new database info and random password
 
@@ -281,7 +288,9 @@ def update_secret(
         SecretId="Programmatic-DB-Clone-Access", SecretString=secret_string
     )
     secret_arn = response["ARN"]
-    time.sleep(30) #query_database always fails the first time because secret modification isnt done yet
+    time.sleep(
+        30
+    )  # query_database always fails the first time because secret modification isnt done yet
     return secret_arn
 
 
@@ -333,8 +342,11 @@ def delete_clone_database(clone_name: str):
         SkipFinalSnapshot=True,
     )
     time.sleep(20)  # allow process time to start before starting waiter
-    waiter = rds_client.get_waiter("db_cluster_deleted") #no provider waiter for this status
+    waiter = rds_client.get_waiter(
+        "db_cluster_deleted"
+    )  # no provider waiter for this status
     waiter.wait(DBClusterIdentifier=clone_name)
+
 
 @task
 def export_json_to_synapse(json_list: list):
@@ -354,21 +366,15 @@ def export_json_to_synapse(json_list: list):
 
 
 @task
-def send_synapse_notification():
+def send_synapse_notification(**context):
     """
-    sends email notification to synapse users in user_list that report has been uploaded
+    sends email notification to Synapse users in Airflow param 'user_list' that report has been uploaded
     """
-    user_list = [
-        "bwmac",  # Brad
-        # "thomas.yu", # Tom
-        # "bgrande", # Bruno
-    ]
+    user_list = context["params"]["user_list"].split(",")
 
     syn = create_synapse_session()
 
-    id_list = []
-    for user in user_list:
-        id_list.append(syn.getUserProfile(user).get("ownerId"))
+    id_list = [syn.getUserProfile(user).get("ownerId") for user in user_list]
 
     syn.sendMessage(
         id_list,

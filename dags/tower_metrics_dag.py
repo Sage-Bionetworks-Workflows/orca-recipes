@@ -1,18 +1,27 @@
 from datetime import datetime
 
 from airflow.decorators import dag
+from airflow.models.param import Param
 
 from dag_content.tower_metrics_content import *
 
+dag_params = {
+    "user_list": Param(
+        "bwmac,thomas.yu",  # no support for python lists
+        type="string",
+    )
+}
+
 
 @dag(
-    schedule_interval="@weekly",
+    schedule_interval="0 23 * * 5",  # Fridays at 3PM PST
     start_date=datetime(2022, 11, 11),
     catchup=False,
     default_args={
         "retries": 3,
     },
     tags=["Nextflow Tower Metrics"],
+    params=dag_params,
 )
 def tower_metrics_dag():
     # get needed info from production database for cloining
@@ -46,13 +55,13 @@ def tower_metrics_dag():
     # delete cloned database - wait for it to be gone before completing process
     delete = delete_clone_database(clone_name=CLONE_DATABASE_NAME)
 
-
-    #add missing dependencies
+    # add missing dependencies
     prod_db_info >> clone_db_info
     [clone_db_info, password] >> modify
     [clone_db_info, password] >> secret_arn
     [secret_arn, modify] >> json_list
     json_list >> [export, delete]
     export >> send
+
 
 tower_metrics_dag = tower_metrics_dag()
