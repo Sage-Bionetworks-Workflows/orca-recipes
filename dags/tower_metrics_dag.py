@@ -14,7 +14,7 @@ dag_params = {
 
 
 @dag(
-    schedule_interval="0 15 * * 5",  # Fridays at 3PM PST
+    schedule_interval="0 23 * * 5",  # Fridays at 3PM PST
     start_date=datetime(2022, 11, 11),
     catchup=False,
     default_args={
