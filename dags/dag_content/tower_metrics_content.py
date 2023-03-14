@@ -368,7 +368,7 @@ def export_json_to_synapse(json_list: list):
 @task
 def send_synapse_notification(**context):
     """
-    sends email notification to synapse users in user_list that report has been uploaded
+    sends email notification to Synapse users in Airflow param 'user_list' that report has been uploaded
     """
     user_list = context["params"]["user_list"].split(",")
 
