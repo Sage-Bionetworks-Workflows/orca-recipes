@@ -16,6 +16,8 @@ There is a helper script in this repository for accessing these Airflow servers.
 
 To develop on this repository, it's recommended that you use the Dev Containers setup online using GitHub Codespaces. While the entry-level machine type (2-core, 4GB RAM) in Codespaces supports basic editing, you should use a bigger machine type (at least 4-core, 8GB RAM) if you plan on running Airflow using Docker Compose.
 
+Note that you don't need to add your AWS credentials to the `.env` file when using GitHub Codespaces because a default IAM user has been configured in the repository's secrets.
+
 ## Secrets
 
 Airflow secrets (_e.g._ connections and variables) are stored in the following locations:

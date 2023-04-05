@@ -12,6 +12,8 @@ cp .env.example .env
 docker compose up --build --detach
 ```
 
+If you encounter the `nginx bad gateway` errors when navigating to the forwarded port, just wait and refresh a couple of times. Airflow takes a few minutes to become available.
+
 Any edits to your DAG should get picked up by Airflow automatically. If you're not seeing that happen, you can try restarting the containers as follows.
 
 ```console
@@ -43,3 +45,4 @@ If you want to run commands in the "Airflow context" (_i.e._ within the custom c
 ## Logging into Airflow
 
 When deployed in AWS EC2, the username for admin login will be "dpe" rather than the default "airflow". The password is securely stored in AWS Secret Manager and the DPE LastPass vault. If you have access to the `org-sagebase-dpe-prod` AWS account, you can authenticate your connection to AWS in your terminal using `aws sso login` and then run `bash airflow_password.sh` in your terminal, the password will print in your terminal. 
+
