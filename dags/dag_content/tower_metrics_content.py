@@ -38,12 +38,12 @@ QUERY_DICT = {
             w.full_name) as total_workflow_runs;
     """,
     "workflow_distribution_past_week": """
-            select workspace, workflow, runs, run_distribution from (
+            select workspace, workflow, runs, percentage from (
             select
             w.full_name as workspace,
             wf.project_name as workflow,
             count(*) AS runs,
-            count(*) / t.total_runs * 100 as run_distribution
+            count(*) / t.total_runs * 100 as percentage
             from 
             tw_workflow wf 
             join tw_workspace w on wf.workspace_id = w.id 
