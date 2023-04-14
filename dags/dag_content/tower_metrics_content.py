@@ -24,6 +24,40 @@ CLONE_DATABASE_NAME = "tower-clone"
 
 # query dictionary - maps query names to queries
 QUERY_DICT = {
+    "total_workflows_per_workspace_past_week": """
+            select workspace, total_runs from (
+            select 
+            w.full_name as workspace, 
+            count(*) AS total_runs 
+            from 
+            tw_workflow wf 
+            join tw_workspace w on wf.workspace_id = w.id
+            where 
+            wf.date_created >= date_sub(now(), interval 1 week) 
+            group by 
+            w.full_name) as total_workflow_runs;
+    """,
+    "workflow_distribution_past_week": """
+            select workspace, workflow, runs, percentage from (
+            select
+            w.full_name as workspace,
+            wf.project_name as workflow,
+            count(*) AS runs,
+            count(*) / t.total_runs * 100 as percentage
+            from 
+            tw_workflow wf 
+            join tw_workspace w on wf.workspace_id = w.id 
+            join (select workspace_id, COUNT(*) AS total_runs 
+            from tw_workflow 
+            where date_created >= date_sub(now(), interval 1 week) 
+            group by workspace_id) t on w.id = t.workspace_id 
+            where 
+            wf.date_created >= date_sub(now(), interval 1 week) 
+            group by 
+            w.full_name, 
+            wf.project_name, 
+            t.total_runs) as workflow_distrubution;
+    """,
     "avg_workflows_run_per_month": """
             select round(AVG(total_runs), 2) as month_avg_past_year from (
             select count(*) as total_runs, DATE_FORMAT(`date_created`,'%M %Y') as month from tw_workflow
@@ -168,7 +202,6 @@ def clone_tower_database(
     subnet_group: str,
     security_group: str,
 ) -> dict:
-
     """
     creates complete db clone from latest restorable time.
 
