@@ -88,4 +88,4 @@ def challenge_submission_dag():
     run_id >> monitor
 
 
-challenge_submission_dag = challenge_submission_dag()
+challenge_submission_dag()
