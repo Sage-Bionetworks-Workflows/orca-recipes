@@ -12,6 +12,7 @@ from orca.services.synapse import SynapseHook
 
 dag_params = {
     "synapse_conn_id": Param("SYNAPSE_CHALLENGE_CONN", type="string"),
+    "synapse_evaluation_id": Param("9615332", type="string"),
     "tower_conn_id": Param("EXAMPLE_PROJECT_TOWER_CONN", type="string"),
     "tower_run_name": Param("model_submission_evaluation", type="string"),
     "tower_view_id": Param("syn51356905", type="string"),
@@ -42,7 +43,9 @@ def challenge_submission_dag():
             evaluation_id (str): Evaluation ID for challenge
         """
         hook = SynapseHook(context["params"]["synapse_conn_id"])
-        if hook.ops.monitor_evaluation_queue("9615332"):
+        if hook.ops.monitor_evaluation_queue(
+            context["params"]["synapse_evaluation_id"]
+        ):
             return "launch_model2data_workflow"
         return "stop_dag"
 
