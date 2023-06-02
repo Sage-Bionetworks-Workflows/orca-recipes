@@ -71,10 +71,12 @@ def challenge_submission_dag():
         )
         return run_id
 
-    @task()
+    @task.sensor(poke_interval=300, timeout=604800, mode="reschedule")
     def monitor_model2data_workflow(run_id: str, **context):
         hook = NextflowTowerHook(context["params"]["tower_conn_id"])
-        asyncio.run(hook.ops.monitor_workflow(run_id=run_id))
+        workflow = hook.ops.get_workflow(run_id)
+        print(f"Current workflow state: {workflow.status.state.value}")
+        return workflow.status.is_done
 
     submission_check = check_for_new_submissions()
     stop = stop_dag()
