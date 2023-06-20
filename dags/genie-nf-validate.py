@@ -18,7 +18,7 @@ dag_params = {
     "only_validate": Param("true", type="string"),
     "production": Param("true", type="string"),
     "release": Param("13.3-consortium", type="string"),
-    "work_dir": Param("s3://genie-bpc-project-tower-scratch/10days", type="string")
+    "work_dir": Param("s3://genie-bpc-project-tower-scratch/1days", type="string")
 }
 
 dag_config = {

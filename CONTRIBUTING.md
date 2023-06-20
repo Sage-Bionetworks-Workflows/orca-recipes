@@ -2,21 +2,24 @@
 
 ## Infrastructure
 
-We have two Airflow servers:
+We have one Airflow server:
 
-<!-- Do we need `airflow-dev` if we have DevContainers? -->
-1. `airflow-dev`: Hosted in the `dnt-dev` AWS account. Deployed manually. Has a public IP address (accessible using the VPN).
-	* Deployed from the `develop` branch in this repository.
-2. `airflow-prod`: Hosted in the `dpe-prod` AWS account. Deployed using CloudFormation. Only has a private IP address (accessible via SSM port forwarding).
+1. `airflow-prod`: Hosted in the `dpe-prod` AWS account. Deployed using CloudFormation. Only has a private IP address (accessible via SSM port forwarding).
 	* Deployed from the `main` branch in this repository.
 
-There is a helper script in this repository for accessing these Airflow servers.
+There is a helper script in this repository for accessing this Airflow server.
 
 ## Development
 
 To develop on this repository, it's recommended that you use the Dev Containers setup online using GitHub Codespaces. While the entry-level machine type (2-core, 4GB RAM) in Codespaces supports basic editing, you should use a bigger machine type (at least 4-core, 8GB RAM) if you plan on running Airflow using Docker Compose.
 
 Note that you don't need to add your AWS credentials to the `.env` file when using GitHub Codespaces because a default IAM user has been configured in the repository's secrets.
+
+
+## Testing
+
+Testing should be done via the Dev Containers setup online using GitHub Codespaces. Note that for testing of the DAGs directly on Airflow locally via Dev Containers, it's best to leave the DAG **unpaused** when triggering the DAG with various updates, otherwise you might be triggering the DAG twice and/or triggering it in its original state that had its parameters set to production mode.
+
 
 ## Secrets
 

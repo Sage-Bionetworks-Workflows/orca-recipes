@@ -44,5 +44,6 @@ If you want to run commands in the "Airflow context" (_i.e._ within the custom c
 
 ## Logging into Airflow
 
-When deployed in AWS EC2, the username for admin login will be "dpe" rather than the default "airflow". The password is securely stored in AWS Secret Manager and the DPE LastPass vault. If you have access to the `org-sagebase-dpe-prod` AWS account, you can authenticate your connection to AWS in your terminal using `aws sso login` and then run `bash airflow_password.sh` in your terminal, the password will print in your terminal. 
+When deploying airflow locally on dev containers, the username and password will be "airflow".
 
+When deployed in AWS EC2, the username for admin login will be "dpe" rather than the default "airflow". The password is securely stored in AWS Secret Manager and the DPE LastPass vault. If you have access to the `org-sagebase-dpe-prod` AWS account, you can authenticate your connection to AWS in your terminal using `aws sso login` and then run `bash airflow_password.sh` in your terminal, the password will print in your terminal. 
