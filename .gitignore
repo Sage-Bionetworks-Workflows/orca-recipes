@@ -133,3 +133,6 @@ logs/
 
 # Secrets environment
 .env
+
+# metaflow artifacts
+.metaflow/

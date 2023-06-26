@@ -130,4 +130,4 @@ class TowerLENSFlow(FlowSpec):
 if __name__ == "__main__":
     TowerLENSFlow()
 
-# run with: python3 LENS/lens.py run --dataset_id syn51753796 --s3_prefix s3://iatlas-project-tower-bucket/LENS
+# run with: python3 local/lens.py run --dataset_id syn51753796 --s3_prefix s3://iatlas-project-tower-bucket/LENS
