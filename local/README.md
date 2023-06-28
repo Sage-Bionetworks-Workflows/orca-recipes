@@ -21,8 +21,7 @@ In order for the scripts leveraging `py-orca` to connect to Nextflow Tower, you 
     - `AWS_ACCESS_KEY_ID`
     - `AWS_SECRET_ACCESS_KEY`
     - `AWS_SESSION_TOKEN`
-    * Optionally, you can use `aws sso login` in place of the AWS environment variable credentials if you have pre-configured AWS profiles already.
-
+    * Optionally, you can use `aws sso login` in place of the above AWS environment variable credentials if you have pre-configured AWS profiles already and include `AWS_PROFILE` in your `.env` file
 You can copy `local/.env.example` into a local `local/.env` file, replace the placeholders with your credentials, and run `source local/.env` in your terminal.
 
 ## LENS
