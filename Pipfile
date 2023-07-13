@@ -7,7 +7,7 @@ name = "pypi"
 apache-airflow = "~=2.5"
 apache-airflow-providers-amazon = "~=7.2"
 sagetasks = "~=0.4"
-py-orca = {version = "~=1.3", extras = ["all"]}
+py-orca = {version = ">=1.3.1", extras = ["all"]}
 
 [dev-packages]
 pandas = "~=2.0.0"
