@@ -20,7 +20,7 @@ dag_config = {
     "default_args": {
         "retries": 2,
     },
-    "tags": ["launched-by-orca", "airflow"],
+    "tags": ["nextflow_tower"],
     "params": dag_params,
 }
 
@@ -32,20 +32,19 @@ def nf_hello_test_dag():
         info = LaunchInfo(
             run_name="nf-hello-test",
             pipeline="nextflow-io/hello",
-            profiles=["sage"]
         )
         run_id = hook.ops.launch_workflow(info, context["params"]["tower_compute_env_type"])
         return run_id
 
     @task.sensor(poke_interval=300, timeout=604800, mode="reschedule")
-    def monitor_model2data_workflow(run_id: str, **context):
+    def monitor_nf_hello_workflow(run_id: str, **context):
         hook = NextflowTowerHook(context["params"]["tower_conn_id"])
         workflow = hook.ops.get_workflow(run_id)
         print(f"Current workflow state: {workflow.status.state.value}")
         return workflow.status.is_done
 
     run_id = launch_nf_hello_on_tower()
-    monitor_model2data_workflow(run_id=run_id)
+    monitor_nf_hello_workflow(run_id=run_id)
 
 
 nf_hello_test_dag()
