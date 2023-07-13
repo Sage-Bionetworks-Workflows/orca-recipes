@@ -4,12 +4,13 @@ import time
 from itertools import chain
 from typing import Any
 
-import synapseclient
+from synapseclient import File
 from airflow.decorators import task
 from airflow.providers.amazon.aws.hooks.base_aws import AwsBaseHook
 from airflow.providers.amazon.aws.hooks.rds import RdsHook
 from airflow.providers.amazon.aws.hooks.secrets_manager import SecretsManagerHook
-from dag_content.utils import create_synapse_session
+
+from orca.services.synapse import SynapseHook
 
 # VARIABLES
 
@@ -116,8 +117,6 @@ QUERY_DICT = {
 }
 
 # FUNCTIONS
-
-
 def package_query_data(response: dict) -> list[dict[str, Any]]:
     """
     takes responses from query requests and packages them into JSON friendly list of dictionaries
@@ -170,8 +169,6 @@ def create_secrets_manager_connection(
 
 
 # TASKS
-
-
 @task(multiple_outputs=True)
 def get_database_info(db_name: str) -> str:
     """
@@ -389,12 +386,12 @@ def export_json_to_synapse(json_list: list):
     Args:
         json_list (list): list of dictionaries ready for JSON export
     """
-    syn = create_synapse_session()
+    hook = SynapseHook("SYNAPSE_CHALLENGE_CONN")
     file_name = "tower_metrics_report.json"
     with open(file_name, "w") as file:
         json.dump(json_list, file)
-    data = synapseclient.File(file_name, parent="syn48186663")
-    data = syn.store(data)
+    data = File(file_name, parent="syn48186663")
+    data = hook.client.store(data)
     os.remove(file_name)
 
 
@@ -404,12 +401,9 @@ def send_synapse_notification(**context):
     sends email notification to Synapse users in Airflow param 'user_list' that report has been uploaded
     """
     user_list = context["params"]["user_list"].split(",")
-
-    syn = create_synapse_session()
-
-    id_list = [syn.getUserProfile(user).get("ownerId") for user in user_list]
-
-    syn.sendMessage(
+    hook = SynapseHook("SYNAPSE_CHALLENGE_CONN")
+    id_list = [hook.client.getUserProfile(user).get("ownerId") for user in user_list]
+    hook.client.sendMessage(
         id_list,
         "Nextflow Tower Metrics JSON Dump Complete",
         "A new Nextflow Tower Metrics report has been uploaded to https://www.synapse.org/#!Synapse:syn48186663",

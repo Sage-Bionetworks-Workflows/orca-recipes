@@ -64,4 +64,4 @@ def tower_metrics_dag():
     export >> send
 
 
-tower_metrics_dag = tower_metrics_dag()
+tower_metrics_dag()
