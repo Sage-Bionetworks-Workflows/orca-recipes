@@ -3,84 +3,60 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from airflow.decorators import dag, task
-from airflow.operators.python import get_current_context
-from airflow.providers.amazon.aws.hooks.s3 import S3Hook
+from airflow.models.param import Param
 
-from dag_content.nextflow_tower_functions import create_and_open_tower_workspace
-from dag_content.utils import create_synapse_session
+from orca.services.nextflowtower import NextflowTowerHook
+from orca.services.nextflowtower.models import LaunchInfo
 
 
-def upload_file_s3(file_path: Path, bucket_name: str) -> str:
-    """Uploads file from file_path to s3 bucket_name
-    Args:
-        file_path (str): Path to file to be uploaded
-        bucket_name (str): Location in S3 for file to be uploaded
-    
-    Returns:
-        str: uri pointing to new uploaded file location in s3
-    """
-    s3_hook = S3Hook(aws_conn_id="TOWER_DB_CONNECTION", region_name="us-east-1")
-    s3_hook.load_file(filename=file_path, key=file_path.name, bucket_name=bucket_name, replace=True)
-    return f"s3://{bucket_name}/{file_path.name}"
+dag_params = {
+    "tower_conn_id": Param("HTAN_PROJECT_TOWER_CONN", type="string"),
+    "tower_run_name": Param("airflow_test_dcqc", type="string"),
+    "tower_compute_env_type": Param("spot", type="string"),
+}
 
-@dag(
-    schedule_interval=None,
-    start_date=datetime(2022, 11, 11),
-    catchup=False,
-    default_args={
+dag_config = {
+    "schedule_interval": None,
+    "start_date": datetime(2023, 6, 1),
+    "catchup": False,
+    "default_args": {
         "retries": 2,
     },
-    tags=["nextflow_tower_metrics"],
-)
+    "tags": ["nextflow_tower_metrics"],
+    "params": dag_params,
+}
+
+@dag(**dag_config)
 def htan_nf_dcqc_dag():
     @task()
-    def stage_input_synapse_to_s3() -> str:
+    def launch_nf_dcqc_on_tower(**context):
         """
-        Gets synapse file (input csv) from synapse and saves it in temp_dir. Then stages file in S3
-        Passes along path to S3 location of file and cleans up temp_dir.
-
-        Returns:
-            s3_uri (str): Path to S3 bucket location of file
+        Launches nf-dcqc tower workflow
         """
-        syn_id = get_current_context()["params"].get("syn_id", "syn50919899")
-        syn = create_synapse_session()
-        temp_dir = TemporaryDirectory()
-        syn_file = syn.get(syn_id, downloadLocation=temp_dir.name)
-        file_path = Path(syn_file.path)
-        s3_uri = upload_file_s3(file_path=file_path, bucket_name="orca-dev-project-tower-bucket")
-        temp_dir.cleanup()
-        return s3_uri
-
-    @task()
-    def launch_tower_workflow(workspace_id: str, s3_uri: str):
-        """
-        Launches tower workflow
-
-        Args:
-            workspace_id (str): Workspace ID for tower run
-            s3_uri (str): Path to S3 location of input file
-        """
-        tower_utils = create_and_open_tower_workspace(
-            tower_secret_key="TOWER_ACCESS_TOKEN", platform="sage-dev", workspace_id=workspace_id
-        )
-        tower_utils.launch_workflow(
-            compute_env_id="635ROvIWp5w17QVdRy0jkk",
+        hook = NextflowTowerHook(context["params"]["tower_conn_id"])
+        info = LaunchInfo(
+            run_name=context["params"]["tower_run_name"],
             pipeline="Sage-Bionetworks-Workflows/nf-dcqc",
-            run_name="airflow_nf_dcqc_run",
-            profiles=["docker"],
-            workspace_secrets=["SYNAPSE_AUTH_TOKEN"],
             revision="main",
-            params_yaml=f"""
-                input: {s3_uri}
-                outdir: s3://orca-dev-project-tower-scratch/07_days/nf-dcqc-airflow-test/
-                """,
+            profiles=["test"],
+            params={
+                "outdir": "s3://htan-project-tower-bucket/dag_test/outputs",
+            },
+            workspace_secrets=["SYNAPSE_AUTH_TOKEN"],
         )
+        run_id = hook.ops.launch_workflow(info, context["params"]["tower_compute_env_type"])
+        return run_id
 
-    s3_uri = stage_input_synapse_to_s3()
-    launch_tower_workflow(
-        workspace_id="4034472240746",
-        s3_uri=s3_uri,
-    )
+    @task.sensor(poke_interval=300, timeout=604800, mode="reschedule")
+    def monitor_nf_dcqc_workflow(run_id: str, **context):
+        hook = NextflowTowerHook(context["params"]["tower_conn_id"])
+        workflow = hook.ops.get_workflow(run_id)
+        print(f"Current workflow state: {workflow.status.state.value}")
+        return workflow.status.is_done
+
+    run_id = launch_nf_dcqc_on_tower()
+    monitor_nf_dcqc_workflow(run_id=run_id)
 
 
-htan_nf_dcqc_dag = htan_nf_dcqc_dag()
+
+htan_nf_dcqc_dag()
