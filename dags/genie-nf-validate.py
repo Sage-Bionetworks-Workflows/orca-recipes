@@ -43,7 +43,7 @@ def genie_nf_validate_dag():
         """
         hook = NextflowTowerHook(context["params"]["tower_conn_id"])
         info = LaunchInfo(
-            run_name=context["params"]["tower_run_name"],
+            run_name=f"{context["params"]["tower_run_name"]}_{datetime.date.today().strftime("%Y-%m-%d")}",
             pipeline=context["params"]["pipeline"],
             revision=context["params"]["revision"],
             work_dir=context["params"]["work_dir"],
