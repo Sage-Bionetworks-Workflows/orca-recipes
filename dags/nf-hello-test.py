@@ -1,38 +1,51 @@
 from datetime import datetime
 
 from airflow.decorators import dag, task
+from airflow.models import Param
 
-from dag_content.nextflow_tower_functions import create_and_open_tower_workspace
+from orca.services.nextflowtower import NextflowTowerHook
+from orca.services.nextflowtower.models import LaunchInfo
 
 
-@dag(
-    schedule_interval=None,
-    start_date=datetime(2022, 11, 11),
-    catchup=False,
-    default_args={
+dag_params = {
+    "tower_conn_id": Param("EXAMPLE_DEV_PROJECT_TOWER_CONN", type="string"),
+    "tower_run_name": Param("nf-hello-test", type="string"),
+    "tower_compute_env_type": Param("spot", type="string"),
+}
+
+dag_config = {
+    "schedule_interval": None,
+    "start_date": datetime(2023, 6, 1),
+    "catchup": False,
+    "default_args": {
         "retries": 2,
     },
-    tags=["nextflow_tower"],
-)
+    "tags": ["nextflow_tower"],
+    "params": dag_params,
+}
+
+@dag(**dag_config)
 def nf_hello_test_dag():
     @task()
-    def launch_tower_workflow(workspace_id: str):
-        """
-        Launches tower workflow
-
-        Args:
-            workspace_id (str): Workspace ID for tower run
-        """
-        tower_utils = create_and_open_tower_workspace(
-            tower_secret_key="TOWER_ACCESS_TOKEN", platform="sage-dev", workspace_id=workspace_id
-        )
-        tower_utils.launch_workflow(
-            compute_env_id="635ROvIWp5w17QVdRy0jkk",
-            pipeline="nextflow-io/hello",
+    def launch_nf_hello_on_tower(**context):
+        hook = NextflowTowerHook(context["params"]["tower_conn_id"])
+        info = LaunchInfo(
             run_name="nf-hello-test",
+            pipeline="nextflow-io/hello",
+            revision="master",
         )
+        run_id = hook.ops.launch_workflow(info, context["params"]["tower_compute_env_type"])
+        return run_id
 
-    launch_tower_workflow("4034472240746")
+    @task.sensor(poke_interval=300, timeout=604800, mode="reschedule")
+    def monitor_nf_hello_workflow(run_id: str, **context):
+        hook = NextflowTowerHook(context["params"]["tower_conn_id"])
+        workflow = hook.ops.get_workflow(run_id)
+        print(f"Current workflow state: {workflow.status.state.value}")
+        return workflow.status.is_done
+
+    run_id = launch_nf_hello_on_tower()
+    monitor_nf_hello_workflow(run_id=run_id)
 
 
-nf_hello_test_dag = nf_hello_test_dag()
+nf_hello_test_dag()
