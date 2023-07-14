@@ -16,7 +16,7 @@ dag_params = {
     "only_validate": Param("true", type="string"),
     "production": Param("true", type="string"),
     "release": Param("13.3-consortium", type="string"),
-    "work_dir": Param("s3://genie-bpc-project-tower-scratch/1days", type="string")
+    "work_dir": Param("s3://genie-bpc-project-tower-scratch/1days", type="string"),
 }
 
 dag_config = {
@@ -43,7 +43,7 @@ def genie_nf_validate_dag():
         """
         hook = NextflowTowerHook(context["params"]["tower_conn_id"])
         info = LaunchInfo(
-            run_name=f"{context["params"]["tower_run_name"]}_{datetime.date.today().strftime("%Y-%m-%d")}",
+            run_name=context["params"]["tower_run_name"],
             pipeline=context["params"]["pipeline"],
             revision=context["params"]["revision"],
             work_dir=context["params"]["work_dir"],
@@ -55,7 +55,9 @@ def genie_nf_validate_dag():
                 release: {context["params"]["release"]}
                 """,
         )
-        run_id = hook.ops.launch_workflow(info, context["params"]["tower_compute_env_type"])
+        run_id = hook.ops.launch_workflow(
+            info, context["params"]["tower_compute_env_type"], ignore_previous_runs=True
+        )
         return run_id
 
     @task.sensor(poke_interval=300, timeout=604800, mode="reschedule")
@@ -67,5 +69,6 @@ def genie_nf_validate_dag():
 
     run_id = launch_nf_genie_on_tower()
     monitor_nf_genie_workflow(run_id=run_id)
+
 
 genie_nf_validate_dag = genie_nf_validate_dag()
