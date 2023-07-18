@@ -13,8 +13,7 @@ dag_params = {
     "pipeline": Param("Sage-Bionetworks-Workflows/nf-genie", type="string"),
     "revision": Param("main", type="string"),
     "profile": Param("aws_prod", type="string"),
-    "only_validate": Param("true", type="string"),
-    "production": Param("true", type="string"),
+    "process_type": Param("only_validate", type="string"),
     "release": Param("13.3-consortium", type="string"),
     "work_dir": Param("s3://genie-bpc-project-tower-scratch/1days", type="string"),
 }
@@ -49,11 +48,10 @@ def genie_nf_validate_dag():
             work_dir=context["params"]["work_dir"],
             profiles=[context["params"]["profile"]],
             workspace_secrets=["SYNAPSE_AUTH_TOKEN"],
-            params_yaml=f"""
-                only_validate: {context["params"]["only_validate"]}
-                production: {context["params"]["production"]}
-                release: {context["params"]["release"]}
-                """,
+            params={
+                "process_type": context["params"]["process_type"],
+                "release": context["params"]["release"]
+            },
         )
         run_id = hook.ops.launch_workflow(
             info, context["params"]["tower_compute_env_type"], ignore_previous_runs=True
