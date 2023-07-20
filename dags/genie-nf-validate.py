@@ -8,7 +8,7 @@ from orca.services.nextflowtower.models import LaunchInfo
 
 dag_params = {
     "tower_conn_id": Param("GENIE_BPC_PROJECT_TOWER_CONN", type="string"),
-    "tower_compute_env_type": Param("spot", type="string"),
+    "tower_compute_env_type": Param("ondemand", type="string"),
     "tower_run_name": Param("airflow-genie-validate", type="string"),
     "pipeline": Param("Sage-Bionetworks-Workflows/nf-genie", type="string"),
     "revision": Param("main", type="string"),
