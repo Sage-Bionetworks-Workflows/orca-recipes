@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
 """
-LENS workflow metaflow DAG ***WIP***
+LENS workflow metaflow DAG ***This recipe is a WIP***
 
 based on https://github.com/Sage-Bionetworks-Workflows/py-orca/blob/main/demo.py
 """
