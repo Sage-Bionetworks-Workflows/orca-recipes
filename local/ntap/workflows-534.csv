@@ -1,0 +1,2 @@
+synapse_id,biospecimen_id,sample_parent_id,merged_parent_id,study_id,variant_class,variant_caller,is_releasable
+syn51496932,JHU002-043,syn51496732,syn51496652,syn11638893,GermlineVariants,DeepVariant,FALSE

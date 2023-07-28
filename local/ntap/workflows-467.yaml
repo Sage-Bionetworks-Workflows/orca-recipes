@@ -1,0 +1,20 @@
+- id: syn29783617_mapping
+  starting_step: mapping
+  samplesheet: s3://ntap-add5-project-tower-bucket/samplesheets/IBCDPE-528/synstage/sarek-v2.mapping.syn29429576.fastqs.tsv
+  parent_id: syn29429576
+  mapping_parent_id: syn51496652
+
+- id: syn29783617_variant_calling
+  starting_step: variant_calling
+  samplesheet: s3://ntap-add5-project-tower-bucket/samplesheets/IBCDPE-528/sarek-v3.variant_calling.syn29429576.csv
+  parent_id: syn29429576
+
+- id: syn29784079_variant_calling
+  starting_step: variant_calling
+  samplesheet: s3://ntap-add5-project-tower-bucket/samplesheets/IBCDPE-528/sarek-v3.variant_calling.syn29429578.csv
+  parent_id: syn29429578
+
+- id: syn29781479_variant_calling
+  starting_step: variant_calling
+  samplesheet: s3://ntap-add5-project-tower-bucket/samplesheets/IBCDPE-528/sarek-v3.variant_calling.syn29429580.csv
+  parent_id: syn29429580
