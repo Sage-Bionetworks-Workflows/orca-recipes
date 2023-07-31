@@ -1,8 +1,10 @@
-# ORCA Airflow Recipes
+# ORCA Recipes
 
-This repository contains Airflow recipes (DAGs) for data processing and engineering at Sage Bionetworks.
+This repository contains recipes (DAGs) for data processing and engineering at Sage Bionetworks.
 
-## Quick Start
+## Airflow
+
+### Quick Start
 
 This assumes that you have Docker installed with [Docker Compose V2](https://docs.docker.com/compose/compose-v2/). It's recommended that you leverage the included Dev Container definition (_i.e._ `devcontainer.json`) to standardize your development environment. You can use the [Dev Containers](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-containers) VS Code extension or GitHub Codespaces.
 
@@ -42,6 +44,19 @@ If you want to run commands in the "Airflow context" (_i.e._ within the custom c
 ./airflow.sh info
 ```
 
-## Logging into Airflow
+### Logging in
 
 When deploying airflow locally on dev containers, the username and password will be "airflow".
+
+## Local DAGs
+
+### Usage
+
+This repository also contains recipes for specific projects that either don't need to be deployed to Airflow or are not ready to be deployed to Airflow. These recipes can be run locally from the `local` directory. Each sub-directory contains recipes specific to a project and those project folders have their own documentation for running the recipes.
+
+### Dependencies
+
+Dependencies for `local` recipes are defined in the `Pipfile` at the root of this repository. To get started, you can install all of the dependencies that you might need by running:
+```console
+pipenv install --dev
+```
