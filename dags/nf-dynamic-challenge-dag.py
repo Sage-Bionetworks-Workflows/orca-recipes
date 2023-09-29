@@ -8,9 +8,12 @@ from orca.services.nextflowtower.models import LaunchInfo
 
 
 dag_params = {
-    "tower_conn_id": Param("EXAMPLE_DEV_PROJECT_TOWER_CONN", type="string"),
+    "tower_conn_id": Param("DYNAMIC_CHALLENGE_PROJECT_TOWER_CONN", type="string"),
     "tower_run_name": Param("nf-dynamic-challenge-test", type="string"),
     "tower_compute_env_type": Param("spot", type="string"),
+    "challenge_view_id": Param("syn52576179", type="string"),
+    "tower_cpus": Param("4", type="string"),
+    "tower_memory": Param("16.GB", type="string"),
 }
 
 dag_config = {
@@ -33,7 +36,11 @@ def nf_dynamic_challenge_dag():
         info = LaunchInfo(
             run_name=context["params"]["tower_run_name"],
             pipeline="Sage-Bionetworks-Workflows/nf-dynamic-challenge",
-            revision=" bwmac/orca-273/update_workflow_inputs",
+            revision="main",
+            params={
+                "view_id": context["params"]["challenge_view_id"],
+            },
+            workspace_secrets=["SYNAPSE_AUTH_TOKEN"],
         )
         run_id = hook.ops.launch_workflow(
             info, context["params"]["tower_compute_env_type"]
