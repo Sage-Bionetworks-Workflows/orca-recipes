@@ -9,9 +9,9 @@ from orca.services.nextflowtower.models import LaunchInfo
 
 dag_params = {
     "tower_conn_id": Param("DYNAMIC_CHALLENGE_PROJECT_TOWER_CONN", type="string"),
-    "tower_run_name": Param("nf-dynamic-challenge-test", type="string"),
+    "tower_run_name": Param("dynamic-challenge-evaluation", type="string"),
     "tower_compute_env_type": Param("spot", type="string"),
-    "challenge_view_id": Param("syn52576179", type="string"),
+    "challenge_view_id": Param("syn52658661", type="string"),
     "tower_cpus": Param("4", type="string"),
     "tower_memory": Param("16.GB", type="string"),
 }
@@ -35,12 +35,13 @@ def nf_dynamic_challenge_dag():
         hook = NextflowTowerHook(context["params"]["tower_conn_id"])
         info = LaunchInfo(
             run_name=context["params"]["tower_run_name"],
-            pipeline="Sage-Bionetworks-Workflows/nf-dynamic-challenge",
+            pipeline="Sage-Bionetworks-Workflows/nf-synapse-challenge",
             revision="main",
             params={
                 "view_id": context["params"]["challenge_view_id"],
             },
             workspace_secrets=["SYNAPSE_AUTH_TOKEN"],
+            entry_name="DATA_TO_MODEL_CHALLENGE",
         )
         run_id = hook.ops.launch_workflow(
             info, context["params"]["tower_compute_env_type"]
