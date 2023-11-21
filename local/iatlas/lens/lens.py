@@ -27,7 +27,7 @@ class LENSDataset:
 
     Attributes:
         id: Unique dataset identifier.
-        samplesheet: Synapse ID for nf-core/rnaseq CSV samplesheet.
+        samplesheet: Synapse ID for LENS CSV samplesheet.
         output_folder: Synapse ID for output folder (where workflow
         output files will be indexed).
     """
@@ -46,13 +46,15 @@ class LENSDataset:
         return LaunchInfo(
             run_name=run_name,
             pipeline="Sage-Bionetworks-Workflows/nf-synstage",
-            revision="main",
+            revision="disable_wave",
             profiles=["sage"],
             params={
                 "input": samplesheet_uri,
                 "outdir": "s3://iatlas-project-tower-scratch/work",
             },
+            pre_run_script="NXF_VER=22.10.4",
             workspace_secrets=["SYNAPSE_AUTH_TOKEN"],
+            nextflow_config="wave.enabled=false",
         )
 
     def lens_info(self, samplesheet_uri: str, s3_prefix: str) -> LaunchInfo:
@@ -75,13 +77,15 @@ class LENSDataset:
         return LaunchInfo(
             run_name=self.get_run_name("synindex"),
             pipeline="Sage-Bionetworks-Workflows/nf-synindex",
-            revision="main",
+            revision="disable_wave",
             profiles=["sage"],
             params={
                 "s3_prefix": rnaseq_outdir_uri,
                 "parent_id": self.output_folder,
             },
+            pre_run_script="NXF_VER=22.10.4",
             workspace_secrets=["SYNAPSE_AUTH_TOKEN"],
+            nextflow_config="wave.enabled=false",
         )
 
 
