@@ -17,7 +17,8 @@ from metaflow import FlowSpec, Parameter, step
 from orca.services.nextflowtower import LaunchInfo, NextflowTowerOps
 from orca.services.synapse import SynapseOps
 
-LENS_TOWER_BUCKET = "iatlas-project-tower-bucket/LENS"
+
+LENS_TOWER_BUCKET = "s3://iatlas-project-tower-bucket/LENS"
 
 
 @dataclass
@@ -64,12 +65,7 @@ class LENSDataset:
             profiles=["sage"],
             params={
                 "input": samplesheet_uri,
-                "fq_dir": f"{s3_prefix}/PRINCE_replaced_fqs",
-                "global_fq_dir": f"{s3_prefix}/PRINCE_replaced_fqs",
-                "shared_dir": f"{s3_prefix}/shared",
-                "metadata_dir": f"{s3_prefix}/metadata",
-                "ref_dir": f"{s3_prefix}/run_references",
-                "output_dir": f"{s3_prefix}/PRINCE_outputs",
+                "lens_dir": s3_prefix,
             },
             workspace_secrets=["SYNAPSE_AUTH_TOKEN"],
         )
