@@ -54,7 +54,7 @@ class LENSDataset:
             workspace_secrets=["SYNAPSE_AUTH_TOKEN"],
         )
 
-    def lens_info(self, samplesheet_uri: str) -> LaunchInfo:
+    def lens_info(self, samplesheet_uri: str, s3_prefix: str) -> LaunchInfo:
         """Generate LaunchInfo for LENS."""
         run_name = self.get_run_name("LENS")
         return LaunchInfo(
@@ -64,12 +64,12 @@ class LENSDataset:
             profiles=["sage"],
             params={
                 "input": samplesheet_uri,
-                "fq_dir": f"{LENS_TOWER_BUCKET}/PRINCE_replaced_fqs",
-                "global_fq_dir": f"{LENS_TOWER_BUCKET}/PRINCE_replaced_fqs",
-                "shared_dir": f"{LENS_TOWER_BUCKET}/shared",
-                "metadata_dir": f"{LENS_TOWER_BUCKET}/metadata",
-                "ref_dir": f"{LENS_TOWER_BUCKET}/run_references",
-                "output_dir": f"{LENS_TOWER_BUCKET}/PRINCE_outputs",
+                "fq_dir": f"{s3_prefix}/PRINCE_replaced_fqs",
+                "global_fq_dir": f"{s3_prefix}/PRINCE_replaced_fqs",
+                "shared_dir": f"{s3_prefix}/shared",
+                "metadata_dir": f"{s3_prefix}/metadata",
+                "ref_dir": f"{s3_prefix}/run_references",
+                "output_dir": f"{s3_prefix}/PRINCE_outputs",
             },
             workspace_secrets=["SYNAPSE_AUTH_TOKEN"],
         )
@@ -96,7 +96,6 @@ class TowerLENSFlow(FlowSpec):
     synapse = SynapseOps()
     s3 = s3fs.S3FileSystem()
 
-    # Parameters
     dataset_id = Parameter(
         "dataset_id",
         type=str,
@@ -107,6 +106,7 @@ class TowerLENSFlow(FlowSpec):
         "s3_prefix",
         type=str,
         help="S3 prefix for storing output files from different runs",
+        default=LENS_TOWER_BUCKET,
     )
 
     def monitor_workflow(self, workflow_id):
@@ -171,7 +171,9 @@ class TowerLENSFlow(FlowSpec):
     def launch_lens(self):
         """Launch LENS workflow."""
         staged_uri = self.get_staged_samplesheet(self.samplesheet_uri)
-        launch_info = self.dataset.rnaseq_info(staged_uri, self.rnaseq_outdir)
+        launch_info = self.dataset.lens_info(
+            staged_uri, self.lens_outdir, self.s3_prefix
+        )
         self.LENS_id = self.tower.launch_workflow(launch_info, "spot")
         self.next(self.monitor_lens)
 
