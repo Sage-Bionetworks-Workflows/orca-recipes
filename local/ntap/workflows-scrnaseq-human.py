@@ -8,7 +8,6 @@ import os
 import re
 import asyncio
 import boto3
-from synapseclient import Synapse
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -227,9 +226,6 @@ def prepare_scrnaseq_launch_info(dataset: Dataset) -> LaunchInfo:
 
 
 async def run_workflows(ops: NextflowTowerOps, dataset: Dataset):
-    syn = Synapse()
-    syn.login()
-
     synstage_info = prepare_synstage_info(dataset)
     synstage_run_id = ops.launch_workflow(synstage_info, "spot")
     status = await ops.monitor_workflow(run_id=synstage_run_id, wait_time=60 * 2)
