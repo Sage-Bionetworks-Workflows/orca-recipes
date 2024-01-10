@@ -26,15 +26,6 @@ dag_params = {
     )
 }
 
-# portal_dict = {
-#     "AD": {"synapse_id": "syn11346063", "id_col": "ID"},
-#     "PSYCHENCODE": {"synapse_id": "syn20821313.16", "id_col": "ID"},
-#     "NF": {"synapse_id": "syn16858331", "id_col": "ID"},
-#     "ELITE": {"synapse_id": "syn51228429", "id_col": "ID"},
-#     "HTAN": {"synapse_id": "syn52748752", "id_col": "ENTITYID"},
-#     "GENIE": {"synapse_id": "syn52794526", "id_col": "ID"},
-# }
-
 
 def prepare_merge_sql(portal_name: str, target_table: str, portal_df: pd.DataFrame, id_col: str) -> str:
     update_set = [f'"{portal_name}"."{col}" = "{target_table}"."{col}"' for col in portal_df.columns]
