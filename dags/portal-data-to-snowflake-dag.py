@@ -14,21 +14,38 @@ dag_params = {
     ),
     "synapse_conn_id": Param("SYNAPSE_ORCA_SERVICE_ACCOUNT_CONN", type="string"),
     "portal_dict": Param(
-    {
-        "AD": {"synapse_id": "syn11346063", "id_col": "ID"},
-        "PSYCHENCODE": {"synapse_id": "syn20821313.16", "id_col": "ID"},
-        "NF": {"synapse_id": "syn16858331", "id_col": "ID"},
-        "ELITE": {"synapse_id": "syn51228429", "id_col": "ID"},
-        "HTAN": {"synapse_id": "syn52748752", "id_col": "ENTITYID"},
-        "GENIE": {"synapse_id": "syn52794526", "id_col": "ID"},
-    },
-    type="object",
-    )
+        {
+            "AD": {"synapse_id": "syn11346063", "id_col": "ID"},
+            "PSYCHENCODE": {"synapse_id": "syn20821313.16", "id_col": "ID"},
+            "NF": {"synapse_id": "syn16858331", "id_col": "ID"},
+            "ELITE": {"synapse_id": "syn51228429", "id_col": "ID"},
+            "HTAN": {"synapse_id": "syn52748752", "id_col": "ENTITYID"},
+            "GENIE": {"synapse_id": "syn52794526", "id_col": "ID"},
+        },
+        type="object",
+    ),
 }
 
 
-def prepare_merge_sql(portal_name: str, target_table: str, portal_df: pd.DataFrame, id_col: str) -> str:
-    update_set = [f'"{portal_name}"."{col}" = "{target_table}"."{col}"' for col in portal_df.columns]
+def prepare_merge_sql(
+    portal_name: str, target_table: str, portal_df: pd.DataFrame, id_col: str
+) -> str:
+    """
+    Generate a SQL merge statement for updating and inserting data into a database table.
+
+    Parameters:
+        portal_name (str): The name of the portal table.
+        target_table (str): The name of the temporary table.
+        portal_df (pd.DataFrame): The DataFrame containing the portal data to be merged.
+        id_col (str): The name of the column used for matching records in the merge.
+
+    Returns:
+        merge_sql (str): The SQL merge statement.
+    """
+    update_set = [
+        f'"{portal_name}"."{col}" = "{target_table}"."{col}"'
+        for col in portal_df.columns
+    ]
     update_set_str = ",".join(update_set)
     col_str = ",".join(f'"{col}"' for col in portal_df.columns)
     to_insert_str = ",".join([f'"{target_table}"."{col}"' for col in portal_df.columns])
@@ -43,9 +60,10 @@ def prepare_merge_sql(portal_name: str, target_table: str, portal_df: pd.DataFra
     """
     return merge_sql
 
+
 dag_config = {
     "schedule_interval": "0 0 * * 1",
-    "start_date": datetime(2023, 2, 21),
+    "start_date": datetime(2024, 1, 10),
     "catchup": False,
     "default_args": {
         "retries": 1,
@@ -96,10 +114,15 @@ def portal_data_to_snowflake():
                 auto_create_table=True,
                 table_type="transient",
                 overwrite=True,
-                quote_identifiers=False
+                quote_identifiers=False,
             )
             print("Creating merge sql")
-            merge_sql = prepare_merge_sql(portal_name=portal_name, portal_df=info["data"], target_table=target_table, id_col=info["id_col"])
+            merge_sql = prepare_merge_sql(
+                portal_name=portal_name,
+                portal_df=info["data"],
+                target_table=target_table,
+                id_col=info["id_col"],
+            )
             # TODO account for schema changes
             # Upsert into non-temporary tables
             print(merge_sql)
@@ -108,10 +131,10 @@ def portal_data_to_snowflake():
             print("Dropping temporary table")
             snow_hook.run(f"DROP TABLE {target_table}")
 
-
     portal_data = get_portal_data_from_synapse()
     upsert = upsert_portal_data_to_snowflake(portal_data=portal_data)
 
     portal_data >> upsert
+
 
 portal_data_to_snowflake()
