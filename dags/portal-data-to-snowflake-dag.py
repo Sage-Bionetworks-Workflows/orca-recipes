@@ -2,29 +2,38 @@ from datetime import datetime
 
 import pandas as pd
 import synapseclient
-from orca.services.synapse import SynapseHook
-from snowflake.connector.pandas_tools import pd_writer, write_pandas
-
 from airflow.decorators import dag, task
 from airflow.models.param import Param
 from airflow.providers.snowflake.hooks.snowflake import SnowflakeHook
-
+from orca.services.synapse import SynapseHook
+from snowflake.connector.pandas_tools import write_pandas
 
 dag_params = {
     "snowflake_conn_id": Param(
         "SNOWFLAKE_DATA_ENGINEER_PORTAL_RAW_CONN", type="string"
     ),
     "synapse_conn_id": Param("SYNAPSE_ORCA_SERVICE_ACCOUNT_CONN", type="string"),
+    "portal_dict": Param(
+    {
+        "AD": {"synapse_id": "syn11346063", "id_col": "ID"},
+        "PSYCHENCODE": {"synapse_id": "syn20821313.16", "id_col": "ID"},
+        "NF": {"synapse_id": "syn16858331", "id_col": "ID"},
+        "ELITE": {"synapse_id": "syn51228429", "id_col": "ID"},
+        "HTAN": {"synapse_id": "syn52748752", "id_col": "ENTITYID"},
+        "GENIE": {"synapse_id": "syn52794526", "id_col": "ID"},
+    },
+    type="object",
+    )
 }
 
-portal_dict = {
-    "AD": {"synapse_id": "syn11346063", "id_col": "ID"},
-    "PSYCHENCODE": {"synapse_id": "syn20821313.16", "id_col": "ID"},
-    "NF": {"synapse_id": "syn16858331", "id_col": "ID"},
-    "ELITE": {"synapse_id": "syn51228429", "id_col": "ID"},
-    "HTAN": {"synapse_id": "syn52748752", "id_col": "ENTITYID"},
-    "GENIE": {"synapse_id": "syn52794526", "id_col": "ID"},
-}
+# portal_dict = {
+#     "AD": {"synapse_id": "syn11346063", "id_col": "ID"},
+#     "PSYCHENCODE": {"synapse_id": "syn20821313.16", "id_col": "ID"},
+#     "NF": {"synapse_id": "syn16858331", "id_col": "ID"},
+#     "ELITE": {"synapse_id": "syn51228429", "id_col": "ID"},
+#     "HTAN": {"synapse_id": "syn52748752", "id_col": "ENTITYID"},
+#     "GENIE": {"synapse_id": "syn52794526", "id_col": "ID"},
+# }
 
 
 def prepare_merge_sql(portal_name: str, target_table: str, portal_df: pd.DataFrame, id_col: str) -> str:
@@ -60,30 +69,25 @@ def portal_data_to_snowflake():
     @task
     def get_portal_data_from_synapse(**context):
         syn_hook = SynapseHook(context["params"]["synapse_conn_id"])
+        portal_dict = context["params"]["portal_dict"]
         for portal_name, info in portal_dict.items():
             synapse_id = info["synapse_id"]
-            # HACK: to deal with the version number
-            if "." in synapse_id:
-                ent = syn_hook.client.get(synapse_id.split(".")[0])
-            else:
-                ent = syn_hook.client.get(synapse_id)
+            # Allow for version numbers
+            ent = syn_hook.client.get(synapse_id.split(".")[0])
             if isinstance(ent, synapseclient.EntityViewSchema):
                 portal = syn_hook.client.tableQuery(f"select * from {synapse_id}")
                 portal_df = portal.asDataFrame()
                 portal_df.reset_index(inplace=True, drop="index")
-            else:
-                # for HTAN
+            elif isinstance(ent, synapseclient.File):
                 portal_df = pd.read_csv(ent.path)
+            else:
+                raise TypeError(f"Unsupported entity type: {type(ent)}")
             # "grant" and "group" are reserved key words
             portal_df.rename(
                 columns={"grant": "grants", "group": "groups"}, inplace=True
             )
+            # Standardize column names for Snowflake tables
             portal_df.columns = [col.upper() for col in portal_df.columns]
-
-            print("----------------------------------")
-            print(f" {portal_name}: {portal_df.shape}")
-            print("----------------------------------")
-
             portal_dict[portal_name]["data"] = portal_df
         return portal_dict
 
