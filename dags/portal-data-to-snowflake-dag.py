@@ -24,41 +24,6 @@ portal_dict = {
         "GENIE": {"synapse_id": "syn52794526", "id_col": "ID"},
         }
 
-# Will use in future upsert implementation
-# def prepare_merge_sql(
-#     portal_name: str, temp_table: str, portal_df: pd.DataFrame, id_col: str
-# ) -> str:
-#     """
-#     Generate a SQL merge statement for updating and inserting data into a database table.
-
-#     Parameters:
-#         portal_name (str): The name of the portal table.
-#         temp_table (str): The name of the temporary table.
-#         portal_df (pd.DataFrame): The DataFrame containing the portal data to be merged.
-#         id_col (str): The name of the column used for matching records in the merge.
-
-#     Returns:
-#         merge_sql (str): The SQL merge statement.
-#     """
-#     update_set = [
-#         f'"{portal_name}"."{col}" = "{temp_table}"."{col}"'
-#         for col in portal_df.columns
-#     ]
-#     update_set_str = ",".join(update_set)
-#     col_str = ",".join(f'"{col}"' for col in portal_df.columns)
-#     to_insert_str = ",".join([f'"{temp_table}"."{col}"' for col in portal_df.columns])
-#     merge_sql = f"""
-#     MERGE INTO {portal_name} USING {temp_table}
-#         ON {portal_name}.{id_col} = {temp_table}.{id_col}
-#         when matched then
-#             update set {update_set_str}
-#         when not matched then
-#         insert
-#         ({col_str}) values({to_insert_str});
-#     """
-#     return merge_sql
-
-
 dag_config = {
     "schedule_interval": "0 0 * * 1",
     "start_date": datetime(2024, 1, 10),
@@ -141,3 +106,37 @@ def portal_data_to_snowflake():
 
 
 portal_data_to_snowflake()
+
+# Will use in future upsert implementation
+# def prepare_merge_sql(
+#     portal_name: str, temp_table: str, portal_df: pd.DataFrame, id_col: str
+# ) -> str:
+#     """
+#     Generate a SQL merge statement for updating and inserting data into a database table.
+
+#     Parameters:
+#         portal_name (str): The name of the portal table.
+#         temp_table (str): The name of the temporary table.
+#         portal_df (pd.DataFrame): The DataFrame containing the portal data to be merged.
+#         id_col (str): The name of the column used for matching records in the merge.
+
+#     Returns:
+#         merge_sql (str): The SQL merge statement.
+#     """
+#     update_set = [
+#         f'"{portal_name}"."{col}" = "{temp_table}"."{col}"'
+#         for col in portal_df.columns
+#     ]
+#     update_set_str = ",".join(update_set)
+#     col_str = ",".join(f'"{col}"' for col in portal_df.columns)
+#     to_insert_str = ",".join([f'"{temp_table}"."{col}"' for col in portal_df.columns])
+#     merge_sql = f"""
+#     MERGE INTO {portal_name} USING {temp_table}
+#         ON {portal_name}.{id_col} = {temp_table}.{id_col}
+#         when matched then
+#             update set {update_set_str}
+#         when not matched then
+#         insert
+#         ({col_str}) values({to_insert_str});
+#     """
+#     return merge_sql
