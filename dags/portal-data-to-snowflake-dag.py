@@ -13,19 +13,16 @@ dag_params = {
         "SNOWFLAKE_DATA_ENGINEER_PORTAL_RAW_CONN", type="string"
     ),
     "synapse_conn_id": Param("SYNAPSE_ORCA_SERVICE_ACCOUNT_CONN", type="string"),
-    "portal_dict": Param(
-        {
-            "AD": {"synapse_id": "syn11346063", "id_col": "ID"},
-            "PSYCHENCODE": {"synapse_id": "syn20821313.16", "id_col": "ID"},
-            "NF": {"synapse_id": "syn16858331", "id_col": "ID"},
-            "ELITE": {"synapse_id": "syn51228429", "id_col": "ID"},
-            "HTAN": {"synapse_id": "syn52748752", "id_col": "ENTITYID"},
-            "GENIE": {"synapse_id": "syn52794526", "id_col": "ID"},
-        },
-        type="object",
-    ),
 }
 
+portal_dict = {
+        "AD": {"synapse_id": "syn11346063", "id_col": "ID"},
+        "PSYCHENCODE": {"synapse_id": "syn20821313.16", "id_col": "ID"},
+        "NF": {"synapse_id": "syn16858331", "id_col": "ID"},
+        "ELITE": {"synapse_id": "syn51228429", "id_col": "ID"},
+        "HTAN": {"synapse_id": "syn52748752", "id_col": "ENTITYID"},
+        "GENIE": {"synapse_id": "syn52794526", "id_col": "ID"},
+        }
 
 def prepare_merge_sql(
     portal_name: str, target_table: str, portal_df: pd.DataFrame, id_col: str
@@ -78,7 +75,6 @@ def portal_data_to_snowflake():
     @task
     def get_portal_data_from_synapse(**context):
         syn_hook = SynapseHook(context["params"]["synapse_conn_id"])
-        portal_dict = context["params"]["portal_dict"]
         for portal_name, info in portal_dict.items():
             synapse_id = info["synapse_id"]
             # Allow for version numbers
