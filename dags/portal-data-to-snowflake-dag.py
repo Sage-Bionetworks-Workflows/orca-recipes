@@ -10,7 +10,7 @@ from snowflake.connector.pandas_tools import write_pandas
 
 dag_params = {
     "snowflake_conn_id": Param(
-        "SNOWFLAKE_DATA_ENGINEER_PORTAL_RAW_CONN", type="string"
+        "SNOWFLAKE_SYSADMIN_PORTAL_RAW_CONN", type="string"
     ),
     "synapse_conn_id": Param("SYNAPSE_ORCA_SERVICE_ACCOUNT_CONN", type="string"),
 }
