@@ -25,14 +25,14 @@ portal_dict = {
         }
 
 def prepare_merge_sql(
-    portal_name: str, target_table: str, portal_df: pd.DataFrame, id_col: str
+    portal_name: str, temp_table: str, portal_df: pd.DataFrame, id_col: str
 ) -> str:
     """
     Generate a SQL merge statement for updating and inserting data into a database table.
 
     Parameters:
         portal_name (str): The name of the portal table.
-        target_table (str): The name of the temporary table.
+        temp_table (str): The name of the temporary table.
         portal_df (pd.DataFrame): The DataFrame containing the portal data to be merged.
         id_col (str): The name of the column used for matching records in the merge.
 
@@ -40,15 +40,15 @@ def prepare_merge_sql(
         merge_sql (str): The SQL merge statement.
     """
     update_set = [
-        f'"{portal_name}"."{col}" = "{target_table}"."{col}"'
+        f'"{portal_name}"."{col}" = "{temp_table}"."{col}"'
         for col in portal_df.columns
     ]
     update_set_str = ",".join(update_set)
     col_str = ",".join(f'"{col}"' for col in portal_df.columns)
-    to_insert_str = ",".join([f'"{target_table}"."{col}"' for col in portal_df.columns])
+    to_insert_str = ",".join([f'"{temp_table}"."{col}"' for col in portal_df.columns])
     merge_sql = f"""
-    MERGE INTO {portal_name} USING {target_table}
-        ON {portal_name}.{id_col} = {target_table}.{id_col}
+    MERGE INTO {portal_name} USING {temp_table}
+        ON {portal_name}.{id_col} = {temp_table}.{id_col}
         when matched then
             update set {update_set_str}
         when not matched then
@@ -101,11 +101,11 @@ def portal_data_to_snowflake():
         snow_hook = SnowflakeHook(context["params"]["snowflake_conn_id"])
         for portal_name, info in portal_data.items():
             # Create temporary table so we can upsert
-            target_table = f"{portal_name}_TEMP"
+            temp_table = f"{portal_name}_TEMP"
             write_pandas(
                 snow_hook.get_conn(),
-                portal_data[portal_name]["data"],
-                target_table,
+                info["data"],
+                temp_table,
                 auto_create_table=True,
                 table_type="transient",
                 overwrite=True,
@@ -114,14 +114,14 @@ def portal_data_to_snowflake():
             merge_sql = prepare_merge_sql(
                 portal_name=portal_name,
                 portal_df=info["data"],
-                target_table=target_table,
+                temp_table=temp_table,
                 id_col=info["id_col"],
             )
             # TODO account for schema changes
             # Upsert into non-temporary tables
             print(merge_sql)
             snow_hook.run(merge_sql)
-            snow_hook.run(f"DROP TABLE {target_table}")
+            snow_hook.run(f"DROP TABLE {temp_table}")
 
     portal_data = get_portal_data_from_synapse()
     upsert = upsert_portal_data_to_snowflake(portal_data=portal_data)
