@@ -77,7 +77,7 @@ def portal_data_to_snowflake():
         syn_hook = SynapseHook(context["params"]["synapse_conn_id"])
         for portal_name, info in portal_dict.items():
             synapse_id = info["synapse_id"]
-            # Allow for version numbers
+            # Allow for Synapse IDs with version numbers
             ent = syn_hook.client.get(synapse_id.split(".")[0])
             if isinstance(ent, synapseclient.EntityViewSchema):
                 portal = syn_hook.client.tableQuery(f"select * from {synapse_id}")
@@ -102,7 +102,6 @@ def portal_data_to_snowflake():
         for portal_name, info in portal_data.items():
             # Create temporary table so we can upsert
             target_table = f"{portal_name}_TEMP"
-            print("Creating temporary table")
             write_pandas(
                 snow_hook.get_conn(),
                 portal_data[portal_name]["data"],
@@ -122,9 +121,7 @@ def portal_data_to_snowflake():
             # TODO account for schema changes
             # Upsert into non-temporary tables
             print(merge_sql)
-            print("Upserting")
             snow_hook.run(merge_sql)
-            print("Dropping temporary table")
             snow_hook.run(f"DROP TABLE {target_table}")
 
     portal_data = get_portal_data_from_synapse()
