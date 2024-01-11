@@ -111,7 +111,6 @@ def portal_data_to_snowflake():
                 overwrite=True,
                 quote_identifiers=False,
             )
-            print("Creating merge sql")
             merge_sql = prepare_merge_sql(
                 portal_name=portal_name,
                 portal_df=info["data"],
