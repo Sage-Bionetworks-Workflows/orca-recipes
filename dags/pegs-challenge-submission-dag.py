@@ -59,7 +59,7 @@ def pegs_challenge_submission_dag():
             pipeline="https://github.com/Sage-Bionetworks-Workflows/nf-synapse-challenge",
             revision="main",
             profiles=["sage"],
-            entry_name="NF_SYNSTAGE",
+            entry_name="MODEL_TO_DATA_CHALLENGE",
             workspace_secrets=["SYNAPSE_AUTH_TOKEN"],
             params={
                 "view_id": context["params"]["tower_view_id"],
