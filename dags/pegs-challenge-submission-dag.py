@@ -9,8 +9,8 @@ from orca.services.synapse import SynapseHook
 
 
 dag_params = {
-    "synapse_conn_id": Param("SYNAPSE_CHALLENGE_CONN", type="string"),
-    "synapse_evaluation_id": Param("9615511", type="string"),
+    "synapse_conn_id": Param("SYNAPSE_ORCA_SERVICE_ACCOUNT_CONN", type="string"),
+    "synapse_evaluation_id": Param("9615531", type="string"),
     "tower_conn_id": Param("PEGS_CHALLENGE_PROJECT_TOWER_CONN", type="string"),
     "tower_run_name": Param("pegs_model_submission_evaluation", type="string"),
     "tower_view_id": Param("syn53239158", type="string"),
@@ -58,7 +58,6 @@ def pegs_challenge_submission_dag():
             run_name=context["params"]["tower_run_name"],
             pipeline="https://github.com/Sage-Bionetworks-Workflows/nf-synapse-challenge",
             revision="main",
-            profiles=["sage"],
             entry_name="MODEL_TO_DATA_CHALLENGE",
             workspace_secrets=["SYNAPSE_AUTH_TOKEN"],
             params={
