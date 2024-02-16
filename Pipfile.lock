@@ -1,7 +1,7 @@
 {
     "_meta": {
         "hash": {
-            "sha256": "f8e6b1e5b5fae77ef20241c6f18b88f9b29d5502fa7928cd446b7bbbf1d1e91d"
+            "sha256": "8eb49b858820a6be70976aeec0f7eb329b9210ab1a42b275e9491261fe0f9e8c"
         },
         "pipfile-spec": 6,
         "requires": {
@@ -196,11 +196,11 @@
         },
         "apache-airflow-providers-slack": {
             "hashes": [
-                "sha256:2cacab53ea962f0e5db8304aff66afcc83ee3951c690c72b0e42fd65bb80bc90",
-                "sha256:5d0a41c4dc17cdded98195bfba14e71def2e54f7e5532775b10cca4851475b35"
+                "sha256:5b9c79531afc38e8e0dfd58ca0ebe8c025288446288f58198d112e94c1891f7c",
+                "sha256:89a192a111c7b8eab5041740ecaea97df3b946f8cb0efef222dfd5928b74b4fb"
             ],
             "index": "pypi",
-            "version": "==8.6.1"
+            "version": "==8.1.0"
         },
         "apache-airflow-providers-snowflake": {
             "hashes": [
@@ -845,11 +845,11 @@
         },
         "flask-session": {
             "hashes": [
-                "sha256:b1ed06cf4c5a211305579a132e81307d242cec6fe2714a276405730ffd22a034",
-                "sha256:dd77b6c5916021a540a8c188731c529596ad9ea382c07a24f9654355fa40c9ad"
+                "sha256:1619bcbc16f04f64e90f8e0b17145ba5c9700090bb1294e889956c1282d58631",
+                "sha256:190875e6aebf2953c6803d42379ef3b934bc209ef8ef006f97aecb08f5aaeb86"
             ],
-            "markers": "python_version >= '3.7'",
-            "version": "==0.6.0"
+            "index": "pypi",
+            "version": "==0.5.0"
         },
         "flask-sqlalchemy": {
             "hashes": [
