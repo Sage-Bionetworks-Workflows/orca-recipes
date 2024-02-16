@@ -4,9 +4,7 @@ import pandas as pd
 from airflow.decorators import dag, task
 from airflow.models.param import Param
 from airflow.providers.snowflake.hooks.snowflake import SnowflakeHook
-from airflow.providers.slack.hooks.slack_webhook import SlackWebhookHook
-
-
+from airflow.providers.slack.operators.slack_webhook import SlackWebhookHook
 
 dag_params = {
     "snowflake_conn_id": Param(
@@ -106,6 +104,7 @@ def top_charts():
         limit 5;
         """
         snow_hook.run(query)
+        return("foo")
     
     @task
     def message_to_slack(message, **context):
