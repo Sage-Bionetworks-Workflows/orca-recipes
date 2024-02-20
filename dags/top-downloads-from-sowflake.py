@@ -55,7 +55,7 @@ DEDUP_FILEHANDLE AS (
     ON
         filedownload.file_handle_id = file_latest.id
     WHERE
-        filedownload.record_date > DATEADD(HOUR, -24, CURRENT_DATE)
+        filedownload.record_date = DATEADD(HOUR, -24, CURRENT_DATE)
 ),
 
 DOWNLOAD_STAT AS (
