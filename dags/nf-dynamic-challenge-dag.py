@@ -14,6 +14,7 @@ dag_params = {
     "challenge_view_id": Param("syn52658661", type="string"),
     "tower_cpus": Param("4", type="string"),
     "tower_memory": Param("16.GB", type="string"),
+    "testing_data": Param("syn53627077", type="string"),
 }
 
 dag_config = {
