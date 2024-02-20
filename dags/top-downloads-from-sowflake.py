@@ -84,9 +84,12 @@ LIMIT 10;
 
 
 @dag(**dag_config)
-def snowflake_top_downloads_to_slack():
+def snowflake_top_downloads_to_slack() -> None:
+    """Execute a query on Snowflake and report the results to a slack channel."""
+
     @task
     def get_top_downloads_from_snowflake(**context) -> str:
+        """Execute the query on Snowflake and return the results as a string."""
         snow_hook = SnowflakeHook(context["params"]["snowflake_conn_id"])
         ctx = snow_hook.get_conn()
         cs = ctx.cursor()
@@ -104,6 +107,7 @@ def snowflake_top_downloads_to_slack():
 
     @task
     def post_top_downloads_to_slack(message: str) -> str:
+        """Post the top downloads to the slack channel."""
         client = WebClient(token=Variable.get("SLACK_DPE_TEAM_BOT_TOKEN"))
         result = client.chat_postMessage(channel="topcharts", text=message)
         return result
