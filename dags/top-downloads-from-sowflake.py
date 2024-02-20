@@ -96,7 +96,7 @@ def snowflake_top_downloads_to_slack() -> None:
         cs.execute(QUERY)
         top_downloaded_df = cs.fetch_pandas_all()
 
-        message = ":synapse: Top Downloaded Public Synapse Projects Yesterday!\n\n"
+        message = ":synapse: Top Downloaded Public Synapse Projects Yesterday (UTC)!\n\n"
         for index, row in top_downloaded_df.iterrows():
             name = row["NAME"]
             url = row["PROJECT"]
