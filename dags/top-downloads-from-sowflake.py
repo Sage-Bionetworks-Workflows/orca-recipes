@@ -1,5 +1,6 @@
 """This script is used to execute a query on Snowflake and report the results to a
-slack channel. See ORCA-301 for more context."""
+slack channel. This retrieved the top X publicly downloaded Synapse projects.
+See ORCA-301 for more context."""
 
 from datetime import datetime
 
@@ -85,7 +86,7 @@ LIMIT 10;
 @dag(**dag_config)
 def snowflake_top_downloads_to_slack():
     @task
-    def get_top_downloads_from_snowflake(**context):
+    def get_top_downloads_from_snowflake(**context) -> str:
         snow_hook = SnowflakeHook(context["params"]["snowflake_conn_id"])
         ctx = snow_hook.get_conn()
         cs = ctx.cursor()
@@ -102,7 +103,7 @@ def snowflake_top_downloads_to_slack():
         return message
 
     @task
-    def post_top_downloads_to_slack(message: str):
+    def post_top_downloads_to_slack(message: str) -> str:
         client = WebClient(token=Variable.get("SLACK_DPE_TEAM_BOT_TOKEN"))
         result = client.chat_postMessage(channel="topcharts", text=message)
         return result
