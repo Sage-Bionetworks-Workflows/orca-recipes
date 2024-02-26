@@ -30,6 +30,8 @@ dag_config = {
 
 SIZE_ROUNDING = 3
 BYTE_STRING = "GiB"
+# 30 is the power of 2 for GiB, 40 is the power of 2 for TiB
+POWER_OF_TWO = 30
 
 QUERY = f"""
 WITH PUBLIC_PROJECTS AS (
@@ -71,14 +73,14 @@ DOWNLOAD_STAT AS (
         count(record_date) AS DOWNLOADS_PER_PROJECT,
         count(DISTINCT user_id) AS NUMBER_OF_UNIQUE_USERS_DOWNLOADED,
         count(DISTINCT FD_FILE_HANDLE_ID) AS NUMBER_OF_UNIQUE_FILES_DOWNLOADED,
-        ROUND(sum(content_size) / power(2, 30), {SIZE_ROUNDING}) as data_download_size
+        ROUND(sum(content_size) / power(2, {POWER_OF_TWO}), {SIZE_ROUNDING}) as data_download_size
     FROM
         DEDUP_FILEHANDLE
     GROUP BY
         project_id, name
 )
 SELECT
-    'https://www.synapse.org/#!Synapse:syn' || cast(DOWNLOAD_STAT.project_id as varchar) as project,
+    'syn' || cast(DOWNLOAD_STAT.project_id as varchar) as project,
     DOWNLOAD_STAT.name,
     DOWNLOAD_STAT.DOWNLOADS_PER_PROJECT,
     DOWNLOAD_STAT.data_download_size,
@@ -97,7 +99,7 @@ class DownloadMetric:
 
     Attributes:
         name: The name of the project
-        project: The URL of the project
+        project: The ID of the project
         downloads_per_project: The number of downloads per project
         number_of_unique_users_downloaded: The number of unique users who downloaded
         data_download_size: The size of the data downloaded
@@ -150,7 +152,7 @@ def snowflake_top_downloads_to_slack() -> None:
                 )
             else:
                 size_string = f"< {0:.{SIZE_ROUNDING}f}5 {BYTE_STRING}"
-            message += f"{index+1}. <{row.project}|{row.name}> - {row.downloads_per_project} downloads, {row.number_of_unique_users_downloaded} unique users, {size_string} {BYTE_STRING} egressed\n\n"
+            message += f"{index+1}. <https://www.synapse.org/#!Synapse:{row.project}|{row.name}> - {row.downloads_per_project} downloads, {row.number_of_unique_users_downloaded} unique users, {size_string} {BYTE_STRING} egressed\n\n"
         message += "One download is a user downloading a file once\n"
         return message
 
@@ -163,10 +165,9 @@ def snowflake_top_downloads_to_slack() -> None:
 
     top_downloads = get_top_downloads_from_snowflake()
     slack_message = generate_top_downloads_message(metrics=top_downloads)
-    print(slack_message)
-    # post_to_slack = post_top_downloads_to_slack(message=slack_message)
+    post_to_slack = post_top_downloads_to_slack(message=slack_message)
 
-    # top_downloads >> slack_message >> post_to_slack
+    top_downloads >> slack_message >> post_to_slack
 
 
 snowflake_top_downloads_to_slack()
