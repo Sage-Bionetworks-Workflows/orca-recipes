@@ -3,18 +3,20 @@ slack channel. This retrieved the top X publicly downloaded Synapse projects.
 See ORCA-301 for more context."""
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime, timedelta
 from typing import List
 
+import synapseclient
 from airflow.decorators import dag, task
+from airflow.models import Variable
 from airflow.models.param import Param
 from airflow.providers.snowflake.hooks.snowflake import SnowflakeHook
-from airflow.models import Variable
+from orca.services.synapse import SynapseHook
 from slack_sdk import WebClient
-
 
 dag_params = {
     "snowflake_conn_id": Param("SNOWFLAKE_SYSADMIN_PORTAL_RAW_CONN", type="string"),
+    "synapse_conn_id": Param("SYNAPSE_ORCA_SERVICE_ACCOUNT_CONN", type="string"),
 }
 
 dag_config = {
@@ -33,7 +35,9 @@ BYTE_STRING = "GiB"
 # 30 is the power of 2 for GiB, 40 is the power of 2 for TiB
 POWER_OF_TWO = 30
 
-QUERY = f"""
+SYNAPSE_RESULTS_TABLE = "syn53696951"
+
+QUERY_WITH_LIMIT = f"""
 WITH PUBLIC_PROJECTS AS (
     SELECT
         node_latest.project_id,
@@ -92,6 +96,64 @@ ORDER BY
 LIMIT 10;
 """
 
+QUERY_WITHOUT_LIMIT = """
+WITH PUBLIC_PROJECTS AS (
+    SELECT
+        node_latest.project_id,
+        node_latest.name
+    FROM
+        synapse_data_warehouse.synapse.node_latest
+    WHERE
+        node_latest.is_public AND
+        node_latest.node_type = 'project'
+),
+DEDUP_FILEHANDLE AS (
+    SELECT DISTINCT
+        PUBLIC_PROJECTS.name,
+        filedownload.user_id,
+        filedownload.file_handle_id AS FD_FILE_HANDLE_ID,
+        filedownload.record_date,
+        filedownload.project_id,
+        file_latest.content_size
+    FROM
+        synapse_data_warehouse.synapse.filedownload
+    INNER JOIN
+        PUBLIC_PROJECTS
+    ON
+        filedownload.project_id = PUBLIC_PROJECTS.project_id
+    INNER JOIN
+        synapse_data_warehouse.synapse.file_latest
+    ON
+        filedownload.file_handle_id = file_latest.id
+    WHERE
+        filedownload.record_date = DATEADD(HOUR, -24, CURRENT_DATE)
+),
+
+DOWNLOAD_STAT AS (
+    SELECT
+        name,
+        project_id,
+        count(record_date) AS DOWNLOADS_PER_PROJECT,
+        count(DISTINCT user_id) AS NUMBER_OF_UNIQUE_USERS_DOWNLOADED,
+        count(DISTINCT FD_FILE_HANDLE_ID) AS NUMBER_OF_UNIQUE_FILES_DOWNLOADED,
+        sum(content_size) as data_download_size
+    FROM
+        DEDUP_FILEHANDLE
+    GROUP BY
+        project_id, name
+)
+SELECT
+    'syn' || cast(DOWNLOAD_STAT.project_id as varchar) as project,
+    DOWNLOAD_STAT.name,
+    DOWNLOAD_STAT.DOWNLOADS_PER_PROJECT,
+    DOWNLOAD_STAT.data_download_size,
+    DOWNLOAD_STAT.NUMBER_OF_UNIQUE_USERS_DOWNLOADED
+FROM
+    DOWNLOAD_STAT
+ORDER BY
+    DOWNLOADS_PER_PROJECT DESC NULLS LAST
+"""
+
 
 @dataclass
 class DownloadMetric:
@@ -118,12 +180,20 @@ def snowflake_top_downloads_to_slack() -> None:
     """Execute a query on Snowflake and report the results to a slack channel."""
 
     @task
-    def get_top_downloads_from_snowflake(**context) -> List[DownloadMetric]:
-        """Execute the query on Snowflake and return the results."""
+    def get_top_downloads_from_snowflake(
+        include_limit: bool, **context
+    ) -> List[DownloadMetric]:
+        """Execute the query on Snowflake and return the results.
+
+        Arguments:
+            include_limit: Determines which query to execute.
+                When True: Execute the query with a limit of 10 and data size in GiB
+                When False: Execute the query without a limit and data size in bytes
+        """
         snow_hook = SnowflakeHook(context["params"]["snowflake_conn_id"])
         ctx = snow_hook.get_conn()
         cs = ctx.cursor()
-        cs.execute(QUERY)
+        cs.execute(QUERY_WITH_LIMIT if include_limit else QUERY_WITHOUT_LIMIT)
         top_downloaded_df = cs.fetch_pandas_all()
 
         metrics = []
@@ -136,7 +206,7 @@ def snowflake_top_downloads_to_slack() -> None:
                     number_of_unique_users_downloaded=row[
                         "NUMBER_OF_UNIQUE_USERS_DOWNLOADED"
                     ],
-                    data_download_size=row["DATA_DOWNLOAD_SIZE"],
+                    data_download_size=row["DATA_DOWNLOAD_SIZE"] or 0,
                 )
             )
         return metrics
@@ -163,11 +233,37 @@ def snowflake_top_downloads_to_slack() -> None:
         result = client.chat_postMessage(channel="topcharts", text=message)
         return result
 
-    top_downloads = get_top_downloads_from_snowflake()
+    @task
+    def push_results_to_synapse_table(metrics: List[DownloadMetric], **context) -> None:
+        """Push the results to a Synapse table."""
+        data = []
+        yesterday = date.today() - timedelta(days=1)
+        for metric in metrics:
+            data.append(
+                [
+                    metric.project,
+                    metric.downloads_per_project,
+                    yesterday,
+                    metric.number_of_unique_users_downloaded,
+                    metric.data_download_size,
+                ]
+            )
+
+        syn_hook = SynapseHook(context["params"]["synapse_conn_id"])
+        syn_hook.client.store(
+            synapseclient.Table(schema=SYNAPSE_RESULTS_TABLE, values=data)
+        )
+
+    top_downloads = get_top_downloads_from_snowflake(include_limit=True)
     slack_message = generate_top_downloads_message(metrics=top_downloads)
     post_to_slack = post_top_downloads_to_slack(message=slack_message)
 
     top_downloads >> slack_message >> post_to_slack
+
+    top_downloads = get_top_downloads_from_snowflake(include_limit=False)
+    push_to_synapse_table = push_results_to_synapse_table(metrics=top_downloads)
+
+    top_downloads >> push_to_synapse_table
 
 
 snowflake_top_downloads_to_slack()
