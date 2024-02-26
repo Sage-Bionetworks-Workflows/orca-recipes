@@ -38,15 +38,23 @@ def dynamic_challenge_dag():
     @task.branch()
     def check_for_new_submissions(**context):
         hook = SynapseHook(context["params"]["synapse_conn_id"])
-        if hook.ops.monitor_evaluation_queue(
-            context["params"]["synapse_evaluation_id"]
-        ):
-            return "launch_model2data_workflow"
+        submissions = hook.ops.get_new_submissions(
+            context["params"]["view_id"],
+        )
+        if submissions:
+            return "update_submission_statuses"
         return "stop_dag"
 
     @task()
     def stop_dag():
         pass
+
+    @task()
+    def update_submission_statuses(**context):
+        hook = SynapseHook(context["params"]["synapse_conn_id"])
+        hook.ops.update_submission_statuses(
+            view_id=context["params"]["view_id"],
+        )
 
     @task()
     def launch_data_to_model_on_tower(**context):
@@ -78,14 +86,16 @@ def dynamic_challenge_dag():
         print(f"Current workflow state: {workflow.status.state.value}")
         return workflow.status.is_done
 
-    submission_check = check_for_new_submissions()
+    submissions = check_for_new_submissions()
+    submissions_updated = update_submission_statuses()
     stop = stop_dag()
     run_id = launch_data_to_model_on_tower()
     monitor = monitor_nf_hello_workflow(run_id=run_id)
 
-    submission_check >> [
-        run_id,
+    submissions >> submissions_updated
+    submissions_updated >> [
         stop,
+        run_id,
     ]
     run_id >> monitor
 
