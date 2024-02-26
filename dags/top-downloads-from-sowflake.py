@@ -153,7 +153,7 @@ def snowflake_top_downloads_to_slack() -> None:
             else:
                 size_string = f"< {0:.{SIZE_ROUNDING}f}5 {BYTE_STRING}"
             message += f"{index+1}. <https://www.synapse.org/#!Synapse:{row.project}|{row.name}> - {row.downloads_per_project} downloads, {row.number_of_unique_users_downloaded} unique users, {size_string} {BYTE_STRING} egressed\n\n"
-        message += "One download is a user downloading a file once\n"
+        message += "One download is a user downloading an entity (File, Table, Views, etc) once\n"
         return message
 
     @task
