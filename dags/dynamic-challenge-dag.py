@@ -1,7 +1,12 @@
+import uuid
+
 from datetime import datetime
+
+import pandas as pd
 
 from airflow.decorators import dag, task
 from airflow.models import Param
+from airflow.providers.amazon.aws.hooks.s3 import S3Hook
 
 from orca.services.nextflowtower import NextflowTowerHook
 from orca.services.nextflowtower.models import LaunchInfo
@@ -10,6 +15,7 @@ from orca.services.synapse import SynapseHook
 
 dag_params = {
     "synapse_conn_id": Param("SYNAPSE_ORCA_SERVICE_ACCOUNT_CONN", type="string"),
+    "aws_conn_id": Param("AWS_TOWER_PROD_S3_CONN", type="string"),
     "tower_conn_id": Param("DYNAMIC_CHALLENGE_PROJECT_TOWER_CONN", type="string"),
     "tower_run_name": Param("dynamic-challenge-evaluation", type="string"),
     "tower_compute_env_type": Param("spot", type="string"),
@@ -22,7 +28,7 @@ dag_params = {
 }
 
 dag_config = {
-    "schedule_interval": "* * * * *",
+    "schedule_interval": None,
     "start_date": datetime(2023, 6, 1),
     "catchup": False,
     "default_args": {
@@ -32,32 +38,57 @@ dag_config = {
     "params": dag_params,
 }
 
+REGION_NAME = "us-east-1"
+BUCKET_NAME = "dynamic-challenge-project-tower-scratch"
+FILE_NAME = f"submissions_{uuid.uuid4()}.csv"
+KEY = f"10days/{FILE_NAME}"
 
 @dag(**dag_config)
 def dynamic_challenge_dag():
     @task.branch()
     def check_for_new_submissions(**context):
         hook = SynapseHook(context["params"]["synapse_conn_id"])
-        submissions = hook.ops.get_new_submissions(
-            context["params"]["view_id"],
+        hook.ops.trigger_indexing(context["params"]["view_id"])
+        submissions = hook.ops.get_submissions_with_status(
+            context["params"]["view_id"], "RECEIVED"
         )
         if submissions:
-            return "update_submission_statuses"
+            return "get_new_submissions"
         return "stop_dag"
+    
+    @task()
+    def get_new_submissions(**context):
+        hook = SynapseHook(context["params"]["synapse_conn_id"])
+        hook.ops.trigger_indexing(context["params"]["view_id"])
+        submissions = hook.ops.get_submissions_with_status(
+            context["params"]["view_id"], "RECEIVED"
+        )
+        return submissions
 
     @task()
     def stop_dag():
         pass
 
     @task()
-    def update_submission_statuses(**context):
+    def update_submission_statuses(submissions: list, **context):
         hook = SynapseHook(context["params"]["synapse_conn_id"])
-        hook.ops.update_submission_statuses(
-            view_id=context["params"]["view_id"],
-        )
+        for submission in submissions:
+            hook.ops.update_submission_status(
+                submission_id=submission["id"],
+                status="EVALUATION_IN_PROGRESS",
+            )
 
     @task()
-    def launch_data_to_model_on_tower(**context):
+    def stage_submissions_manifest(submissions: list, **context):
+        s3_hook = S3Hook(aws_conn_id=context["params"]["aws_conn_id"], region_name=REGION_NAME)
+        df = pd.DataFrame({"submission_id": submissions})
+        df.to_csv(FILE_NAME, index=False)
+        s3_hook.load_file(filename=FILE_NAME, key=KEY, bucket_name=BUCKET_NAME)
+        return f"{BUCKET_NAME}/{KEY}/{FILE_NAME}"
+
+
+    @task()
+    def launch_data_to_model_on_tower(manifest_path: str, **context):
         hook = NextflowTowerHook(context["params"]["tower_conn_id"])
         info = LaunchInfo(
             run_name=context["params"]["tower_run_name"],
@@ -80,24 +111,30 @@ def dynamic_challenge_dag():
         return run_id
 
     @task.sensor(poke_interval=300, timeout=604800, mode="reschedule")
-    def monitor_nf_hello_workflow(run_id: str, **context):
+    def monitor_workflow(run_id: str, **context):
         hook = NextflowTowerHook(context["params"]["tower_conn_id"])
         workflow = hook.ops.get_workflow(run_id)
         print(f"Current workflow state: {workflow.status.state.value}")
         return workflow.status.is_done
 
-    submissions = check_for_new_submissions()
-    submissions_updated = update_submission_statuses()
+    check = check_for_new_submissions()
+    submissions = get_new_submissions()
+    submissions_updated = update_submission_statuses(submissions=submissions)
     stop = stop_dag()
-    run_id = launch_data_to_model_on_tower()
-    monitor = monitor_nf_hello_workflow(run_id=run_id)
+    manifest_path = stage_submissions_manifest(submissions=submissions)
+    run_id = launch_data_to_model_on_tower(manifest_path=manifest_path)
+    monitor = monitor_workflow(run_id=run_id)
 
-    submissions >> submissions_updated
-    submissions_updated >> [
+    check >> [
         stop,
-        run_id,
+        submissions,
     ]
-    run_id >> monitor
+    submissions >> [
+        submissions_updated,
+        manifest_path
+    ] >> run_id >> monitor
+
+
 
 
 dynamic_challenge_dag()
