@@ -19,6 +19,8 @@ from slack_sdk import WebClient
 dag_params = {
     "snowflake_conn_id": Param("SNOWFLAKE_SYSADMIN_PORTAL_RAW_CONN", type="string"),
     "synapse_conn_id": Param("SYNAPSE_ORCA_SERVICE_ACCOUNT_CONN", type="string"),
+    # hours_time_delta is the number of hours to subtract from the current date to get the date for the query
+    "hours_time_delta": Param("24", type="string"),
 }
 
 dag_config = {
@@ -38,64 +40,6 @@ BYTE_STRING = "GiB"
 POWER_OF_TWO = 30
 
 SYNAPSE_RESULTS_TABLE = "syn53696951"
-
-QUERY = """
-WITH PUBLIC_PROJECTS AS (
-    SELECT
-        node_latest.project_id,
-        node_latest.name
-    FROM
-        synapse_data_warehouse.synapse.node_latest
-    WHERE
-        node_latest.is_public AND
-        node_latest.node_type = 'project'
-),
-DEDUP_FILEHANDLE AS (
-    SELECT DISTINCT
-        PUBLIC_PROJECTS.name,
-        filedownload.user_id,
-        filedownload.file_handle_id AS FD_FILE_HANDLE_ID,
-        filedownload.record_date,
-        filedownload.project_id,
-        file_latest.content_size
-    FROM
-        synapse_data_warehouse.synapse.filedownload
-    INNER JOIN
-        PUBLIC_PROJECTS
-    ON
-        filedownload.project_id = PUBLIC_PROJECTS.project_id
-    INNER JOIN
-        synapse_data_warehouse.synapse.file_latest
-    ON
-        filedownload.file_handle_id = file_latest.id
-    WHERE
-        filedownload.record_date = DATEADD(HOUR, -24, CURRENT_DATE)
-),
-
-DOWNLOAD_STAT AS (
-    SELECT
-        name,
-        project_id,
-        count(record_date) AS DOWNLOADS_PER_PROJECT,
-        count(DISTINCT user_id) AS NUMBER_OF_UNIQUE_USERS_DOWNLOADED,
-        count(DISTINCT FD_FILE_HANDLE_ID) AS NUMBER_OF_UNIQUE_FILES_DOWNLOADED,
-        sum(content_size) as data_download_size
-    FROM
-        DEDUP_FILEHANDLE
-    GROUP BY
-        project_id, name
-)
-SELECT
-    'syn' || cast(DOWNLOAD_STAT.project_id as varchar) as project,
-    DOWNLOAD_STAT.name,
-    DOWNLOAD_STAT.DOWNLOADS_PER_PROJECT,
-    DOWNLOAD_STAT.data_download_size,
-    DOWNLOAD_STAT.NUMBER_OF_UNIQUE_USERS_DOWNLOADED
-FROM
-    DOWNLOAD_STAT
-ORDER BY
-    DOWNLOADS_PER_PROJECT DESC NULLS LAST
-"""
 
 
 @dataclass
@@ -129,7 +73,64 @@ def top_public_synapse_projects_from_snowflake() -> None:
         snow_hook = SnowflakeHook(context["params"]["snowflake_conn_id"])
         ctx = snow_hook.get_conn()
         cs = ctx.cursor()
-        cs.execute(QUERY)
+        query = f"""
+            WITH PUBLIC_PROJECTS AS (
+                SELECT
+                    node_latest.project_id,
+                    node_latest.name
+                FROM
+                    synapse_data_warehouse.synapse.node_latest
+                WHERE
+                    node_latest.is_public AND
+                    node_latest.node_type = 'project'
+            ),
+            DEDUP_FILEHANDLE AS (
+                SELECT DISTINCT
+                    PUBLIC_PROJECTS.name,
+                    filedownload.user_id,
+                    filedownload.file_handle_id AS FD_FILE_HANDLE_ID,
+                    filedownload.record_date,
+                    filedownload.project_id,
+                    file_latest.content_size
+                FROM
+                    synapse_data_warehouse.synapse.filedownload
+                INNER JOIN
+                    PUBLIC_PROJECTS
+                ON
+                    filedownload.project_id = PUBLIC_PROJECTS.project_id
+                INNER JOIN
+                    synapse_data_warehouse.synapse.file_latest
+                ON
+                    filedownload.file_handle_id = file_latest.id
+                WHERE
+                    filedownload.record_date = DATEADD(HOUR, -{context["params"]["hours_time_delta"]}, CURRENT_DATE)
+            ),
+
+            DOWNLOAD_STAT AS (
+                SELECT
+                    name,
+                    project_id,
+                    count(record_date) AS DOWNLOADS_PER_PROJECT,
+                    count(DISTINCT user_id) AS NUMBER_OF_UNIQUE_USERS_DOWNLOADED,
+                    count(DISTINCT FD_FILE_HANDLE_ID) AS NUMBER_OF_UNIQUE_FILES_DOWNLOADED,
+                    sum(content_size) as data_download_size
+                FROM
+                    DEDUP_FILEHANDLE
+                GROUP BY
+                    project_id, name
+            )
+            SELECT
+                'syn' || cast(DOWNLOAD_STAT.project_id as varchar) as project,
+                DOWNLOAD_STAT.name,
+                DOWNLOAD_STAT.DOWNLOADS_PER_PROJECT,
+                DOWNLOAD_STAT.data_download_size,
+                DOWNLOAD_STAT.NUMBER_OF_UNIQUE_USERS_DOWNLOADED
+            FROM
+                DOWNLOAD_STAT
+            ORDER BY
+                DOWNLOADS_PER_PROJECT DESC NULLS LAST
+            """
+        cs.execute(query)
         top_downloaded_df = cs.fetch_pandas_all()
 
         metrics = []
@@ -148,9 +149,9 @@ def top_public_synapse_projects_from_snowflake() -> None:
         return metrics
 
     @task
-    def generate_top_downloads_message(metrics: List[DownloadMetric]) -> str:
+    def generate_top_downloads_message(metrics: List[DownloadMetric], **context) -> str:
         """Generate the message to be posted to the slack channel."""
-        message = ":synapse: Top Downloaded Public Synapse Projects Yesterday!\n\n"
+        message = f":synapse: Top Downloaded Public Synapse Projects {'Yesterday' if int(context['params']['hours_time_delta']) <= 24 else (date.today() - timedelta(hours=int(context['params']['hours_time_delta']))).isoformat()}!\n\n"
         for index, row in enumerate(metrics[:10]):
             if row.data_download_size:
                 size_string = f"{(row.data_download_size / 2 ** POWER_OF_TWO):.{SIZE_ROUNDING}f} {BYTE_STRING}"
@@ -171,7 +172,9 @@ def top_public_synapse_projects_from_snowflake() -> None:
     def push_results_to_synapse_table(metrics: List[DownloadMetric], **context) -> None:
         """Push the results to a Synapse table."""
         data = []
-        yesterday = date.today() - timedelta(days=1)
+        yesterday = date.today() - timedelta(
+            hours=int(context["params"]["hours_time_delta"])
+        )
         for metric in metrics:
             data.append(
                 [
