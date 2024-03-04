@@ -1,4 +1,6 @@
 import uuid
+import csv
+import tempfile
 
 from datetime import datetime
 
@@ -41,29 +43,35 @@ dag_config = {
 REGION_NAME = "us-east-1"
 BUCKET_NAME = "dynamic-challenge-project-tower-scratch"
 FILE_NAME = f"submissions_{uuid.uuid4()}.csv"
-KEY = f"10days/{FILE_NAME}"
+KEY = f"10days/dynamic_{FILE_NAME}"
 
 @dag(**dag_config)
 def dynamic_challenge_dag():
     @task.branch()
     def check_for_new_submissions(**context):
         hook = SynapseHook(context["params"]["synapse_conn_id"])
-        hook.ops.trigger_indexing(context["params"]["view_id"])
         submissions = hook.ops.get_submissions_with_status(
             context["params"]["view_id"], "RECEIVED"
         )
         if submissions:
-            return "get_new_submissions"
+            with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix=".csv", newline='') as temp_file:
+                csv_writer = csv.DictWriter(temp_file, fieldnames=["submission_id"])
+                csv_writer.writeheader()
+                for submission in submissions:
+                    csv_writer.writerow({"submission_id": submission})
+            return {"csv_file_path": temp_file.name, "next_task": "get_new_submissions"}
         return "stop_dag"
     
-    @task()
-    def get_new_submissions(**context):
-        hook = SynapseHook(context["params"]["synapse_conn_id"])
-        hook.ops.trigger_indexing(context["params"]["view_id"])
-        submissions = hook.ops.get_submissions_with_status(
-            context["params"]["view_id"], "RECEIVED"
-        )
-        return submissions
+    @task
+    def get_new_submissions(csv_file_path, **context):
+        # Read data from the temporary CSV file
+        with open(csv_file_path, 'r') as csvfile:
+            reader = csv.DictReader(csvfile)
+            for row in reader:
+                submission_id = row["submission_id"]
+                # Process each submission ID as needed
+                print("Received new submission ID:", submission_id)
+
 
     @task()
     def stop_dag():
@@ -119,20 +127,20 @@ def dynamic_challenge_dag():
 
     check = check_for_new_submissions()
     submissions = get_new_submissions()
-    submissions_updated = update_submission_statuses(submissions=submissions)
+    # submissions_updated = update_submission_statuses(submissions=submissions)
     stop = stop_dag()
-    manifest_path = stage_submissions_manifest(submissions=submissions)
-    run_id = launch_data_to_model_on_tower(manifest_path=manifest_path)
-    monitor = monitor_workflow(run_id=run_id)
+    # manifest_path = stage_submissions_manifest(submissions=submissions)
+    # run_id = launch_data_to_model_on_tower(manifest_path=manifest_path)
+    # monitor = monitor_workflow(run_id=run_id)
 
     check >> [
         stop,
         submissions,
     ]
-    submissions >> [
-        submissions_updated,
-        manifest_path
-    ] >> run_id >> monitor
+    # submissions >> [
+    #     submissions_updated,
+    #     manifest_path
+    # ] >> run_id >> monitor
 
 
 
