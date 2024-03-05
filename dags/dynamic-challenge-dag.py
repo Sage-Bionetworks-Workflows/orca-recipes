@@ -1,7 +1,4 @@
 import uuid
-import csv
-import tempfile
-
 from datetime import datetime
 
 import pandas as pd
@@ -14,24 +11,29 @@ from orca.services.nextflowtower import NextflowTowerHook
 from orca.services.nextflowtower.models import LaunchInfo
 from orca.services.synapse import SynapseHook
 
+UUID = uuid.uuid4()
+REGION_NAME = "us-east-1"
+BUCKET_NAME = "dynamic-challenge-project-tower-scratch"
+FILE_NAME = f"submissions_{UUID}.csv"
+KEY = "10days/dynamic_challenge"
 
 dag_params = {
     "synapse_conn_id": Param("SYNAPSE_ORCA_SERVICE_ACCOUNT_CONN", type="string"),
     "aws_conn_id": Param("AWS_TOWER_PROD_S3_CONN", type="string"),
     "tower_conn_id": Param("DYNAMIC_CHALLENGE_PROJECT_TOWER_CONN", type="string"),
-    "tower_run_name": Param("dynamic-challenge-evaluation", type="string"),
+    "tower_run_name": Param(f"dynamic-challenge-evaluation_{UUID}", type="string"),
     "tower_compute_env_type": Param("spot", type="string"),
     "view_id": Param("syn52576179", type="string"),
     "testing_data": Param("syn51390589", type="string"),
-    "scoring_script": Param("dynamic_challenge_score.py", type="string"),
-    "validation_script": Param("dynamic_challenge_validate.py", type="string"),
+    "scoring_script": Param("data_to_model_score.py", type="string"),
+    "validation_script": Param("validate.py", type="string"),
     "email_with_score": Param("yes", type="string"),
     "synapse_evaluation_id": Param("9615537", type="string"),
 }
 
 dag_config = {
-    "schedule_interval": None,
-    "start_date": datetime(2023, 6, 1),
+    "schedule_interval": "* * * * *",
+    "start_date": datetime(2024, 1, 1),
     "catchup": False,
     "default_args": {
         "retries": 2,
@@ -40,38 +42,28 @@ dag_config = {
     "params": dag_params,
 }
 
-REGION_NAME = "us-east-1"
-BUCKET_NAME = "dynamic-challenge-project-tower-scratch"
-FILE_NAME = f"submissions_{uuid.uuid4()}.csv"
-KEY = f"10days/dynamic_{FILE_NAME}"
 
 @dag(**dag_config)
 def dynamic_challenge_dag():
     @task.branch()
     def check_for_new_submissions(**context):
         hook = SynapseHook(context["params"]["synapse_conn_id"])
+        # Unfortunately, you cannot use XCom in a branching task
+        # So we have to call `get_submissions_with_status` twice in the DAG
         submissions = hook.ops.get_submissions_with_status(
             context["params"]["view_id"], "RECEIVED"
         )
         if submissions:
-            with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix=".csv", newline='') as temp_file:
-                csv_writer = csv.DictWriter(temp_file, fieldnames=["submission_id"])
-                csv_writer.writeheader()
-                for submission in submissions:
-                    csv_writer.writerow({"submission_id": submission})
-            return {"csv_file_path": temp_file.name, "next_task": "get_new_submissions"}
+            return "get_new_submissions"
         return "stop_dag"
-    
-    @task
-    def get_new_submissions(csv_file_path, **context):
-        # Read data from the temporary CSV file
-        with open(csv_file_path, 'r') as csvfile:
-            reader = csv.DictReader(csvfile)
-            for row in reader:
-                submission_id = row["submission_id"]
-                # Process each submission ID as needed
-                print("Received new submission ID:", submission_id)
 
+    @task
+    def get_new_submissions(**context):
+        hook = SynapseHook(context["params"]["synapse_conn_id"])
+        submissions = hook.ops.get_submissions_with_status(
+            context["params"]["view_id"], "RECEIVED"
+        )
+        return submissions
 
     @task()
     def stop_dag():
@@ -82,32 +74,36 @@ def dynamic_challenge_dag():
         hook = SynapseHook(context["params"]["synapse_conn_id"])
         for submission in submissions:
             hook.ops.update_submission_status(
-                submission_id=submission["id"],
-                status="EVALUATION_IN_PROGRESS",
+                submission_id=submission,
+                submission_status="EVALUATION_IN_PROGRESS",
             )
 
     @task()
     def stage_submissions_manifest(submissions: list, **context):
-        s3_hook = S3Hook(aws_conn_id=context["params"]["aws_conn_id"], region_name=REGION_NAME)
+        s3_hook = S3Hook(
+            aws_conn_id=context["params"]["aws_conn_id"], region_name=REGION_NAME
+        )
         df = pd.DataFrame({"submission_id": submissions})
         df.to_csv(FILE_NAME, index=False)
-        s3_hook.load_file(filename=FILE_NAME, key=KEY, bucket_name=BUCKET_NAME)
-        return f"{BUCKET_NAME}/{KEY}/{FILE_NAME}"
-
+        s3_hook.load_file(
+            filename=FILE_NAME, key=f"{KEY}/{FILE_NAME}", bucket_name=BUCKET_NAME
+        )
+        return f"s3://{BUCKET_NAME}/{KEY}/{FILE_NAME}"
 
     @task()
     def launch_data_to_model_on_tower(manifest_path: str, **context):
         hook = NextflowTowerHook(context["params"]["tower_conn_id"])
         info = LaunchInfo(
             run_name=context["params"]["tower_run_name"],
-            pipeline="Sage-Bionetworks-Workflows/nf-synapse-challenge",
-            revision="bwmac/ibcdpe-827/data_to_model_emails",
+            pipeline="https://github.com/Sage-Bionetworks-Workflows/nf-synapse-challenge",
+            revision="bwmac/ORCA-302/enable_challenge_automation",
             profiles=["tower"],
             entry_name="DATA_TO_MODEL_CHALLENGE",
             params={
+                "manifest": manifest_path,
                 "view_id": context["params"]["view_id"],
-                # "scoring_script": context["params"]["scoring_script"],
-                # "validation_script": context["params"]["validation_script"],
+                "scoring_script": context["params"]["scoring_script"],
+                "validation_script": context["params"]["validation_script"],
                 "testing_data": context["params"]["testing_data"],
                 "email_with_score": context["params"]["email_with_score"],
             },
@@ -118,7 +114,7 @@ def dynamic_challenge_dag():
         )
         return run_id
 
-    @task.sensor(poke_interval=300, timeout=604800, mode="reschedule")
+    @task.sensor(poke_interval=60, timeout=604800, mode="reschedule")
     def monitor_workflow(run_id: str, **context):
         hook = NextflowTowerHook(context["params"]["tower_conn_id"])
         workflow = hook.ops.get_workflow(run_id)
@@ -127,22 +123,17 @@ def dynamic_challenge_dag():
 
     check = check_for_new_submissions()
     submissions = get_new_submissions()
-    # submissions_updated = update_submission_statuses(submissions=submissions)
+    submissions_updated = update_submission_statuses(submissions=submissions)
     stop = stop_dag()
-    # manifest_path = stage_submissions_manifest(submissions=submissions)
-    # run_id = launch_data_to_model_on_tower(manifest_path=manifest_path)
-    # monitor = monitor_workflow(run_id=run_id)
+    manifest_path = stage_submissions_manifest(submissions=submissions)
+    run_id = launch_data_to_model_on_tower(manifest_path=manifest_path)
+    monitor = monitor_workflow(run_id=run_id)
 
     check >> [
         stop,
         submissions,
     ]
-    # submissions >> [
-    #     submissions_updated,
-    #     manifest_path
-    # ] >> run_id >> monitor
-
-
+    submissions >> [submissions_updated, manifest_path] >> run_id >> monitor
 
 
 dynamic_challenge_dag()
