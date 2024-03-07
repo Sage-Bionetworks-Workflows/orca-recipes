@@ -17,22 +17,28 @@ BUCKET_NAME = "dynamic-challenge-project-tower-scratch"
 FILE_NAME = f"submissions_{UUID}.csv"
 KEY = "10days/dynamic_challenge"
 
+# view_id: "syn52658661"
+# testing_data: "syn53627077"
+# scoring_script: "dynamic_challenge_score.py"
+# validation_script: "dynamic_challenge_validate.py"
+
 dag_params = {
     "synapse_conn_id": Param("SYNAPSE_ORCA_SERVICE_ACCOUNT_CONN", type="string"),
     "aws_conn_id": Param("AWS_TOWER_PROD_S3_CONN", type="string"),
     "tower_conn_id": Param("DYNAMIC_CHALLENGE_PROJECT_TOWER_CONN", type="string"),
     "tower_run_name": Param(f"dynamic-challenge-evaluation_{UUID}", type="string"),
     "tower_compute_env_type": Param("spot", type="string"),
-    "view_id": Param("syn52576179", type="string"),
-    "testing_data": Param("syn51390589", type="string"),
-    "scoring_script": Param("data_to_model_score.py", type="string"),
-    "validation_script": Param("validate.py", type="string"),
+    "view_id": Param("syn52658661", type="string"),
+    "testing_data": Param("syn53627077", type="string"),
+    "scoring_script": Param("dynamic_challenge_score.py", type="string"),
+    "validation_script": Param("dynamic_challenge_validate.py", type="string"),    
     "email_with_score": Param("yes", type="string"),
     "synapse_evaluation_id": Param("9615537", type="string"),
 }
 
 dag_config = {
-    "schedule_interval": "* * * * *",
+    # Run every 2 minutes
+    "schedule_interval": "*/2 * * * *",
     "start_date": datetime(2024, 1, 1),
     "catchup": False,
     "default_args": {
