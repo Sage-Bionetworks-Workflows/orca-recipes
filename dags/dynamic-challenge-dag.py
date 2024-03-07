@@ -102,7 +102,7 @@ def dynamic_challenge_dag():
         info = LaunchInfo(
             run_name=context["params"]["tower_run_name"],
             pipeline="https://github.com/Sage-Bionetworks-Workflows/nf-synapse-challenge",
-            revision="bwmac/ORCA-302/enable_challenge_automation",
+            revision="main",
             profiles=["tower"],
             entry_name="DATA_TO_MODEL_CHALLENGE",
             params={
