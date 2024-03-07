@@ -56,7 +56,6 @@ def dynamic_challenge_dag():
         )
         return submissions
 
-
     @task.branch()
     def update_submission_statuses(submissions: list, **context) -> str:
         if submissions:
