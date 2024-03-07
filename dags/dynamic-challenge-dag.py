@@ -34,8 +34,8 @@ dag_params = {
 }
 
 dag_config = {
-    # Run every 2 minutes
-    "schedule_interval": "*/2 * * * *",
+    # Run every minute
+    "schedule_interval": "* * * * *",
     "start_date": datetime(2024, 1, 1),
     "catchup": False,
     "default_args": {
