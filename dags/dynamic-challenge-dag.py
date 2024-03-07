@@ -28,7 +28,7 @@ dag_params = {
     "view_id": Param("syn52658661", type="string"),
     "testing_data": Param("syn53627077", type="string"),
     "scoring_script": Param("dynamic_challenge_score.py", type="string"),
-    "validation_script": Param("dynamic_challenge_validate.py", type="string"),    
+    "validation_script": Param("dynamic_challenge_validate.py", type="string"),
     "email_with_score": Param("yes", type="string"),
     "synapse_evaluation_id": Param("9615537", type="string"),
 }
@@ -68,7 +68,7 @@ def dynamic_challenge_dag():
                 )
             return "stage_submissions_manifest"
         return "stop_dag"
-    
+
     @task()
     def stop_dag() -> None:
         pass
