@@ -49,7 +49,7 @@ dag_config = {
 @dag(**dag_config)
 def dynamic_challenge_dag():
     @task
-    def get_new_submissions(**context):
+    def get_new_submissions(**context) -> list[int]:
         hook = SynapseHook(context["params"]["synapse_conn_id"])
         submissions = hook.ops.get_submissions_with_status(
             context["params"]["view_id"], "RECEIVED"
@@ -58,7 +58,7 @@ def dynamic_challenge_dag():
 
 
     @task.branch()
-    def update_submission_statuses(submissions: list, **context):
+    def update_submission_statuses(submissions: list, **context) -> str:
         if submissions:
             hook = SynapseHook(context["params"]["synapse_conn_id"])
             for submission in submissions:
@@ -70,11 +70,11 @@ def dynamic_challenge_dag():
         return "stop_dag"
     
     @task()
-    def stop_dag():
+    def stop_dag() -> None:
         pass
 
     @task()
-    def stage_submissions_manifest(submissions: list, **context):
+    def stage_submissions_manifest(submissions: list, **context) -> str:
         s3_hook = S3Hook(
             aws_conn_id=context["params"]["aws_conn_id"], region_name=REGION_NAME
         )
@@ -87,7 +87,7 @@ def dynamic_challenge_dag():
         return f"s3://{BUCKET_NAME}/{KEY}/{FILE_NAME}"
 
     @task()
-    def launch_data_to_model_on_tower(manifest_path: str, **context):
+    def launch_data_to_model_on_tower(manifest_path: str, **context) -> str:
         hook = NextflowTowerHook(context["params"]["tower_conn_id"])
         info = LaunchInfo(
             run_name=context["params"]["tower_run_name"],
@@ -111,7 +111,7 @@ def dynamic_challenge_dag():
         return run_id
 
     @task.sensor(poke_interval=60, timeout=604800, mode="reschedule")
-    def monitor_workflow(run_id: str, **context):
+    def monitor_workflow(run_id: str, **context) -> bool:
         hook = NextflowTowerHook(context["params"]["tower_conn_id"])
         workflow = hook.ops.get_workflow(run_id)
         print(f"Current workflow state: {workflow.status.state.value}")
