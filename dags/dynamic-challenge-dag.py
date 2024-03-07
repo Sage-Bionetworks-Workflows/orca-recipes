@@ -58,13 +58,13 @@ def dynamic_challenge_dag():
 
     @task.branch()
     def update_submission_statuses(submissions: list, **context):
-        hook = SynapseHook(context["params"]["synapse_conn_id"])
-        for submission in submissions:
-            hook.ops.update_submission_status(
-                submission_id=submission,
-                submission_status="EVALUATION_IN_PROGRESS",
-            )
         if submissions:
+            hook = SynapseHook(context["params"]["synapse_conn_id"])
+            for submission in submissions:
+                hook.ops.update_submission_status(
+                    submission_id=submission,
+                    submission_status="EVALUATION_IN_PROGRESS",
+                )
             return "stage_submissions_manifest"
         return "stop_dag"
     
