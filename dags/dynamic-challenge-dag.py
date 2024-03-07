@@ -17,10 +17,6 @@ BUCKET_NAME = "dynamic-challenge-project-tower-scratch"
 FILE_NAME = f"submissions_{UUID}.csv"
 KEY = "10days/dynamic_challenge"
 
-# view_id: "syn52658661"
-# testing_data: "syn53627077"
-# scoring_script: "dynamic_challenge_score.py"
-# validation_script: "dynamic_challenge_validate.py"
 
 dag_params = {
     "synapse_conn_id": Param("SYNAPSE_ORCA_SERVICE_ACCOUNT_CONN", type="string"),
