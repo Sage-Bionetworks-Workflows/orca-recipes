@@ -1,4 +1,5 @@
 import uuid
+import os
 from datetime import datetime
 
 import pandas as pd
@@ -82,6 +83,7 @@ def dynamic_challenge_dag():
         s3_hook.load_file(
             filename=FILE_NAME, key=f"{KEY}/{FILE_NAME}", bucket_name=BUCKET_NAME
         )
+        os.remove(FILE_NAME)
         return f"s3://{BUCKET_NAME}/{KEY}/{FILE_NAME}"
 
     @task()
