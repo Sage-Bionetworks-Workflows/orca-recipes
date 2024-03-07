@@ -47,18 +47,6 @@ dag_config = {
 
 @dag(**dag_config)
 def dynamic_challenge_dag():
-    @task.branch()
-    def check_for_new_submissions(**context):
-        hook = SynapseHook(context["params"]["synapse_conn_id"])
-        # Unfortunately, you cannot use XCom in a branching task
-        # So we have to call `get_submissions_with_status` twice in the DAG
-        submissions = hook.ops.get_submissions_with_status(
-            context["params"]["view_id"], "RECEIVED"
-        )
-        if submissions:
-            return "get_new_submissions"
-        return "stop_dag"
-
     @task
     def get_new_submissions(**context):
         hook = SynapseHook(context["params"]["synapse_conn_id"])
@@ -67,11 +55,8 @@ def dynamic_challenge_dag():
         )
         return submissions
 
-    @task()
-    def stop_dag():
-        pass
 
-    @task()
+    @task.branch()
     def update_submission_statuses(submissions: list, **context):
         hook = SynapseHook(context["params"]["synapse_conn_id"])
         for submission in submissions:
@@ -79,6 +64,13 @@ def dynamic_challenge_dag():
                 submission_id=submission,
                 submission_status="EVALUATION_IN_PROGRESS",
             )
+        if submissions:
+            return "stage_submissions_manifest"
+        return "stop_dag"
+    
+    @task()
+    def stop_dag():
+        pass
 
     @task()
     def stage_submissions_manifest(submissions: list, **context):
@@ -123,7 +115,6 @@ def dynamic_challenge_dag():
         print(f"Current workflow state: {workflow.status.state.value}")
         return workflow.status.is_done
 
-    check = check_for_new_submissions()
     submissions = get_new_submissions()
     submissions_updated = update_submission_statuses(submissions=submissions)
     stop = stop_dag()
@@ -131,11 +122,8 @@ def dynamic_challenge_dag():
     run_id = launch_data_to_model_on_tower(manifest_path=manifest_path)
     monitor = monitor_workflow(run_id=run_id)
 
-    check >> [
-        stop,
-        submissions,
-    ]
-    submissions >> [submissions_updated, manifest_path] >> run_id >> monitor
+    submissions >> submissions_updated >> [stop, manifest_path]
+    manifest_path >> run_id >> monitor
 
 
 dynamic_challenge_dag()
