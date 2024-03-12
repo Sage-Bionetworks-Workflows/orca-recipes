@@ -18,17 +18,23 @@ from orca.services.nextflowtower import LaunchInfo, NextflowTowerOps
 from orca.services.synapse import SynapseOps
 
 
+LENS_TOWER_BUCKET = "s3://iatlas-project-tower-bucket/LENS"
+
+
 @dataclass
 class LENSDataset:
     """LENS dataset and relevant details.
 
     Attributes:
         id: Unique dataset identifier.
-        samplesheet: Synapse ID for nf-core/rnaseq CSV samplesheet.
+        samplesheet: Synapse ID for LENS CSV samplesheet.
+        output_folder: Synapse ID for output folder (where workflow
+        output files will be indexed).
     """
 
     id: str
     samplesheet: str
+    output_folder: str
 
     def get_run_name(self, suffix: str) -> str:
         """Generate run name with given suffix."""
@@ -40,13 +46,46 @@ class LENSDataset:
         return LaunchInfo(
             run_name=run_name,
             pipeline="Sage-Bionetworks-Workflows/nf-synstage",
-            revision="main",
+            revision="disable_wave",
             profiles=["sage"],
             params={
                 "input": samplesheet_uri,
-                "outdir": "s3://iatlas-project-tower-bucket/LENS/synstage",  # manually load to persistent bucket for now
+                "outdir": "s3://iatlas-project-tower-scratch/work",
+            },
+            pre_run_script="NXF_VER=22.10.4",
+            workspace_secrets=["SYNAPSE_AUTH_TOKEN"],
+            nextflow_config="wave.enabled=false",
+        )
+
+    def lens_info(self, samplesheet_uri: str, s3_prefix: str) -> LaunchInfo:
+        """Generate LaunchInfo for LENS."""
+        run_name = self.get_run_name("LENS")
+        return LaunchInfo(
+            run_name=run_name,
+            pipeline="https://gitlab.com/landscape-of-effective-neoantigens-software/lens_for_nf_tower",
+            revision="sage",
+            profiles=["sage"],
+            params={
+                "input": samplesheet_uri,
+                "lens_dir": s3_prefix,
             },
             workspace_secrets=["SYNAPSE_AUTH_TOKEN"],
+        )
+
+    def synindex_info(self, rnaseq_outdir_uri: str) -> LaunchInfo:
+        """Generate LaunchInfo for nf-synindex."""
+        return LaunchInfo(
+            run_name=self.get_run_name("synindex"),
+            pipeline="Sage-Bionetworks-Workflows/nf-synindex",
+            revision="disable_wave",
+            profiles=["sage"],
+            params={
+                "s3_prefix": rnaseq_outdir_uri,
+                "parent_id": self.output_folder,
+            },
+            pre_run_script="NXF_VER=22.10.4",
+            workspace_secrets=["SYNAPSE_AUTH_TOKEN"],
+            nextflow_config="wave.enabled=false",
         )
 
 
@@ -57,7 +96,6 @@ class TowerLENSFlow(FlowSpec):
     synapse = SynapseOps()
     s3 = s3fs.S3FileSystem()
 
-    # Parameters
     dataset_id = Parameter(
         "dataset_id",
         type=str,
@@ -68,6 +106,7 @@ class TowerLENSFlow(FlowSpec):
         "s3_prefix",
         type=str,
         help="S3 prefix for storing output files from different runs",
+        default=LENS_TOWER_BUCKET,
     )
 
     def monitor_workflow(self, workflow_id):
@@ -78,6 +117,14 @@ class TowerLENSFlow(FlowSpec):
             message = f"Workflow did not complete successfully ({status})."
             raise RuntimeError(message)
         return status
+
+    def get_staged_samplesheet(self, samplesheet: str) -> str:
+        """Generate staged samplesheet based on synstage behavior."""
+        scheme, _, samplesheet_resource = samplesheet.partition("://")
+        if scheme != "s3":
+            raise ValueError("Expected an S3 URI.")
+        path = PurePosixPath(samplesheet_resource)
+        return f"{scheme}://{path.parent}/synstage/{path.name}"
 
     @step
     def start(self):
@@ -121,10 +168,41 @@ class TowerLENSFlow(FlowSpec):
         self.next(self.end)
 
     @step
+    def launch_lens(self):
+        """Launch LENS workflow."""
+        staged_uri = self.get_staged_samplesheet(self.samplesheet_uri)
+        launch_info = self.dataset.lens_info(
+            staged_uri, self.lens_outdir, self.s3_prefix
+        )
+        self.LENS_id = self.tower.launch_workflow(launch_info, "spot")
+        self.next(self.monitor_lens)
+
+    @step
+    def monitor_lens(self):
+        """Monitor LENS workflow run (wait until done)."""
+        self.monitor_workflow(self.LENS_id)
+        self.next(self.launch_synindex)
+
+    @step
+    def launch_synindex(self):
+        """Launch nf-synindex to index S3 files back into Synapse."""
+        launch_info = self.dataset.synindex_info(self.rnaseq_outdir)
+        self.synindex_id = self.tower.launch_workflow(launch_info, "spot")
+        self.next(self.monitor_synindex)
+
+    @step
+    def monitor_synindex(self):
+        """Monitor nf-synindex workflow run (wait until done)."""
+        self.monitor_workflow(self.synindex_id)
+        self.next(self.end)
+
+    @step
     def end(self):
         """End point."""
         print(f"Completed processing {self.dataset}")
         print(f"synstage workflow ID: {self.synstage_id}")
+        print(f"LENS workflow ID: {self.LENS_id}")
+        print(f"synindex workflow ID: {self.synindex_id}")
 
 
 if __name__ == "__main__":
