@@ -136,3 +136,6 @@ logs/
 
 # metaflow artifacts
 .metaflow/
+
+# venv
+orca-recipes-venv/
