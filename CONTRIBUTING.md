@@ -22,6 +22,7 @@ Note that you don't need to add your AWS credentials to the `.env` file when usi
 5. Once created and you are connected follow the [Quick Start guide](https://github.com/Sage-Bionetworks-Workflows/orca-recipes/blob/main/README.md#quick-start) to start the Airflow server running in the GitHub codespace.
 6. After your've ran the docker comamnds you will find the Forwarded Address under the `PORTS` tab that you may use to connect to the airflow UI.
 
+* Note: The instructions above will create a development environment with all necessary dependencies for Airflow development. The environment setup for the Dev Container is defined in `Dockerfile`.
 
 ## Testing
 
