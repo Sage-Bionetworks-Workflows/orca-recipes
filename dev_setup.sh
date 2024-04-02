@@ -2,8 +2,8 @@
 
 # Usage: ./dev_setup.sh
 # Set up and activate a Python 3.10 virtual environment
-python3.10 -m venv orca-recipes-venv
-source orca-recipes-venv/bin/activate
+python3.10 -m venv venv
+source venv/bin/activate
 # Upgrade pip to latest version
 pip install --upgrade pip
 # Install airflow with constraints
