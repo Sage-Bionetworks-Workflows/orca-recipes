@@ -7,7 +7,7 @@ source venv/bin/activate
 # Upgrade pip to latest version
 pip install --upgrade pip
 # Install airflow with constraints
-pip install apache-airflow[amazon,celery,snowflake]==2.7.2 --constraint "https://raw.githubusercontent.com/apache/airflow/constraints-2.7.2/constraints-3.10.txt"
+pip install apache-airflow==2.7.2 --constraint "https://raw.githubusercontent.com/apache/airflow/constraints-2.7.2/constraints-3.10.txt"
 # Install other dependencies
 pip install -r requirements-airflow.txt
 # Install dev dependencies
