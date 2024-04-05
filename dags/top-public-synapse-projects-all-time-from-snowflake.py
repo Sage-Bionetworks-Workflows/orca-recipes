@@ -1,8 +1,6 @@
-"""This script is used to execute a query on Snowflake and report the results to a
-slack channel and Synapse table. 
-This retrieves the top X publicly downloaded Synapse projects for slack.
-This retrieves all publicly downloaded Synapse projects for the Synapse table.
-See ORCA-301 for more context."""
+"""This script is used to execute a query on Snowflake and report the results to a 
+Synapse table. This retrieves all time download metrics for Public Synapse Projects.
+It is scheduled to run at 00:00 on the first day of the month."""
 
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
@@ -21,7 +19,6 @@ dag_params = {
 }
 
 dag_config = {
-    # Run at 00:00 on the first day of the month
     "schedule_interval": "0 0 1 * *",
     "start_date": datetime(2024, 4, 1),
     "catchup": False,
@@ -143,7 +140,6 @@ def top_public_synapse_projects_all_time_from_snowflake() -> None:
                 )
             )
         return metrics
-
 
     @task
     def push_results_to_synapse_table(metrics: List[DownloadMetric], **context) -> None:
