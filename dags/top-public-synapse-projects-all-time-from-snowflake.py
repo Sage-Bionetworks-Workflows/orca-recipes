@@ -50,7 +50,6 @@ class DownloadMetric:
         downloads_per_project: The number of downloads per project
         number_of_unique_users_downloaded: The number of unique users who downloaded
         data_download_size: The size of the data downloaded
-        export_date: The a timestamp when the data was exported
 
     """
 
@@ -59,7 +58,6 @@ class DownloadMetric:
     downloads_per_project: int
     number_of_unique_users_downloaded: int
     data_download_size: float
-    export_date: datetime
 
 
 @dag(**dag_config)
@@ -73,7 +71,7 @@ def top_public_synapse_projects_all_time_from_snowflake() -> None:
         snow_hook = SnowflakeHook(context["params"]["snowflake_conn_id"])
         ctx = snow_hook.get_conn()
         cs = ctx.cursor()
-        query = f"""
+        query = """
             WITH PUBLIC_PROJECTS AS (
                 SELECT
                     node_latest.project_id,
@@ -85,7 +83,6 @@ def top_public_synapse_projects_all_time_from_snowflake() -> None:
                     node_latest.node_type = 'project'
                         ),
             DEDUP_FILEHANDLE AS (
-            -- joion all file downloads that occurred yesterday
                 SELECT DISTINCT
                     PUBLIC_PROJECTS.name,
                     filedownload.user_id,
@@ -103,9 +100,6 @@ def top_public_synapse_projects_all_time_from_snowflake() -> None:
                     synapse_data_warehouse.synapse.file_latest
                 ON
                     filedownload.file_handle_id = file_latest.id
-                -- remove this for all time?
-                -- WHERE
-                --     filedownload.record_date = DATEADD(HOUR, -{context["params"]["hours_time_delta"]}, CURRENT_DATE)
             ),
 
             DOWNLOAD_STAT AS (
@@ -127,7 +121,6 @@ def top_public_synapse_projects_all_time_from_snowflake() -> None:
                 DOWNLOAD_STAT.DOWNLOADS_PER_PROJECT,
                 DOWNLOAD_STAT.data_download_size,
                 DOWNLOAD_STAT.NUMBER_OF_UNIQUE_USERS_DOWNLOADED,
-                CURRENT_TIMESTAMP as EXPORT_DATE
             FROM
                 DOWNLOAD_STAT
             ORDER BY
@@ -147,7 +140,6 @@ def top_public_synapse_projects_all_time_from_snowflake() -> None:
                         "NUMBER_OF_UNIQUE_USERS_DOWNLOADED"
                     ],
                     data_download_size=row["DATA_DOWNLOAD_SIZE"] or 0,
-                    export_date=row["EXPORT_DATE"],
                 )
             )
         return metrics
@@ -157,6 +149,7 @@ def top_public_synapse_projects_all_time_from_snowflake() -> None:
     def push_results_to_synapse_table(metrics: List[DownloadMetric], **context) -> None:
         """Push the results to a Synapse table."""
         data = []
+        today = date.today()
         for metric in metrics:
             data.append(
                 [
@@ -164,7 +157,7 @@ def top_public_synapse_projects_all_time_from_snowflake() -> None:
                     metric.downloads_per_project,
                     metric.number_of_unique_users_downloaded,
                     metric.data_download_size,
-                    metric.export_date,
+                    today,
                 ]
             )
 
