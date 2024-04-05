@@ -29,11 +29,6 @@ dag_config = {
     "params": dag_params,
 }
 
-SIZE_ROUNDING = 3
-BYTE_STRING = "GiB"
-# 30 is the power of 2 for GiB, 40 is the power of 2 for TiB
-POWER_OF_TWO = 30
-
 SYNAPSE_RESULTS_TABLE = "syn55259224"
 
 
