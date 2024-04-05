@@ -21,6 +21,7 @@ dag_params = {
 }
 
 dag_config = {
+    # Run at 00:00 on the first day of the month
     "schedule_interval": "0 0 1 * *",
     "start_date": datetime(2024, 4, 1),
     "catchup": False,
@@ -36,7 +37,7 @@ BYTE_STRING = "GiB"
 # 30 is the power of 2 for GiB, 40 is the power of 2 for TiB
 POWER_OF_TWO = 30
 
-SYNAPSE_RESULTS_TABLE = "syn53696951"
+SYNAPSE_RESULTS_TABLE = "syn55259224"
 
 
 @dataclass
@@ -49,6 +50,7 @@ class DownloadMetric:
         downloads_per_project: The number of downloads per project
         number_of_unique_users_downloaded: The number of unique users who downloaded
         data_download_size: The size of the data downloaded
+        export_date: The a timestamp when the data was exported
 
     """
 
@@ -57,15 +59,16 @@ class DownloadMetric:
     downloads_per_project: int
     number_of_unique_users_downloaded: int
     data_download_size: float
+    export_date: datetime
 
 
 @dag(**dag_config)
-def top_public_synapse_projects_from_snowflake() -> None:
+def top_public_synapse_projects_all_time_from_snowflake() -> None:
     """Execute a query on Snowflake and report the results to a slack channel and
     synapse table."""
 
     @task
-    def get_top_downloads_from_snowflake(**context) -> List[DownloadMetric]:
+    def get_all_time_downloads_from_snowflake(**context) -> List[DownloadMetric]:
         """Execute the query on Snowflake and return the results."""
         snow_hook = SnowflakeHook(context["params"]["snowflake_conn_id"])
         ctx = snow_hook.get_conn()
@@ -80,8 +83,9 @@ def top_public_synapse_projects_from_snowflake() -> None:
                 WHERE
                     node_latest.is_public AND
                     node_latest.node_type = 'project'
-            ),
+                        ),
             DEDUP_FILEHANDLE AS (
+            -- joion all file downloads that occurred yesterday
                 SELECT DISTINCT
                     PUBLIC_PROJECTS.name,
                     filedownload.user_id,
@@ -99,8 +103,9 @@ def top_public_synapse_projects_from_snowflake() -> None:
                     synapse_data_warehouse.synapse.file_latest
                 ON
                     filedownload.file_handle_id = file_latest.id
-                WHERE
-                    filedownload.record_date = DATEADD(HOUR, -{context["params"]["hours_time_delta"]}, CURRENT_DATE)
+                -- remove this for all time?
+                -- WHERE
+                --     filedownload.record_date = DATEADD(HOUR, -{context["params"]["hours_time_delta"]}, CURRENT_DATE)
             ),
 
             DOWNLOAD_STAT AS (
@@ -121,11 +126,12 @@ def top_public_synapse_projects_from_snowflake() -> None:
                 DOWNLOAD_STAT.name,
                 DOWNLOAD_STAT.DOWNLOADS_PER_PROJECT,
                 DOWNLOAD_STAT.data_download_size,
-                DOWNLOAD_STAT.NUMBER_OF_UNIQUE_USERS_DOWNLOADED
+                DOWNLOAD_STAT.NUMBER_OF_UNIQUE_USERS_DOWNLOADED,
+                CURRENT_TIMESTAMP as EXPORT_DATE
             FROM
                 DOWNLOAD_STAT
             ORDER BY
-                DOWNLOADS_PER_PROJECT DESC NULLS LAST
+                DOWNLOADS_PER_PROJECT DESC NULLS LAST;
             """
         cs.execute(query)
         top_downloaded_df = cs.fetch_pandas_all()
@@ -141,45 +147,24 @@ def top_public_synapse_projects_from_snowflake() -> None:
                         "NUMBER_OF_UNIQUE_USERS_DOWNLOADED"
                     ],
                     data_download_size=row["DATA_DOWNLOAD_SIZE"] or 0,
+                    export_date=row["EXPORT_DATE"],
                 )
             )
         return metrics
 
-    @task
-    def generate_top_downloads_message(metrics: List[DownloadMetric], **context) -> str:
-        """Generate the message to be posted to the slack channel."""
-        message = f":synapse: Top Downloaded Public Synapse Projects {'Yesterday' if int(context['params']['hours_time_delta']) <= 24 else (date.today() - timedelta(hours=int(context['params']['hours_time_delta']))).isoformat()}!\n\n"
-        for index, row in enumerate(metrics[:10]):
-            if row.data_download_size:
-                size_string = f"{(row.data_download_size / 2 ** POWER_OF_TWO):.{SIZE_ROUNDING}f} {BYTE_STRING}"
-            else:
-                size_string = f"< {0:.{SIZE_ROUNDING}f}5 {BYTE_STRING}"
-            message += f"{index+1}. <https://www.synapse.org/#!Synapse:{row.project}|{row.name}> - {row.downloads_per_project} downloads, {row.number_of_unique_users_downloaded} unique users, {size_string} egressed\n\n"
-        message += "One download is a user downloading an entity (File, Table, Views, etc) once\n"
-        return message
-
-    @task
-    def post_top_downloads_to_slack(message: str) -> str:
-        """Post the top downloads to the slack channel."""
-        client = WebClient(token=Variable.get("SLACK_DPE_TEAM_BOT_TOKEN"))
-        result = client.chat_postMessage(channel="topcharts", text=message)
-        return result
 
     @task
     def push_results_to_synapse_table(metrics: List[DownloadMetric], **context) -> None:
         """Push the results to a Synapse table."""
         data = []
-        yesterday = date.today() - timedelta(
-            hours=int(context["params"]["hours_time_delta"])
-        )
         for metric in metrics:
             data.append(
                 [
                     metric.project,
                     metric.downloads_per_project,
-                    yesterday,
                     metric.number_of_unique_users_downloaded,
                     metric.data_download_size,
+                    metric.export_date,
                 ]
             )
 
@@ -188,12 +173,10 @@ def top_public_synapse_projects_from_snowflake() -> None:
             synapseclient.Table(schema=SYNAPSE_RESULTS_TABLE, values=data)
         )
 
-    top_downloads = get_top_downloads_from_snowflake()
-    slack_message = generate_top_downloads_message(metrics=top_downloads)
-    post_to_slack = post_top_downloads_to_slack(message=slack_message)
+    top_downloads = get_all_time_downloads_from_snowflake()
     push_to_synapse_table = push_results_to_synapse_table(metrics=top_downloads)
 
-    top_downloads >> slack_message >> post_to_slack >> push_to_synapse_table
+    top_downloads >> push_to_synapse_table
 
 
-top_public_synapse_projects_from_snowflake()
+top_public_synapse_projects_all_time_from_snowflake()
