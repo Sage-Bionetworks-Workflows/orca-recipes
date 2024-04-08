@@ -25,12 +25,11 @@ dag_params = {
     "tower_conn_id": Param("DYNAMIC_CHALLENGE_PROJECT_TOWER_CONN", type="string"),
     "tower_run_name": Param(f"dynamic-challenge-evaluation_{UUID}", type="string"),
     "tower_compute_env_type": Param("spot", type="string"),
+    "revision": Param("7224ff27226f2bdeffe16bf8b7f658db52af80aa", type="string"),
+    "challenge_profile": Param("dynamic_challenge", type="string"),
     "view_id": Param("syn52658661", type="string"),
-    "testing_data": Param("syn53627077", type="string"),
-    "scoring_script": Param("dynamic_challenge_score.py", type="string"),
-    "validation_script": Param("dynamic_challenge_validate.py", type="string"),
+    "send_email": Param(True, type="boolean"),
     "email_with_score": Param("yes", type="string"),
-    "synapse_evaluation_id": Param("9615537", type="string"),
 }
 
 dag_config = {
@@ -91,15 +90,13 @@ def dynamic_challenge_dag():
         info = LaunchInfo(
             run_name=context["params"]["tower_run_name"],
             pipeline="https://github.com/Sage-Bionetworks-Workflows/nf-synapse-challenge",
-            revision="main",
-            profiles=["tower"],
+            revision=context["params"]["revision"],
+            profiles=["tower", context["params"]["challenge_profile"]],
             entry_name="DATA_TO_MODEL_CHALLENGE",
             params={
                 "manifest": manifest_path,
                 "view_id": context["params"]["view_id"],
-                "scoring_script": context["params"]["scoring_script"],
-                "validation_script": context["params"]["validation_script"],
-                "testing_data": context["params"]["testing_data"],
+                "send_email": context["params"]["send_email"],
                 "email_with_score": context["params"]["email_with_score"],
             },
             workspace_secrets=["SYNAPSE_AUTH_TOKEN"],
