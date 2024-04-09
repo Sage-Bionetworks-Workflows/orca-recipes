@@ -3,12 +3,11 @@ Synapse table. This retrieves all time download metrics for Public Synapse Proje
 It is scheduled to run at 00:00 on the first day of the month."""
 
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta
+from datetime import date, datetime
 from typing import List
 
 import synapseclient
 from airflow.decorators import dag, task
-from airflow.models import Variable
 from airflow.models.param import Param
 from airflow.providers.snowflake.hooks.snowflake import SnowflakeHook
 from orca.services.synapse import SynapseHook
