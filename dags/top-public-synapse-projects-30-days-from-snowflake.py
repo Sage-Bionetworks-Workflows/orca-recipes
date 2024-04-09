@@ -54,8 +54,7 @@ class DownloadMetric:
 
 @dag(**dag_config)
 def top_public_synapse_projects_30_days_from_snowflake() -> None:
-    """Execute a query on Snowflake and report the results to a slack channel and
-    synapse table."""
+    """Execute a query on Snowflake and report the results to a Synapse table."""
 
     @task
     def get_all_time_downloads_from_snowflake(**context) -> List[DownloadMetric]:
