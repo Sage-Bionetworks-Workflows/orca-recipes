@@ -16,6 +16,7 @@ from orca.services.synapse import SynapseHook
 dag_params = {
     "snowflake_conn_id": Param("SNOWFLAKE_SYSADMIN_PORTAL_RAW_CONN", type="string"),
     "synapse_conn_id": Param("SYNAPSE_ORCA_SERVICE_ACCOUNT_CONN", type="string"),
+    "current_date": Param(date.today().strftime("%Y-%m-%d"), type="string"),
 }
 
 dag_config = {
@@ -62,7 +63,7 @@ def top_public_synapse_projects_30_days_from_snowflake() -> None:
         snow_hook = SnowflakeHook(context["params"]["snowflake_conn_id"])
         ctx = snow_hook.get_conn()
         cs = ctx.cursor()
-        query = """
+        query = f"""
             WITH PUBLIC_PROJECTS AS (
                 SELECT
                     node_latest.project_id,
@@ -92,9 +93,9 @@ def top_public_synapse_projects_30_days_from_snowflake() -> None:
                 ON
                     filedownload.file_handle_id = file_latest.id
                 WHERE
-                    filedownload.record_date > DATEADD(DAY, -30, CURRENT_DATE)
+                    filedownload.record_date > DATEADD(DAY, -30, '{context["params"]["current_date"]}')
                 AND 
-                    filedownload.record_date <= CURRENT_DATE
+                    filedownload.record_date <= '{context["params"]["current_date"]}'
             ),
 
             DOWNLOAD_STAT AS (
@@ -121,6 +122,7 @@ def top_public_synapse_projects_30_days_from_snowflake() -> None:
             ORDER BY
                 DOWNLOADS_PER_PROJECT DESC NULLS LAST;
             """
+        print(query)
         cs.execute(query)
         top_downloaded_df = cs.fetch_pandas_all()
 
