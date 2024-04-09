@@ -29,7 +29,7 @@ dag_config = {
     "params": dag_params,
 }
 
-SYNAPSE_RESULTS_TABLE = "syn55259964"
+SYNAPSE_RESULTS_TABLE = "syn55382267"
 
 
 @dataclass
@@ -93,7 +93,9 @@ def top_public_synapse_projects_30_days_from_snowflake() -> None:
                 ON
                     filedownload.file_handle_id = file_latest.id
                 WHERE
-                    filedownload.record_date = DATEADD(DAY, -30, CURRENT_DATE)
+                    filedownload.record_date > DATEADD(DAY, -30, CURRENT_DATE)
+                AND 
+                    filedownload.record_date <= CURRENT_DATE
             ),
 
             DOWNLOAD_STAT AS (
