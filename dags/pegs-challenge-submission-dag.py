@@ -57,7 +57,7 @@ def pegs_challenge_submission_dag():
         info = LaunchInfo(
             run_name=context["params"]["tower_run_name"],
             pipeline="https://github.com/Sage-Bionetworks-Workflows/nf-synapse-challenge",
-            revision="7224ff27226f2bdeffe16bf8b7f658db52af80aa",
+            revision="main",
             entry_name="MODEL_TO_DATA_CHALLENGE",
             workspace_secrets=["SYNAPSE_AUTH_TOKEN"],
             params={
