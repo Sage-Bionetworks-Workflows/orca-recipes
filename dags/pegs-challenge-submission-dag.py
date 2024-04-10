@@ -10,10 +10,10 @@ from orca.services.synapse import SynapseHook
 
 dag_params = {
     "synapse_conn_id": Param("SYNAPSE_ORCA_SERVICE_ACCOUNT_CONN", type="string"),
-    "synapse_evaluation_id": Param("9615531", type="string"),
+    "synapse_evaluation_id": Param("9615511", type="string"),
     "tower_conn_id": Param("PEGS_CHALLENGE_PROJECT_TOWER_CONN", type="string"),
     "tower_run_name": Param("pegs_model_submission_evaluation", type="string"),
-    "tower_view_id": Param("syn53239158", type="string"),
+    "tower_view_id": Param("syn55253884", type="string"),
     "tower_input_id": Param("syn53239289", type="string"),
     "tower_compute_env_type": Param("spot", type="string"),
 }
