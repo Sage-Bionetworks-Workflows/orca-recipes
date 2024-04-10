@@ -11,10 +11,9 @@ from orca.services.nextflowtower import NextflowTowerHook
 from orca.services.nextflowtower.models import LaunchInfo
 from orca.services.synapse import SynapseHook
 
-UUID = uuid.uuid4()
 REGION_NAME = "us-east-1"
 BUCKET_NAME = "pegs-challenge-project-tower-scratch"
-FILE_NAME = f"submissions_{UUID}.csv"
+FILE_NAME = f"submissions_{uuid.uuid4()}.csv"
 KEY = "work"
 
 dag_params = {
