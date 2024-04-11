@@ -91,6 +91,9 @@ def pegs_challenge_submission_dag():
             params={
                 "view_id": context["params"]["tower_view_id"],
                 "input_id": context["params"]["tower_input_id"],
+                "scoring_script": "model_to_data_score.py",
+                "validation_script": "validate.py",
+                "email_script": "send_email.py"
             },
         )
         run_id = hook.ops.launch_workflow(
