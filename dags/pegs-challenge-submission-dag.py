@@ -11,17 +11,18 @@ from orca.services.nextflowtower import NextflowTowerHook
 from orca.services.nextflowtower.models import LaunchInfo
 from orca.services.synapse import SynapseHook
 
+UUID = uuid.uuid4()
 REGION_NAME = "us-east-1"
 BUCKET_NAME = "pegs-challenge-project-tower-scratch"
-FILE_NAME = f"submissions_{uuid.uuid4()}.csv"
-KEY = "work"
+FILE_NAME = f"submissions_{UUID}.csv"
+KEY = "10days/pegs_challenge"
 
 dag_params = {
     "synapse_conn_id": Param("SYNAPSE_ORCA_SERVICE_ACCOUNT_CONN", type="string"),
     "synapse_evaluation_id": Param("9615511", type="string"),
     "aws_conn_id": Param("AWS_TOWER_PROD_S3_CONN", type="string"),
     "tower_conn_id": Param("PEGS_CHALLENGE_PROJECT_TOWER_CONN", type="string"),
-    "tower_run_name": Param("pegs_model_submission_evaluation", type="string"),
+    "tower_run_name": Param("pegs_model_submission_evaluation_{UUID}", type="string"),
     "tower_view_id": Param("syn55253884", type="string"),
     "tower_input_id": Param("syn53239289", type="string"),
     "tower_compute_env_type": Param("spot", type="string"),
