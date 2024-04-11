@@ -46,7 +46,7 @@ def pegs_challenge_submission_dag():
     def get_new_submissions(**context) -> list[int]:
         hook = SynapseHook(context["params"]["synapse_conn_id"])
         submissions = hook.ops.get_submissions_with_status(
-            context["params"]["view_id"], "RECEIVED"
+            context["params"]["tower_view_id"], "RECEIVED"
         )
         return submissions
 
