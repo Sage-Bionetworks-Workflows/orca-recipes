@@ -29,11 +29,11 @@ dag_params = {
 }
 
 dag_config = {
-    "schedule_interval": "*/2 * * * *",
+    "schedule_interval": "*/1 * * * *",
     "start_date": datetime(2024, 4, 9),
     "catchup": False,
     "default_args": {
-        "retries": 0,
+        "retries": 2,
     },
     "tags": ["nextflow_tower"],
     "params": dag_params,
@@ -89,6 +89,7 @@ def pegs_challenge_submission_dag():
             entry_name="MODEL_TO_DATA_CHALLENGE",
             workspace_secrets=["SYNAPSE_AUTH_TOKEN"],
             params={
+                "project_name": "PEGS DREAM Challenge",
                 "manifest": manifest_path,
                 "view_id": context["params"]["tower_view_id"],
                 "input_id": context["params"]["tower_input_id"],
