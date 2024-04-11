@@ -101,7 +101,7 @@ def pegs_challenge_submission_dag():
         )
         return run_id
 
-    @task.sensor(poke_interval=300, timeout=604800, mode="reschedule")
+    @task.sensor(poke_interval=60, timeout=604800, mode="reschedule")
     def monitor_model2data_workflow(run_id: str, **context):
         hook = NextflowTowerHook(context["params"]["tower_conn_id"])
         workflow = hook.ops.get_workflow(run_id)
