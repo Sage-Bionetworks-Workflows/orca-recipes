@@ -80,7 +80,7 @@ def pegs_challenge_submission_dag():
         return f"s3://{BUCKET_NAME}/{KEY}/{FILE_NAME}"
 
     @task()
-    def launch_model2data_workflow(**context):
+    def launch_model2data_workflow(manifest_path: str, **context):
         hook = NextflowTowerHook(context["params"]["tower_conn_id"])
         info = LaunchInfo(
             run_name=context["params"]["tower_run_name"],
@@ -89,6 +89,7 @@ def pegs_challenge_submission_dag():
             entry_name="MODEL_TO_DATA_CHALLENGE",
             workspace_secrets=["SYNAPSE_AUTH_TOKEN"],
             params={
+                "manifest": manifest_path,
                 "view_id": context["params"]["tower_view_id"],
                 "input_id": context["params"]["tower_input_id"],
                 "scoring_script": "model_to_data_score.py",
@@ -112,7 +113,7 @@ def pegs_challenge_submission_dag():
     submissions_updated = update_submission_statuses(submissions=submissions)
     stop = stop_dag()
     manifest_path = stage_submissions_manifest(submissions=submissions)
-    run_id = launch_model2data_workflow()
+    run_id = launch_model2data_workflow(manifest_path=manifest_path)
     monitor = monitor_model2data_workflow(run_id=run_id)
 
     submissions >> submissions_updated >> [stop, manifest_path]
