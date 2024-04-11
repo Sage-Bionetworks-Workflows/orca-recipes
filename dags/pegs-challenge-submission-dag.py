@@ -29,11 +29,11 @@ dag_params = {
 }
 
 dag_config = {
-    "schedule_interval": "*/1 * * * *",
+    "schedule_interval": "*/2 * * * *",
     "start_date": datetime(2024, 4, 9),
     "catchup": False,
     "default_args": {
-        "retries": 2,
+        "retries": 0,
     },
     "tags": ["nextflow_tower"],
     "params": dag_params,
