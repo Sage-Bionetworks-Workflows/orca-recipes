@@ -112,12 +112,13 @@ def generate_datasets() -> list[Dataset]:
         )
     ]
 
-def stage_samplesheet(syn: Synapse, dataset: Dataset):
+def stage_samplesheet(syn: Synapse, dataset: Dataset) -> None:
     """Download the samplesheet from synapse and upload it to S3 in the location where synstage
     is going to grab the file.
-
-    :param syn: The logged in synapse instance.
-    :param dataset: The dataset to stage the samplesheet for.
+    
+    Arguments:
+        syn: The logged in synapse instance
+        dataset: The dataset to stage the samplesheet for
     """
     samplesheet_file = syn.get(dataset.id)
     samplesheet_file_path = samplesheet_file.path
@@ -128,7 +129,14 @@ def stage_samplesheet(syn: Synapse, dataset: Dataset):
 
 
 def prepare_synstage_info(dataset: Dataset) -> LaunchInfo:
-    """Generate LaunchInfo for nf-synstage."""
+    """Generate LaunchInfo for nf-synstage.
+    
+    Arguments:
+        dataset: The dataset to stage the samplesheet for
+        
+    Returns:
+        The Nextflow Tower workflow launch specification for synstage step
+    """
     return LaunchInfo(
             run_name=dataset.synstage_run_name,
             pipeline="Sage-Bionetworks-Workflows/nf-synapse",
@@ -143,7 +151,14 @@ def prepare_synstage_info(dataset: Dataset) -> LaunchInfo:
         )
     
 def prepare_rnaseq_launch_info(dataset: Dataset) -> LaunchInfo:
-    """Generate LaunchInfo for nf-core/rnaseq workflow run."""
+    """Generate LaunchInfo for nf-core/rnaseq workflow run.
+
+    Arguments:
+        dataset: The dataset to stage the samplesheet for
+
+    Returns:
+        The Nextflow Tower workflow launch specification for rnaseq processing step    
+    """
     return LaunchInfo(
         run_name=dataset.rnaseq_run_name,
         pipeline="nf-core/rnaseq",
@@ -168,7 +183,14 @@ def prepare_rnaseq_launch_info(dataset: Dataset) -> LaunchInfo:
 
 
 def prepare_synindex_launch_info(dataset: Dataset) -> LaunchInfo:
-    """Generate LaunchInfo for nf-synindex workflow run."""
+    """Generate LaunchInfo for nf-synindex workflow run.
+    
+    Arguments:
+        dataset: The dataset to stage the samplesheet for
+
+    Returns:
+        The Nextflow Tower workflow launch specification for synindex step    
+    """
     return LaunchInfo(
         run_name=dataset.synindex_run_name,
         pipeline="Sage-Bionetworks-Workflows/nf-synindex",
@@ -207,7 +229,6 @@ async def run_workflows(ops: NextflowTowerOps, dataset: Dataset):
     synindex_run_id = ops.launch_workflow(synindex_info, "spot")
     status = await ops.monitor_workflow(run_id=synindex_run_id, wait_time=60 * 2)
     print(status)
-
 
 if __name__ == "__main__":
     asyncio.run(main())
