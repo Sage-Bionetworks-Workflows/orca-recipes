@@ -2,14 +2,12 @@
 This workflow was created to run the `nf-core/sarek` pipeline for GRCh38 Whole Genome Sequencing data.
 """
 import asyncio
-import boto3
-
-from synapseclient import Synapse
 from dataclasses import dataclass
-from pathlib import Path
 
+import boto3
 from orca.services.nextflowtower import NextflowTowerOps
 from orca.services.nextflowtower.models import LaunchInfo
+from synapseclient import Synapse
 
 session = boto3.Session(profile_name="TowerProd_Administrator")
 s3 = session.client("s3")
@@ -170,7 +168,7 @@ def prepare_sarek_launch_info(dataset: Dataset) -> LaunchInfo:
             "wes": False,
             "igenomes_base": "s3://sage-igenomes/igenomes",
             "genome": "GATK.GRCh38",
-            "tools": "strelka, mutect2, deepvariant, cnvkit",
+            "tools": "strelka,deepvariant,cnvkit",
         }
     )
 
@@ -200,16 +198,16 @@ def prepare_synindex_launch_info(dataset: Dataset) -> LaunchInfo:
 
 
 async def run_workflows(ops: NextflowTowerOps, dataset: Dataset):
-    syn = Synapse()
-    syn.login()
+    # syn = Synapse()
+    # syn.login()
 
-    # upload samplesheet to S3
-    stage_samplesheet(syn, dataset)
-    # stage fastq and updated samplesheet
-    synstage_info = prepare_synstage_info(dataset)
-    synstage_run_id = ops.launch_workflow(synstage_info, "spot")
-    status = await ops.monitor_workflow(run_id=synstage_run_id, wait_time=60 * 2)
-    print(status)
+    # # upload samplesheet to S3
+    # stage_samplesheet(syn, dataset)
+    # # stage fastq and updated samplesheet
+    # synstage_info = prepare_synstage_info(dataset)
+    # synstage_run_id = ops.launch_workflow(synstage_info, "spot")
+    # status = await ops.monitor_workflow(run_id=synstage_run_id, wait_time=60 * 2)
+    # print(status)
     
     # run sarek pipeline
     sarek_info = prepare_sarek_launch_info(dataset)
