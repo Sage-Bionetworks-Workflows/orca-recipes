@@ -56,7 +56,9 @@ This repository also contains recipes for specific projects that either don't ne
 
 ### Dependencies
 
-Dependencies for `local` recipes are defined in the `Pipfile` at the root of this repository. To get started, you can install all of the dependencies that you might need by running:
+Dependencies for `local` recipes are defined in the requirements files at the root of this repository. To get started, you can install all of the dependencies that you might need by running:
 ```console
-pipenv install --dev
+bash dev_setup.sh
+source venv/bin/activate
 ```
+This will create a virtual environment with Python version 3.10 and all needed dependencies and activate it. Before running, be sure to have Python 3.10 or `pyenv` installed on your machine.

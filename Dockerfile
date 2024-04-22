@@ -1,11 +1,12 @@
-ARG BASE_IMAGE=apache/airflow:2.5.1-python3.10
+ARG BASE_IMAGE=apache/airflow:2.7.2-python3.10
 FROM $BASE_IMAGE
 
-RUN pip install --no-cache-dir pipenv
+RUN pip install --upgrade pip
 
-ARG PIPFOLDER=/tmp/pipfile/
+RUN pip install apache-airflow[amazon,celery,snowflake]==2.7.2 --constraint "https://raw.githubusercontent.com/apache/airflow/constraints-2.7.2/constraints-3.10.txt"
 
-COPY Pipfile* "$PIPFOLDER"
+COPY requirements-airflow.txt /tmp/requirements-airflow.txt
+RUN pip install --no-cache-dir -r /tmp/requirements-airflow.txt
 
-RUN cd "$PIPFOLDER" \
-  && pipenv install --dev --system
+COPY requirements-dev.txt /tmp/requirements-dev.txt
+RUN pip install --no-cache-dir -r /tmp/requirements-dev.txt
