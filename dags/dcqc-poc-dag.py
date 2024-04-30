@@ -1,6 +1,7 @@
 import os
+import uuid
 
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from airflow.decorators import dag, task
 from airflow.models.param import Param
@@ -10,18 +11,21 @@ from orca.services.synapse import SynapseHook
 from orca.services.nextflowtower import NextflowTowerHook
 from orca.services.nextflowtower.models import LaunchInfo
 
+from synapseclient.models import File
+
 REGION_NAME = "us-east-1"
-BUCKET_NAME = "example-project-tower-scratch"
-KEY = "10days/dcqc/"
+BUCKET_NAME = "example-dev-project-tower-scratch"
+KEY = f"10days/dcqc"
+
 
 dag_params = {
     "tower_conn_id": Param("EXAMPLE_DEV_PROJECT_TOWER_CONN", type="string"),
-    "tower_run_name": Param("DCQC_run", type="string"),
     "tower_compute_env_type": Param("spot", type="string"),
     "synapse_conn_id": Param("SYNAPSE_ORCA_SERVICE_ACCOUNT_CONN", type="string"),
     "synapse_container": Param("syn58807287", type="string"),
     "manifest_suffix": Param("dcqc_manifest.csv", type="string"),
     "aws_conn_id": Param("AWS_TOWER_DEV_S3_CONN", type="string"),
+    "uuid": Param(str(uuid.uuid4()), type="string"),
 }
 
 dag_config = {
@@ -36,20 +40,20 @@ dag_config = {
 }
 
 @dag(**dag_config)
-def htan_nf_dcqc_dag():
+def dcqc_poc_dag():
     @task()
     def get_new_manifest_entities(**context):
         """
         Gets a list of the any manifest files in the synapse_container that have been uploaded in the last 24 hours
         """
-        syn_hook = SynapseHook(synapse_conn_id=context["params"]["synapse_conn_id"])
+        syn_hook = SynapseHook(context["params"]["synapse_conn_id"])
         container = syn_hook.client.get(context["params"]["synapse_container"])
 
         if container.concreteType not in ["org.sagebionetworks.repo.model.Folder", "org.sagebionetworks.repo.model.Project"]:
             raise ValueError(f"Provided Synapse entity must be a Folder or Project, entity provided is '{container.concreteType}'")
 
         child_entities = syn_hook.client.getChildren(container, includeTypes=["file"])
-        manifest_entities = [child for child in child_entities if child["name"].endswith(context["params"]["manifest_suffix"]) and child["modifiedOn"] > datetime.now() - datetime.timedelta(days=1)]
+        manifest_entities = [child for child in child_entities if child["name"].endswith(context["params"]["manifest_suffix"]) and datetime.strptime(child["modifiedOn"], "%Y-%m-%dT%H:%M:%S.%fZ") > datetime.now() - timedelta(days=1)]
         return manifest_entities
     
     @task.branch()
@@ -70,16 +74,18 @@ def htan_nf_dcqc_dag():
         """
         Stage the manifest file in S3.
         """
-        syn_hook = SynapseHook(synapse_conn_id=context["params"]["synapse_conn_id"])
+        syn_hook = SynapseHook(context["params"]["synapse_conn_id"])
         manifest_file = syn_hook.client.get(manifest_entities[0]["id"])
 
         s3_hook = S3Hook(
             aws_conn_id=context["params"]["aws_conn_id"], region_name=REGION_NAME
         )
+        run_uuid = context["params"]["uuid"]
         s3_hook.load_file(
-            filename=manifest_file.path, key=f"{KEY}/inputs/{manifest_file.name}", bucket_name=BUCKET_NAME
+            filename=manifest_file.path, key=f"{KEY}/{run_uuid}/{manifest_file.name}", bucket_name=BUCKET_NAME
         )
-        return f"s3://{BUCKET_NAME}/{KEY}/inputs/{manifest_file.name}"
+        print(f"s3://{BUCKET_NAME}/{KEY}/{run_uuid}/{manifest_file.name}")
+        return f"s3://{BUCKET_NAME}/{KEY}/{run_uuid}/{manifest_file.name}"
 
     @task()
     def launch_dcqc(manifest_uri: str, **context):
@@ -87,14 +93,17 @@ def htan_nf_dcqc_dag():
         Launches nf-dcqc tower workflow
         """
         hook = NextflowTowerHook(context["params"]["tower_conn_id"])
+        run_name = context["params"]["tower_run_name"]
+        parent = context["params"]["synapse_container"]
+        run_uuid = context["params"]["uuid"]
+        print(f"{run_name}_{parent}_{run_uuid}")
         info = LaunchInfo(
-            run_name=context["params"]["tower_run_name"],
+            run_name=f"DCQC_{parent}_{run_uuid}",
             pipeline="Sage-Bionetworks-Workflows/nf-dcqc",
             revision="main",
-            profiles=["sage"],
             params={
                 "input": manifest_uri,
-                "outdir": f"s3://{BUCKET_NAME}/{KEY}/outputs",
+                "outdir": f"s3://{BUCKET_NAME}/{KEY}/{run_uuid}",
             },
             workspace_secrets=["SYNAPSE_AUTH_TOKEN"],
         )
@@ -113,18 +122,19 @@ def htan_nf_dcqc_dag():
         s3_hook = S3Hook(
             aws_conn_id=context["params"]["aws_conn_id"], region_name=REGION_NAME
         )
+        run_uuid = context["params"]["uuid"]
         output_file = s3_hook.download_file(
-            key=f"{KEY}/outputs/output.csv", bucket_name=BUCKET_NAME
+            key=f"{KEY}/{run_uuid}/output.csv", bucket_name=BUCKET_NAME
         )
 
         os.rename(output_file, "dcqc_output.csv")
 
-        syn_hook = SynapseHook(synapse_conn_id=context["params"]["synapse_conn_id"])
-        syn_hook.client.models.File(
+        syn_hook = SynapseHook(context["params"]["synapse_conn_id"])
+        File(
             path="dcqc_output.csv",
             parent_id=context["params"]["synapse_container"],
             description="DCQC run results"
-        ).store()
+        ).store(synapse_client=syn_hook.client)
 
         os.remove("dcqc_output.csv")
 
@@ -140,4 +150,4 @@ def htan_nf_dcqc_dag():
     manifest_uri >> run_id >> complete_run >> output_uploaded
 
 
-htan_nf_dcqc_dag()
+dcqc_poc_dag()
