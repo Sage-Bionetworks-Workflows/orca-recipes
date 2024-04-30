@@ -84,7 +84,6 @@ def dcqc_poc_dag():
         s3_hook.load_file(
             filename=manifest_file.path, key=f"{KEY}/{run_uuid}/{manifest_file.name}", bucket_name=BUCKET_NAME
         )
-        print(f"s3://{BUCKET_NAME}/{KEY}/{run_uuid}/{manifest_file.name}")
         return f"s3://{BUCKET_NAME}/{KEY}/{run_uuid}/{manifest_file.name}"
 
     @task()
@@ -93,10 +92,8 @@ def dcqc_poc_dag():
         Launches nf-dcqc tower workflow
         """
         hook = NextflowTowerHook(context["params"]["tower_conn_id"])
-        run_name = context["params"]["tower_run_name"]
         parent = context["params"]["synapse_container"]
         run_uuid = context["params"]["uuid"]
-        print(f"{run_name}_{parent}_{run_uuid}")
         info = LaunchInfo(
             run_name=f"DCQC_{parent}_{run_uuid}",
             pipeline="Sage-Bionetworks-Workflows/nf-dcqc",
