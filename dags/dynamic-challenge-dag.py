@@ -12,28 +12,25 @@ from orca.services.nextflowtower import NextflowTowerHook
 from orca.services.nextflowtower.models import LaunchInfo
 from orca.services.synapse import SynapseHook
 
-UUID = uuid.uuid4()
 REGION_NAME = "us-east-1"
 BUCKET_NAME = "dynamic-challenge-project-tower-scratch"
-FILE_NAME = f"submissions_{UUID}.csv"
+FILE_NAME = "submissions.csv"
 KEY = "10days/dynamic_challenge"
-
 
 dag_params = {
     "synapse_conn_id": Param("SYNAPSE_ORCA_SERVICE_ACCOUNT_CONN", type="string"),
     "aws_conn_id": Param("AWS_TOWER_PROD_S3_CONN", type="string"),
     "tower_conn_id": Param("DYNAMIC_CHALLENGE_PROJECT_TOWER_CONN", type="string"),
-    "tower_run_name": Param(f"dynamic-challenge-evaluation_{UUID}", type="string"),
     "tower_compute_env_type": Param("spot", type="string"),
     "revision": Param("7224ff27226f2bdeffe16bf8b7f658db52af80aa", type="string"),
     "challenge_profile": Param("dynamic_challenge", type="string"),
     "view_id": Param("syn52658661", type="string"),
     "send_email": Param(True, type="boolean"),
     "email_with_score": Param("yes", type="string"),
+    "uuid": Param(str(uuid.uuid4()), type="string"),
 }
 
 dag_config = {
-    # Run every minute
     "schedule_interval": "* * * * *",
     "start_date": datetime(2024, 1, 1),
     "catchup": False,
@@ -78,17 +75,19 @@ def dynamic_challenge_dag():
         )
         df = pd.DataFrame({"submission_id": submissions})
         df.to_csv(FILE_NAME, index=False)
+        run_uuid = context["params"]["uuid"]
         s3_hook.load_file(
-            filename=FILE_NAME, key=f"{KEY}/{FILE_NAME}", bucket_name=BUCKET_NAME
+            filename=FILE_NAME, key=f"{KEY}/{run_uuid}/{FILE_NAME}", bucket_name=BUCKET_NAME
         )
         os.remove(FILE_NAME)
-        return f"s3://{BUCKET_NAME}/{KEY}/{FILE_NAME}"
+        return f"s3://{BUCKET_NAME}/{KEY}/{run_uuid}/{FILE_NAME}"
 
     @task()
     def launch_data_to_model_on_tower(manifest_path: str, **context) -> str:
         hook = NextflowTowerHook(context["params"]["tower_conn_id"])
+        run_uuid = context["params"]["uuid"]
         info = LaunchInfo(
-            run_name=context["params"]["tower_run_name"],
+            run_name=f"dynamic-challenge-evaluation-{run_uuid}",
             pipeline="https://github.com/Sage-Bionetworks-Workflows/nf-synapse-challenge",
             revision=context["params"]["revision"],
             profiles=["tower", context["params"]["challenge_profile"]],
