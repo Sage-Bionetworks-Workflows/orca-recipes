@@ -35,9 +35,10 @@ dag_config = {
     "default_args": {
         "retries": 2,
     },
-    "tags": ["nextflow_tower_metrics"],
+    "tags": ["nextflow_tower"],
     "params": dag_params,
 }
+
 
 @dag(**dag_config)
 def dcqc_poc_dag():
@@ -49,13 +50,24 @@ def dcqc_poc_dag():
         syn_hook = SynapseHook(context["params"]["synapse_conn_id"])
         container = syn_hook.client.get(context["params"]["synapse_container"])
 
-        if container.concreteType not in ["org.sagebionetworks.repo.model.Folder", "org.sagebionetworks.repo.model.Project"]:
-            raise ValueError(f"Provided Synapse entity must be a Folder or Project, entity provided is '{container.concreteType}'")
+        if container.concreteType not in [
+            "org.sagebionetworks.repo.model.Folder",
+            "org.sagebionetworks.repo.model.Project",
+        ]:
+            raise ValueError(
+                f"Provided Synapse entity must be a Folder or Project, entity provided is '{container.concreteType}'"
+            )
 
         child_entities = syn_hook.client.getChildren(container, includeTypes=["file"])
-        manifest_entities = [child for child in child_entities if child["name"].endswith(context["params"]["manifest_suffix"]) and datetime.strptime(child["modifiedOn"], "%Y-%m-%dT%H:%M:%S.%fZ") > datetime.now() - timedelta(days=1)]
+        manifest_entities = [
+            child
+            for child in child_entities
+            if child["name"].endswith(context["params"]["manifest_suffix"])
+            and datetime.strptime(child["modifiedOn"], "%Y-%m-%dT%H:%M:%S.%fZ")
+            > datetime.now() - timedelta(days=1)
+        ]
         return manifest_entities
-    
+
     @task.branch()
     def check_number_of_manifest_entities(manifest_entities: list, **context):
         """
@@ -69,8 +81,10 @@ def dcqc_poc_dag():
         if len(manifest_entities) == 0:
             return "stop_dag"
         if len(manifest_entities) > 1:
-            raise ValueError(f"More than one manifest entity found in {context['params']['synapse_container']}.")
-        
+            raise ValueError(
+                f"More than one manifest entity found in {context['params']['synapse_container']}."
+            )
+
     @task()
     def stop_dag() -> None:
         pass
@@ -88,7 +102,9 @@ def dcqc_poc_dag():
         )
         run_uuid = context["params"]["uuid"]
         s3_hook.load_file(
-            filename=manifest_file.path, key=f"{KEY}/{run_uuid}/{manifest_file.name}", bucket_name=BUCKET_NAME
+            filename=manifest_file.path,
+            key=f"{KEY}/{run_uuid}/{manifest_file.name}",
+            bucket_name=BUCKET_NAME,
         )
         return f"s3://{BUCKET_NAME}/{KEY}/{run_uuid}/{manifest_file.name}"
 
@@ -110,7 +126,9 @@ def dcqc_poc_dag():
             },
             workspace_secrets=["SYNAPSE_AUTH_TOKEN"],
         )
-        run_id = hook.ops.launch_workflow(info, context["params"]["tower_compute_env_type"])
+        run_id = hook.ops.launch_workflow(
+            info, context["params"]["tower_compute_env_type"]
+        )
         return run_id
 
     @task.sensor(poke_interval=300, timeout=604800, mode="reschedule")
@@ -122,7 +140,7 @@ def dcqc_poc_dag():
         workflow = hook.ops.get_workflow(run_id)
         print(f"Current workflow state: {workflow.status.state.value}")
         return workflow.status.is_done
-    
+
     @task()
     def upload_output_file_to_synapse(**context):
         """
@@ -142,13 +160,15 @@ def dcqc_poc_dag():
         File(
             path="dcqc_output.csv",
             parent_id=context["params"]["synapse_container"],
-            description="DCQC run results"
+            description="DCQC run results",
         ).store(synapse_client=syn_hook.client)
 
         os.remove("dcqc_output.csv")
 
     manifest_entities = get_new_manifest_entities()
-    manifest_entities_checked = check_number_of_manifest_entities(manifest_entities=manifest_entities)
+    manifest_entities_checked = check_number_of_manifest_entities(
+        manifest_entities=manifest_entities
+    )
     stop = stop_dag()
     manifest_uri = stage_manifest(manifest_entities=manifest_entities)
     run_id = launch_dcqc(manifest_uri=manifest_uri)
