@@ -44,7 +44,7 @@ def dcqc_poc_dag():
     @task()
     def get_new_manifest_entities(**context):
         """
-        Gets a list of the any manifest files in the synapse_container that have been uploaded in the last 24 hours
+        Gets a list of all manifest files in the synapse_container that have been uploaded in the last 24 hours.
         """
         syn_hook = SynapseHook(context["params"]["synapse_conn_id"])
         container = syn_hook.client.get(context["params"]["synapse_container"])
