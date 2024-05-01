@@ -15,7 +15,7 @@ from synapseclient.models import File
 
 REGION_NAME = "us-east-1"
 BUCKET_NAME = "example-dev-project-tower-scratch"
-KEY = f"10days/dcqc"
+KEY = "10days/dcqc"
 
 
 dag_params = {
@@ -58,6 +58,12 @@ def dcqc_poc_dag():
     
     @task.branch()
     def check_number_of_manifest_entities(manifest_entities: list, **context):
+        """
+        Check that there is only one manifest file in the synapse_container.
+        If 0, continue to the stop_dag task.
+        If 1, continue to the stage_manifest task.
+        If >1, raise an error.
+        """
         if len(manifest_entities) == 1:
             return "stage_manifest"
         if len(manifest_entities) == 0:
@@ -109,6 +115,9 @@ def dcqc_poc_dag():
 
     @task.sensor(poke_interval=300, timeout=604800, mode="reschedule")
     def monitor_dcqc(run_id: str, **context):
+        """
+        Monitor the nf-dcqc tower workflow.
+        """
         hook = NextflowTowerHook(context["params"]["tower_conn_id"])
         workflow = hook.ops.get_workflow(run_id)
         print(f"Current workflow state: {workflow.status.state.value}")
@@ -116,6 +125,9 @@ def dcqc_poc_dag():
     
     @task()
     def upload_output_file_to_synapse(**context):
+        """
+        Download the DCQC output file and upload it to Synapse.
+        """
         s3_hook = S3Hook(
             aws_conn_id=context["params"]["aws_conn_id"], region_name=REGION_NAME
         )
