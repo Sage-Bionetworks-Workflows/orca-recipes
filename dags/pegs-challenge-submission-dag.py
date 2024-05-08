@@ -19,12 +19,14 @@ KEY = "10days/pegs_challenge"
 
 dag_params = {
     "synapse_conn_id": Param("SYNAPSE_ORCA_SERVICE_ACCOUNT_CONN", type="string"),
-    "synapse_evaluation_id": Param("9615511", type="string"),
+    "synapse_evaluation_id": Param("TODO", type="string"),
     "aws_conn_id": Param("AWS_TOWER_PROD_S3_CONN", type="string"),
+    #"revision": Param("TODO", type="string"),
+    "challenge_profile": Param("pegs_challenge_validate", type="string"),
     "tower_conn_id": Param("PEGS_CHALLENGE_PROJECT_TOWER_CONN", type="string"),
     "tower_run_name": Param(f"pegs_model_submission_evaluation_{UUID}", type="string"),
-    "tower_view_id": Param("syn55253884", type="string"),
-    "tower_input_id": Param("syn53239289", type="string"),
+    "tower_view_id": Param("syn57373526", type="string"),
+    "tower_input_id": Param("syn58848106", type="string"),
     "tower_compute_env_type": Param("spot", type="string"),
 }
 
@@ -88,15 +90,7 @@ def pegs_challenge_submission_dag():
             revision="main",
             entry_name="MODEL_TO_DATA_CHALLENGE",
             workspace_secrets=["SYNAPSE_AUTH_TOKEN"],
-            params={
-                "project_name": "PEGS DREAM Challenge",
-                "manifest": manifest_path,
-                "view_id": context["params"]["tower_view_id"],
-                "input_id": context["params"]["tower_input_id"],
-                "scoring_script": "model_to_data_score.py",
-                "validation_script": "validate.py",
-                "email_script": "send_email.py"
-            },
+            profiles=context["params"]["challenge_profile"]
         )
         run_id = hook.ops.launch_workflow(
             info, context["params"]["tower_compute_env_type"]
