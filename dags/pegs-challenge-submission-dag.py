@@ -90,6 +90,7 @@ def pegs_challenge_submission_dag():
             entry_name="MODEL_TO_DATA_CHALLENGE",
             workspace_secrets=["SYNAPSE_AUTH_TOKEN"],
             profile=context["params"]["challenge_profile"]
+            params={manifest: manifest_path}
         )
         run_id = hook.ops.launch_workflow(
             info, context["params"]["tower_compute_env_type"]
