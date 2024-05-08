@@ -18,9 +18,9 @@ KEY = "10days/pegs_challenge"
 
 dag_params = {
     "synapse_conn_id": Param("SYNAPSE_ORCA_SERVICE_ACCOUNT_CONN", type="string"),
-    "synapse_evaluation_id": Param("TODO", type="string"),
+    "synapse_evaluation_id": Param("9615431", type="string"),
     "aws_conn_id": Param("AWS_TOWER_PROD_S3_CONN", type="string"),
-    "revision": Param("IBCDPE-918-pegs-profile", type="string"), #TODO: lock this to a commit
+    "revision": Param("e19ca1dab3a85d77b62e8e00481d7291c19a0048", type="string"),
     "challenge_profile": Param("pegs_challenge_validate", type="string"),
     "tower_conn_id": Param("PEGS_CHALLENGE_PROJECT_TOWER_CONN", type="string"),
     "tower_view_id": Param("syn57373526", type="string"),
