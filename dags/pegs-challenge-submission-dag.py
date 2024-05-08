@@ -11,23 +11,22 @@ from orca.services.nextflowtower import NextflowTowerHook
 from orca.services.nextflowtower.models import LaunchInfo
 from orca.services.synapse import SynapseHook
 
-UUID = uuid.uuid4()
 REGION_NAME = "us-east-1"
 BUCKET_NAME = "pegs-challenge-project-tower-scratch"
-FILE_NAME = f"submissions_{UUID}.csv"
+FILE_NAME = f"submissions.csv"
 KEY = "10days/pegs_challenge"
 
 dag_params = {
     "synapse_conn_id": Param("SYNAPSE_ORCA_SERVICE_ACCOUNT_CONN", type="string"),
     "synapse_evaluation_id": Param("TODO", type="string"),
     "aws_conn_id": Param("AWS_TOWER_PROD_S3_CONN", type="string"),
-    #"revision": Param("TODO", type="string"),
+    "revision": Param("main", type="string"), #TODO: lock this to a commit
     "challenge_profile": Param("pegs_challenge_validate", type="string"),
     "tower_conn_id": Param("PEGS_CHALLENGE_PROJECT_TOWER_CONN", type="string"),
-    "tower_run_name": Param(f"pegs_model_submission_evaluation_{UUID}", type="string"),
     "tower_view_id": Param("syn57373526", type="string"),
     "tower_input_id": Param("syn58848106", type="string"),
     "tower_compute_env_type": Param("spot", type="string"),
+    "uuid": Param(str(uuid.uuid4()), type="string")
 }
 
 dag_config = {
@@ -75,19 +74,21 @@ def pegs_challenge_submission_dag():
         )
         df = pd.DataFrame({"submission_id": submissions})
         df.to_csv(FILE_NAME, index=False)
+        run_uuid = context["params"]["uuid"]
         s3_hook.load_file(
-            filename=FILE_NAME, key=f"{KEY}/{FILE_NAME}", bucket_name=BUCKET_NAME
+            filename=FILE_NAME, key=f"{KEY}/{run_uuid}/{FILE_NAME}", bucket_name=BUCKET_NAME
         )
         os.remove(FILE_NAME)
-        return f"s3://{BUCKET_NAME}/{KEY}/{FILE_NAME}"
+        return f"s3://{BUCKET_NAME}/{KEY}/{run_uuid}/{FILE_NAME}"
 
     @task()
     def launch_model2data_workflow(manifest_path: str, **context):
         hook = NextflowTowerHook(context["params"]["tower_conn_id"])
+        run_uuid = context["params"]["uuid"]
         info = LaunchInfo(
-            run_name=context["params"]["tower_run_name"],
+            run_name=f"pegs-challenge-evaluation-{run_uuid}",
             pipeline="https://github.com/Sage-Bionetworks-Workflows/nf-synapse-challenge",
-            revision="main",
+            revision=context["params"]["revision"],
             entry_name="MODEL_TO_DATA_CHALLENGE",
             workspace_secrets=["SYNAPSE_AUTH_TOKEN"],
             profiles=context["params"]["challenge_profile"]
