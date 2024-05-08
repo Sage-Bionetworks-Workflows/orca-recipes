@@ -13,18 +13,16 @@ from orca.services.synapse import SynapseHook
 
 REGION_NAME = "us-east-1"
 BUCKET_NAME = "pegs-challenge-project-tower-scratch"
-FILE_NAME = f"submissions.csv"
+FILE_NAME = "submissions.csv"
 KEY = "10days/pegs_challenge"
 
 dag_params = {
     "synapse_conn_id": Param("SYNAPSE_ORCA_SERVICE_ACCOUNT_CONN", type="string"),
-    "synapse_evaluation_id": Param("9615431", type="string"),
     "aws_conn_id": Param("AWS_TOWER_PROD_S3_CONN", type="string"),
     "revision": Param("e19ca1dab3a85d77b62e8e00481d7291c19a0048", type="string"),
     "challenge_profile": Param("pegs_challenge_validate", type="string"),
     "tower_conn_id": Param("PEGS_CHALLENGE_PROJECT_TOWER_CONN", type="string"),
     "tower_view_id": Param("syn57373526", type="string"),
-    "tower_input_id": Param("syn58848106", type="string"),
     "tower_compute_env_type": Param("spot", type="string"),
     "uuid": Param(str(uuid.uuid4()), type="string")
 }
