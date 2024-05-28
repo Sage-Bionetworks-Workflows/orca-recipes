@@ -1,14 +1,26 @@
 #!/usr/bin/env python3
 
 """
-LENS workflow metaflow DAG ***This recipe is a WIP***
+LENS workflow metaflow DAG.
+
+Takes two parameters:
+
+    dataset_id: Synapse ID of dataset file to be processed.
+    s3_prefix: S3 prefix for parent S3 bucket where workflow files will be stored.
+
+Example usage:
+
+```
+    python3 local/iatlas/lens/lens.py run \
+        --dataset_id syn58366876 \
+        --s3_prefix s3://iatlas-project-tower-bucket/LENS \
+```
 
 based on https://github.com/Sage-Bionetworks-Workflows/py-orca/blob/main/demo.py
 """
 
 import asyncio
 from dataclasses import dataclass
-from pathlib import PurePosixPath
 
 import s3fs
 import yaml
@@ -194,7 +206,3 @@ class TowerLENSFlow(FlowSpec):
 
 if __name__ == "__main__":
     TowerLENSFlow()
-
-# run with: python3 local/iatlas/lens/lens.py run \
-# --dataset_id syn58366876 \
-# --s3_prefix s3://iatlas-project-tower-bucket/LENS \
