@@ -128,7 +128,7 @@ def top_public_synapse_projects_from_snowflake() -> None:
             FROM
                 DOWNLOAD_STAT
             ORDER BY
-                DOWNLOADS_PER_PROJECT DESC NULLS LAST
+                NUMBER_OF_UNIQUE_USERS_DOWNLOADED DESC NULLS LAST
             """
         cs.execute(query)
         top_downloaded_df = cs.fetch_pandas_all()
