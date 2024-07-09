@@ -157,7 +157,7 @@ def top_public_synapse_projects_from_snowflake() -> None:
         return metrics
     
     @task.branch()
-    def check_backfill(**context) -> None:
+    def check_backfill(**context) -> str:
         """Check if the backfill is enabled. When it is, do not post to Slack."""
         if context["params"]["backfill"]:
             return "stop_dag"
@@ -165,6 +165,7 @@ def top_public_synapse_projects_from_snowflake() -> None:
     
     @task()
     def stop_dag() -> None:
+        """Stop the DAG."""
         pass
 
     @task
