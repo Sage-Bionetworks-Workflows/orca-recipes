@@ -21,6 +21,9 @@ dag_params = {
     "synapse_conn_id": Param("SYNAPSE_ORCA_SERVICE_ACCOUNT_CONN", type="string"),
     # hours_time_delta is the number of hours to subtract from the current date to get the date for the query
     "hours_time_delta": Param("24", type="string"),
+    "backfill": Param(False, type="boolean"),
+    # backfill_date string format: YYYY-MM-DD
+    "backfill_date": Param("1900-01-01", type="string"),
 }
 
 dag_config = {
@@ -73,6 +76,11 @@ def top_public_synapse_projects_from_snowflake() -> None:
         snow_hook = SnowflakeHook(context["params"]["snowflake_conn_id"])
         ctx = snow_hook.get_conn()
         cs = ctx.cursor()
+
+        # set backfill_date to None if backfill is False
+        backfill_date = context["params"]["backfill_date"]
+        query_date = None if not context["params"]["backfill"] else f"'{backfill_date}'"
+
         query = f"""
             WITH PUBLIC_PROJECTS AS (
                 SELECT
@@ -103,7 +111,7 @@ def top_public_synapse_projects_from_snowflake() -> None:
                 ON
                     filedownload.file_handle_id = file_latest.id
                 WHERE
-                    filedownload.record_date = DATEADD(HOUR, -{context["params"]["hours_time_delta"]}, CURRENT_DATE)
+                    filedownload.record_date = DATEADD(HOUR, -{context["params"]["hours_time_delta"]}, {query_date or "CURRENT_DATE"})
             ),
 
             DOWNLOAD_STAT AS (
@@ -147,6 +155,18 @@ def top_public_synapse_projects_from_snowflake() -> None:
                 )
             )
         return metrics
+    
+    @task.branch()
+    def check_backfill(**context) -> str:
+        """Check if the backfill is enabled. When it is, do not post to Slack."""
+        if context["params"]["backfill"]:
+            return "stop_dag"
+        return "generate_top_downloads_message"
+    
+    @task()
+    def stop_dag() -> None:
+        """Stop the DAG."""
+        pass
 
     @task
     def generate_top_downloads_message(metrics: List[DownloadMetric], **context) -> str:
@@ -172,7 +192,9 @@ def top_public_synapse_projects_from_snowflake() -> None:
     def push_results_to_synapse_table(metrics: List[DownloadMetric], **context) -> None:
         """Push the results to a Synapse table."""
         data = []
-        yesterday = date.today() - timedelta(
+        # convert context["params"]["backfill_date"] to date in same format as date.today()
+        today = date.today() if not context["params"]["backfill"] else datetime.strptime(context["params"]["backfill_date"], "%Y-%m-%d").date()
+        yesterday = today - timedelta(
             hours=int(context["params"]["hours_time_delta"])
         )
         for metric in metrics:
@@ -185,18 +207,21 @@ def top_public_synapse_projects_from_snowflake() -> None:
                     metric.data_download_size,
                 ]
             )
-
         syn_hook = SynapseHook(context["params"]["synapse_conn_id"])
         syn_hook.client.store(
             synapseclient.Table(schema=SYNAPSE_RESULTS_TABLE, values=data)
         )
 
     top_downloads = get_top_downloads_from_snowflake()
+    check = check_backfill()
+    stop = stop_dag()
     slack_message = generate_top_downloads_message(metrics=top_downloads)
     post_to_slack = post_top_downloads_to_slack(message=slack_message)
     push_to_synapse_table = push_results_to_synapse_table(metrics=top_downloads)
 
-    top_downloads >> slack_message >> post_to_slack >> push_to_synapse_table
+    top_downloads >> check >> [stop, slack_message]
+    slack_message >> post_to_slack
+    top_downloads >> push_to_synapse_table
 
 
 top_public_synapse_projects_from_snowflake()
