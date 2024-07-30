@@ -30,7 +30,7 @@ dag_config = {
     "params": dag_params,
 }
 
-SYNAPSE_RESULTS_TABLE = "syn61588123"
+SYNAPSE_RESULTS_TABLE = "syn61915256"
 
 
 @dataclass
@@ -61,30 +61,31 @@ def synapse_by_the_numbers_past_month() -> None:
         ctx = snow_hook.get_conn()
         cs = ctx.cursor()
         query = f"""
-            WITH TOTAL_SIZE AS (
+            WITH FILE_SIZES AS (
+                SELECT DISTINCT
+                    file_latest.id,
+                    content_size
+                FROM
+                    synapse_data_warehouse.synapse.node_latest
+                JOIN
+                    synapse_data_warehouse.synapse.file_latest
+                    ON node_latest.file_handle_id = file_latest.id
+                UNION
+                SELECT DISTINCT
+                    file_latest.id,
+                    content_size
+                FROM
+                    synapse_data_warehouse.synapse.filehandleassociation_latest
+                JOIN
+                    synapse_data_warehouse.synapse.file_latest
+                    ON filehandleassociation_latest.filehandleid = file_latest.id
+                WHERE
+                    filehandleassociation_latest.associatetype = 'TableEntity'
+            ),
+            TOTAL_SIZE AS (
                 SELECT
                     SUM(content_size) / POWER(2, 50) AS SIZE_IN_PETABYTES
-                FROM (
-                    SELECT DISTINCT
-                        file_latest.id,
-                        content_size
-                    FROM
-                        synapse_data_warehouse.synapse.node_latest
-                    JOIN
-                        synapse_data_warehouse.synapse.file_latest
-                        ON node_latest.file_handle_id = file_latest.id
-                    UNION
-                    SELECT DISTINCT
-                        file_latest.id,
-                        content_size
-                    FROM
-                        synapse_data_warehouse.synapse.filehandleassociation_latest
-                    JOIN
-                        synapse_data_warehouse.synapse.file_latest
-                        ON filehandleassociation_latest.filehandleid = file_latest.id
-                    WHERE
-                        filehandleassociation_latest.associatetype = 'TableEntity'
-                )
+                FROM FILE_SIZES
             ),
             MONTHLY_ACTIVE_USERS AS (
                 SELECT 
