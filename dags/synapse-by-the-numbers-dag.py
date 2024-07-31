@@ -37,12 +37,12 @@ SYNAPSE_RESULTS_TABLE = "syn61588123"
 
 @dataclass
 class DownloadMetric:
-    """Dataclass to hold the download metrics from Synapse.
+    """Dataclass to hold the monthly metrics from Synapse.
 
     Attributes:
         total_data_size_in_pib: The size of the data hosted on Synapse in PiB
-        active_users_last_month: The number of active users last month
-        total_downloads_last_month: The total number of downloads by users last month
+        active_users_last_month: The number of active users in the month
+        total_downloads_last_month: The total number of downloads by users in the month
     """
 
     total_data_size_in_pib: float
