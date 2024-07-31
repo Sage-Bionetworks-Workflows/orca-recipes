@@ -1,9 +1,10 @@
 """This script is used to execute a query on Snowflake and report the results to a 
-Synapse table. This retrieves data describing the total amount of data hosted in Synapse,
-the number of active users last month, and the number of downloads last month."""
+Synapse table. This retrieves data describing the total amount of data hosted in Synapse at the time of execution,
+the number of active users in a month, and the number of downloads in a month."""
 
 from dataclasses import dataclass
 from datetime import date, datetime
+from dateutil.relativedelta import relativedelta
 from typing import List
 
 import synapseclient
@@ -15,7 +16,8 @@ from orca.services.synapse import SynapseHook
 dag_params = {
     "snowflake_conn_id": Param("SNOWFLAKE_SYSADMIN_PORTAL_RAW_CONN", type="string"),
     "synapse_conn_id": Param("SYNAPSE_ORCA_SERVICE_ACCOUNT_CONN", type="string"),
-    "current_date": Param(date.today().strftime("%Y-%m-%d"), type="string"),
+    # date string with the format: YYYY-MM-DD including the month that we want to run the queries for
+    "month_to_run": Param((date.today() - relativedelta(months=1)).strftime("%Y-%m-%d"), type="string"),
 }
 
 dag_config = {
@@ -30,7 +32,7 @@ dag_config = {
     "params": dag_params,
 }
 
-SYNAPSE_RESULTS_TABLE = "syn61915256"
+SYNAPSE_RESULTS_TABLE = "syn61588123"
 
 
 @dataclass
@@ -51,8 +53,8 @@ class DownloadMetric:
 @dag(**dag_config)
 def synapse_by_the_numbers_past_month() -> None:
     """Execute a query to gather the total amount of data hosted in Synapse,
-    the number of active users last month, and the number of downloads
-    last month from Snowflake and report the results to a Synapse table."""
+    the number of active users in a month, and the number of downloads
+    in a month from Snowflake and report the results to a Synapse table."""
 
     @task
     def get_synapse_monthly_metrics(**context) -> List[DownloadMetric]:
@@ -93,7 +95,7 @@ def synapse_by_the_numbers_past_month() -> None:
                 FROM 
                     synapse_data_warehouse.synapse.processedaccess
                 WHERE
-                    DATE_TRUNC('MONTH', RECORD_DATE) = DATE_TRUNC('MONTH', DATEADD(MONTH, -1, '{context["params"]["current_date"]}'))
+                    DATE_TRUNC('MONTH', RECORD_DATE) = DATE_TRUNC('MONTH', DATE('{context["params"]["month_to_run"]}'))
             ),
             MONTHLY_DOWNLOADS AS (
                 SELECT
@@ -106,7 +108,7 @@ def synapse_by_the_numbers_past_month() -> None:
                     FROM
                         synapse_data_warehouse.synapse.filedownload
                     WHERE
-                        DATE_TRUNC('MONTH', RECORD_DATE) = DATE_TRUNC('MONTH', DATEADD(MONTH, -1, '{context["params"]["current_date"]}'))
+                        DATE_TRUNC('MONTH', RECORD_DATE) = DATE_TRUNC('MONTH', DATE('{context["params"]["month_to_run"]}'))
                 )
             )
             SELECT 
