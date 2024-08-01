@@ -34,8 +34,8 @@ dag_params = {
 
 dag_config = {
     # run on the 1st of every month at midnight
-    "schedule_interval": "0 0 1 * *",
-    "start_date": datetime(2024, 7, 1),
+    "schedule_interval": "*/1 * * * *",
+    "start_date": datetime(2024, 1, 1),
     "catchup": False,
     "default_args": {
         "retries": 1,
@@ -93,8 +93,8 @@ def trending_snapshots() -> None:
 
                 SELECT 
                     recent_downloads.PROJECT_ID, 
-                    COUNT(DISTINCT recent_downloads.USER_ID) AS unique_users,
-                    MAX(recent_downloads.RECORD_DATE) AS last_download_date,
+                    COUNT(DISTINCT recent_downloads.USER_ID) AS UNIQUE_USERS,
+                    MAX(recent_downloads.RECORD_DATE) AS LAST_DOWNLOAD_DATE,
                     SUM(file_latest.CONTENT_SIZE) / POWER(1024, 3) AS TOTAL_DATA_SIZE_IN_GIB
 
                 -- Select the table you want to curate from
@@ -128,10 +128,10 @@ def trending_snapshots() -> None:
         for _, row in top_downloaded_df.iterrows():
             metrics.append(
                 SnapshotsMetric(
-                    project_id=row["project_id"],
-                    n_unique_users=row["n_unique_users"],
-                    last_download_date=row["last_download_date"],
-                    total_data_size_in_gib=row["total_data_size_in_gib"],
+                    project_id=row["PROJECT_ID"],
+                    n_unique_users=row["UNIQUE_USERS"],
+                    last_download_date=row["LAST_DOWNLOAD_DATE"],
+                    total_data_size_in_gib=row["TOTAL_DATA_SIZE_IN_GIB"],
                 )
             )
         return metrics
