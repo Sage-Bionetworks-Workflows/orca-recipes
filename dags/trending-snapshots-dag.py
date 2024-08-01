@@ -74,50 +74,72 @@ def trending_snapshots() -> None:
         ctx = snow_hook.get_conn()
         cs = ctx.cursor()
         query = f"""
-                WITH RECENT_DOWNLOADS AS (
-                    SELECT *
-                    FROM SYNAPSE_DATA_WAREHOUSE.SYNAPSE.FILEDOWNLOAD
-                    WHERE 1=1
-                    AND RECORD_DATE > DATEADD(DAY, -28, '2024-06-26') 
-                    AND RECORD_DATE <= '2024-06-26'
-                    AND STACK = 'prod'
-                    AND PROJECT_ID IS NOT NULL
-                ),
-                PUBLIC_PROJECTS AS (
-                    SELECT NAME, PROJECT_ID
+                -- Subquery: Gets a list of Public Projects on Synapse
+                WITH PUBLIC_PROJECTS AS (
+                    SELECT PROJECT_ID
                     FROM SYNAPSE_DATA_WAREHOUSE.SYNAPSE.NODE_LATEST
                     WHERE 1=1
                     AND NODE_TYPE = 'project'
                     AND IS_PUBLIC = TRUE
+                ),
+                -- Subquery: Gets the latest file handle IDs for File Entities
+                --           belonging to the list of Projects above
+                LATEST_FILE_HANDLES AS (
+                    SELECT PROJECT_ID, FILE_HANDLE_ID
+                    FROM SYNAPSE_DATA_WAREHOUSE.SYNAPSE.NODE_LATEST
+                    WHERE 1=1
+                    AND NODE_TYPE = 'file'
+                    AND PROJECT_ID IN (SELECT PROJECT_ID FROM PUBLIC_PROJECTS)
+                    AND CHANGE_TIMESTAMP = (
+                        SELECT MAX(CHANGE_TIMESTAMP)
+                        FROM SYNAPSE_DATA_WAREHOUSE.SYNAPSE.NODE_LATEST nl
+                        -- This is needed to match the correlated query PROJECT_IDs with the
+                        -- outer query PROJECT_IDs
+                        WHERE nl.PROJECT_ID = NODE_LATEST.PROJECT_ID
+                        AND nl.NODE_TYPE = 'file'
+                    )
+                ),
+                -- Subquery: Gets the total content size of all the File Entities
+                FILE_SIZES AS (
+                    SELECT fh.PROJECT_ID, SUM(f.CONTENT_SIZE) AS TOTAL_SIZE
+                    FROM LATEST_FILE_HANDLES fh
+                    JOIN SYNAPSE_DATA_WAREHOUSE.SYNAPSE.FILE_LATEST f
+                    ON fh.FILE_HANDLE_ID = f.ID
+                    GROUP BY fh.PROJECT_ID
+                ),
+                -- Subquery: Get the file downloads within a given time window
+                RECENT_DOWNLOADS AS (
+                    SELECT *
+                    FROM SYNAPSE_DATA_WAREHOUSE.SYNAPSE.FILEDOWNLOAD
+                    WHERE 1=1
+                    AND RECORD_DATE > DATEADD(DAY, -28, '2024-06-29') 
+                    AND RECORD_DATE <= '2024-06-29'
+                    AND STACK = 'prod'
+                    AND PROJECT_ID IS NOT NULL
                 )
 
                 SELECT 
-                    recent_downloads.PROJECT_ID, 
-                    COUNT(DISTINCT recent_downloads.USER_ID) AS UNIQUE_USERS,
-                    MAX(recent_downloads.RECORD_DATE) AS LAST_DOWNLOAD_DATE,
-                    SUM(file_latest.CONTENT_SIZE) / POWER(1024, 3) AS TOTAL_DATA_SIZE_IN_GIB
+                    rd.PROJECT_ID,
+                    COUNT(DISTINCT rd.USER_ID) AS UNIQUE_USERS,
+                    MAX(rd.RECORD_DATE) AS LAST_DOWNLOAD_DATE,
+                    fs.TOTAL_SIZE
 
-                -- Select the table you want to curate from
                 FROM 
-                    RECENT_DOWNLOADS recent_downloads
-
-                -- Join FILE_LATEST
-                JOIN 
-                    SYNAPSE_DATA_WAREHOUSE.SYNAPSE.FILE_LATEST file_latest
-                ON 
-                    recent_downloads.FILE_HANDLE_ID = file_latest.ID
+                    RECENT_DOWNLOADS rd
 
                 -- Join PUBLIC_PROJECTS
-                JOIN
-                    PUBLIC_PROJECTS public_projects
-                ON
-                    recent_downloads.PROJECT_ID = public_projects.PROJECT_ID
+                JOIN PUBLIC_PROJECTS pp
+                ON rd.PROJECT_ID = pp.PROJECT_ID
+
+                -- Join FILE_SIZES
+                LEFT JOIN FILE_SIZES fs
+                ON rd.PROJECT_ID = fs.PROJECT_ID
 
                 -- Sorting the final table for calculation
                 GROUP BY
-                    recent_downloads.PROJECT_ID
+                    rd.PROJECT_ID, fs.TOTAL_SIZE
                 ORDER BY 
-                    unique_users DESC
+                    UNIQUE_USERS DESC
                 LIMIT 10;
             """
 
