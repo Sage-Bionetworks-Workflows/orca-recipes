@@ -23,7 +23,7 @@ from airflow.providers.snowflake.hooks.snowflake import SnowflakeHook
 from orca.services.synapse import SynapseHook
 
 
-SYNAPSE_RESULTS_TABLE = "syn61597055"
+SYNAPSE_RESULTS_TABLE = "syn61932294"
 
 dag_params = {
     "snowflake_conn_id": Param("SNOWFLAKE_SYSADMIN_PORTAL_RAW_CONN", type="string"),
