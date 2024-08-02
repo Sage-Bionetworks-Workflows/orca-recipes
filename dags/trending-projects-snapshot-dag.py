@@ -110,29 +110,27 @@ def trending_projects_snapshot() -> None:
                     SELECT PROJECT_ID, RECORD_DATE, USER_ID
                     FROM SYNAPSE_DATA_WAREHOUSE.SYNAPSE.FILEDOWNLOAD
                     WHERE 1=1
-                    AND RECORD_DATE > DATEADD(DAY, -{context["params"]["time_window"]}, CURRENT_DATE()) 
+                    AND RECORD_DATE > DATEADD(DAY, -{context["params"]["time_window"]}, CURRENT_DATE())
                     AND STACK = 'prod'
                     AND PROJECT_ID IN (SELECT PROJECT_ID FROM PUBLIC_PROJECTS)
                 )
 
                 SELECT 
-                    pp.PROJECT_ID,
-                    COUNT(DISTINCT rd.USER_ID) AS N_UNIQUE_USERS,
-                    COALESCE(TO_CHAR(MAX(rd.RECORD_DATE), 'YYYY-MM-DD'), 'N/A') AS LAST_DOWNLOAD_DATE,
-                    ROUND(fs.TOTAL_DATA_SIZE_IN_GIB, 3) AS TOTAL_DATA_SIZE_IN_GIB
+                    PUBLIC_PROJECTS.PROJECT_ID,
+                    COUNT(DISTINCT RECENT_DOWNLOADS.USER_ID) AS N_UNIQUE_USERS,
+                    COALESCE(TO_CHAR(MAX(RECENT_DOWNLOADS.RECORD_DATE), 'YYYY-MM-DD'), 'N/A') AS LAST_DOWNLOAD_DATE,
+                    ROUND(FILE_SIZES.TOTAL_DATA_SIZE_IN_GIB, 3) AS TOTAL_DATA_SIZE_IN_GIB
                 FROM 
-                    PUBLIC_PROJECTS pp
+                    PUBLIC_PROJECTS
 
-                -- Join RECENT_DOWNLOADS
-                LEFT JOIN RECENT_DOWNLOADS rd
-                ON pp.PROJECT_ID = rd.PROJECT_ID
+                LEFT JOIN RECENT_DOWNLOADS
+                ON PUBLIC_PROJECTS.PROJECT_ID = RECENT_DOWNLOADS.PROJECT_ID
 
-                -- Join FILE_SIZES
-                LEFT JOIN FILE_SIZES fs
-                ON pp.PROJECT_ID = fs.PROJECT_ID
+                LEFT JOIN FILE_SIZES
+                ON PUBLIC_PROJECTS.PROJECT_ID = FILE_SIZES.PROJECT_ID
 
                 GROUP BY
-                    pp.PROJECT_ID, fs.TOTAL_DATA_SIZE_IN_GIB
+                    PUBLIC_PROJECTS.PROJECT_ID, FILE_SIZES.TOTAL_DATA_SIZE_IN_GIB
                 ORDER BY 
                     N_UNIQUE_USERS DESC
                 LIMIT 10;
