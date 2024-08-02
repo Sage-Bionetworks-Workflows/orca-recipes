@@ -134,7 +134,7 @@ def trending_snapshots() -> None:
                 GROUP BY
                     pp.PROJECT_ID, fs.TOTAL_DATA_SIZE_IN_GIB
                 ORDER BY 
-                    UNIQUE_USERS DESC
+                    N_UNIQUE_USERS DESC
                 LIMIT 10;
             """
 
