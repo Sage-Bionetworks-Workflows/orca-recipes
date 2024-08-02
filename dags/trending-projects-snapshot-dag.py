@@ -174,10 +174,10 @@ def trending_projects_snapshot() -> None:
             synapseclient.Table(schema=SYNAPSE_RESULTS_TABLE, values=data)
         )
 
-    top_downloads = get_trending_project_snapshot()
-    push_to_synapse_table = push_results_to_synapse_table(metrics=top_downloads)
+    project_snapshot = get_trending_project_snapshot()
+    push_to_synapse_table = push_results_to_synapse_table(metrics=project_snapshot)
 
-    top_downloads >> push_to_synapse_table
+    project_snapshot >> push_to_synapse_table
 
 
 trending_projects_snapshot()
