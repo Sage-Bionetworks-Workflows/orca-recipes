@@ -33,7 +33,7 @@ dag_params = {
     }
 
 dag_config = {
-    # run on the 1st of every month at midnight
+    # run on the 2nd of every month at midnight
     "schedule_interval": "*/1 * * * *",
     "start_date": datetime(2024, 1, 1),
     "catchup": False,
@@ -119,7 +119,7 @@ def trending_snapshots() -> None:
                     pp.PROJECT_ID,
                     COUNT(DISTINCT rd.USER_ID) AS N_UNIQUE_USERS,
                     COALESCE(TO_CHAR(MAX(rd.RECORD_DATE), 'YYYY-MM-DD'), 'N/A') AS LAST_DOWNLOAD_DATE,
-                    fs.TOTAL_DATA_SIZE_IN_GIB
+                    ROUND(fs.TOTAL_DATA_SIZE_IN_GIB, 3) AS TOTAL_DATA_SIZE_IN_GIB
                 FROM 
                     PUBLIC_PROJECTS pp
 
