@@ -1,6 +1,6 @@
 """
 This script is used to execute a query on Snowflake and report the results to a 
-Synapse table. This DAG updates the Trending Snapshots Synapse table
+Synapse table. This DAG updates the Trending Projects Snapshots Synapse table
 (https://www.synapse.org/Synapse:syn61597055/tables/) every X number of days with the following metrics:
 
 - Top 10 Projects with the most unique users
@@ -64,7 +64,7 @@ class SnapshotMetrics:
 
 
 @dag(**dag_config)
-def trending_snapshots() -> None:
+def trending_projects_snapshot() -> None:
     """
     This DAG executes a query on Snowflake to retrieve information about trending public projects and 
     reports the results to a Synapse table.
@@ -79,7 +79,7 @@ def trending_snapshots() -> None:
     """
 
     @task
-    def get_trending_snapshot(**context) -> List[SnapshotMetrics]:
+    def get_trending_project_snapshot(**context) -> List[SnapshotMetrics]:
         """Execute the query on Snowflake and return the results."""
         snow_hook = SnowflakeHook(context["params"]["snowflake_conn_id"])
         ctx = snow_hook.get_conn()
@@ -139,10 +139,10 @@ def trending_snapshots() -> None:
             """
 
         cs.execute(query)
-        trending_snapshot = cs.fetch_pandas_all()
+        trending_project_snapshot = cs.fetch_pandas_all()
 
         metrics = []
-        for _, row in trending_snapshot.iterrows():
+        for _, row in trending_project_snapshot.iterrows():
             metrics.append(
                 SnapshotMetrics(
                     project_id=row["PROJECT_ID"],
@@ -174,10 +174,10 @@ def trending_snapshots() -> None:
             synapseclient.Table(schema=SYNAPSE_RESULTS_TABLE, values=data)
         )
 
-    top_downloads = get_trending_snapshot()
+    top_downloads = get_trending_project_snapshot()
     push_to_synapse_table = push_results_to_synapse_table(metrics=top_downloads)
 
     top_downloads >> push_to_synapse_table
 
 
-trending_snapshots()
+trending_projects_snapshot()
