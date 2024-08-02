@@ -15,6 +15,7 @@ from airflow.decorators import dag
 from dataclasses import dataclass
 from datetime import date, datetime
 from typing import List
+from dateutil.relativedelta import relativedelta
 
 import synapseclient
 from airflow.decorators import dag, task
@@ -29,7 +30,7 @@ dag_params = {
     "snowflake_conn_id": Param("SNOWFLAKE_SYSADMIN_PORTAL_RAW_CONN", type="string"),
     "synapse_conn_id": Param("SYNAPSE_ORCA_SERVICE_ACCOUNT_CONN", type="string"),
     "current_date": Param(date.today().strftime("%Y-%m-%d"), type="string"),
-    "time_window": Param("30", type="string"),
+    "month_to_run": Param((date.today() - relativedelta(months=1)).strftime("%Y-%m-%d"), type="string")
     }
 
 dag_config = {
@@ -110,7 +111,7 @@ def trending_projects_snapshot() -> None:
                     SELECT PROJECT_ID, RECORD_DATE, USER_ID
                     FROM SYNAPSE_DATA_WAREHOUSE.SYNAPSE.FILEDOWNLOAD
                     WHERE 1=1
-                    AND RECORD_DATE > DATEADD(DAY, -{context["params"]["time_window"]}, CURRENT_DATE())
+                    AND DATE_TRUNC('MONTH', RECORD_DATE) = DATE_TRUNC('MONTH', DATE({context["params"]["month_to_run"]}))
                     AND STACK = 'prod'
                     AND PROJECT_ID IN (SELECT PROJECT_ID FROM PUBLIC_PROJECTS)
                 )
