@@ -1,7 +1,7 @@
 """
 This script is used to execute a query on Snowflake and report the results to a 
 Synapse table. This DAG updates the Trending Snapshots Synapse table
-(https://www.synapse.org/Synapse:syn61597055/tables/) every month with the following metrics:
+(https://www.synapse.org/Synapse:syn61597055/tables/) every X number of days with the following metrics:
 
 - Top 10 Projects with the most unique users
 - Number of unique users
@@ -23,13 +23,13 @@ from airflow.providers.snowflake.hooks.snowflake import SnowflakeHook
 from orca.services.synapse import SynapseHook
 
 
-SYNAPSE_RESULTS_TABLE = "syn61932294"
+SYNAPSE_RESULTS_TABLE = "syn61942766"
 
 dag_params = {
     "snowflake_conn_id": Param("SNOWFLAKE_SYSADMIN_PORTAL_RAW_CONN", type="string"),
     "synapse_conn_id": Param("SYNAPSE_ORCA_SERVICE_ACCOUNT_CONN", type="string"),
     "current_date": Param(date.today().strftime("%Y-%m-%d"), type="string"),
-    "time_window": Param("30d", type="string"),
+    "time_window": Param("2", type="string"),
     }
 
 dag_config = {
@@ -46,14 +46,15 @@ dag_config = {
 
 
 @dataclass
-class SnapshotsMetric:
+class SnapshotMetrics:
     """
     Dataclass to hold the download metrics from Synapse.
 
     Attributes:
-        total_data_size_in_pib: The size of the data hosted on Synapse in PiB
-        active_users_last_month: The number of active users last month
-        total_downloads_last_month: The total number of downloads by users last month
+        project_id: The ID of the Project
+        n_unique_users: The number of unique users who downloaded from the Project
+        last_download_date: The date of the last download from the Project
+        total_data_size_in_gib: The current total size of the Project in GiB
     """
 
     project_id: float
@@ -65,16 +66,25 @@ class SnapshotsMetric:
 @dag(**dag_config)
 def trending_snapshots() -> None:
     """
+    This DAG executes a query on Snowflake to retrieve information about trending public projects and 
+    reports the results to a Synapse table.
+
+    The main steps performed in this DAG are:
+    1. Query Snowflake to identify public projects, their file sizes, and recent download activities.
+    2. Aggregate the results to determine num. of unique users, last download date, and total data size.
+    3. Format the results into a list of SnapshotsMetric objects.
+
+    The Snowflake connection and Synapse connection IDs, as well as the time window for recent downloads,
+    are provided via DAG parameters.
     """
 
     @task
-    def get_trending_snapshots(**context) -> List[SnapshotsMetric]:
+    def get_trending_snapshot(**context) -> List[SnapshotMetrics]:
         """Execute the query on Snowflake and return the results."""
         snow_hook = SnowflakeHook(context["params"]["snowflake_conn_id"])
         ctx = snow_hook.get_conn()
         cs = ctx.cursor()
         query = f"""
-                -- Subquery: Gets a list of Public Projects on Synapse
                 WITH PUBLIC_PROJECTS AS (
                     SELECT PROJECT_ID
                     FROM SYNAPSE_DATA_WAREHOUSE.SYNAPSE.NODE_LATEST
@@ -82,76 +92,61 @@ def trending_snapshots() -> None:
                     AND NODE_TYPE = 'project'
                     AND IS_PUBLIC = TRUE
                 ),
-                -- Subquery: Gets the latest file handle IDs for File Entities
-                --           belonging to the list of Projects above
                 LATEST_FILE_HANDLES AS (
-                    SELECT PROJECT_ID, FILE_HANDLE_ID
+                    SELECT DISTINCT ID, PROJECT_ID, FILE_HANDLE_ID
                     FROM SYNAPSE_DATA_WAREHOUSE.SYNAPSE.NODE_LATEST
                     WHERE 1=1
                     AND NODE_TYPE = 'file'
                     AND PROJECT_ID IN (SELECT PROJECT_ID FROM PUBLIC_PROJECTS)
-                    AND CHANGE_TIMESTAMP = (
-                        SELECT MAX(CHANGE_TIMESTAMP)
-                        FROM SYNAPSE_DATA_WAREHOUSE.SYNAPSE.NODE_LATEST nl
-                        -- This is needed to match the correlated query PROJECT_IDs with the
-                        -- outer query PROJECT_IDs
-                        WHERE nl.PROJECT_ID = NODE_LATEST.PROJECT_ID
-                        AND nl.NODE_TYPE = 'file'
-                    )
                 ),
-                -- Subquery: Gets the total content size of all the File Entities
                 FILE_SIZES AS (
-                    SELECT fh.PROJECT_ID, SUM(f.CONTENT_SIZE) AS TOTAL_SIZE
+                    SELECT fh.PROJECT_ID, SUM(f.CONTENT_SIZE) / POWER(1024, 3) AS TOTAL_DATA_SIZE_IN_GIB
                     FROM LATEST_FILE_HANDLES fh
                     JOIN SYNAPSE_DATA_WAREHOUSE.SYNAPSE.FILE_LATEST f
                     ON fh.FILE_HANDLE_ID = f.ID
                     GROUP BY fh.PROJECT_ID
                 ),
-                -- Subquery: Get the file downloads within a given time window
                 RECENT_DOWNLOADS AS (
-                    SELECT *
+                    SELECT PROJECT_ID, RECORD_DATE, USER_ID
                     FROM SYNAPSE_DATA_WAREHOUSE.SYNAPSE.FILEDOWNLOAD
                     WHERE 1=1
-                    AND RECORD_DATE > DATEADD(DAY, -28, '2024-06-29') 
-                    AND RECORD_DATE <= '2024-06-29'
+                    AND RECORD_DATE > DATEADD(DAY, -{context["params"]["time_window"]}, CURRENT_DATE()) 
                     AND STACK = 'prod'
-                    AND PROJECT_ID IS NOT NULL
+                    AND PROJECT_ID IN (SELECT PROJECT_ID FROM PUBLIC_PROJECTS)
                 )
 
                 SELECT 
-                    rd.PROJECT_ID,
-                    COUNT(DISTINCT rd.USER_ID) AS UNIQUE_USERS,
-                    MAX(rd.RECORD_DATE) AS LAST_DOWNLOAD_DATE,
-                    fs.TOTAL_SIZE
-
+                    pp.PROJECT_ID,
+                    COUNT(DISTINCT rd.USER_ID) AS N_UNIQUE_USERS,
+                    COALESCE(TO_CHAR(MAX(rd.RECORD_DATE), 'YYYY-MM-DD'), 'N/A') AS LAST_DOWNLOAD_DATE,
+                    fs.TOTAL_DATA_SIZE_IN_GIB
                 FROM 
-                    RECENT_DOWNLOADS rd
+                    PUBLIC_PROJECTS pp
 
-                -- Join PUBLIC_PROJECTS
-                JOIN PUBLIC_PROJECTS pp
-                ON rd.PROJECT_ID = pp.PROJECT_ID
+                -- Join RECENT_DOWNLOADS
+                LEFT JOIN RECENT_DOWNLOADS rd
+                ON pp.PROJECT_ID = rd.PROJECT_ID
 
                 -- Join FILE_SIZES
                 LEFT JOIN FILE_SIZES fs
-                ON rd.PROJECT_ID = fs.PROJECT_ID
+                ON pp.PROJECT_ID = fs.PROJECT_ID
 
-                -- Sorting the final table for calculation
                 GROUP BY
-                    rd.PROJECT_ID, fs.TOTAL_SIZE
+                    pp.PROJECT_ID, fs.TOTAL_DATA_SIZE_IN_GIB
                 ORDER BY 
                     UNIQUE_USERS DESC
                 LIMIT 10;
             """
 
         cs.execute(query)
-        top_downloaded_df = cs.fetch_pandas_all()
+        trending_snapshot = cs.fetch_pandas_all()
 
         metrics = []
-        for _, row in top_downloaded_df.iterrows():
+        for _, row in trending_snapshot.iterrows():
             metrics.append(
-                SnapshotsMetric(
+                SnapshotMetrics(
                     project_id=row["PROJECT_ID"],
-                    n_unique_users=row["UNIQUE_USERS"],
+                    n_unique_users=row["N_UNIQUE_USERS"],
                     last_download_date=row["LAST_DOWNLOAD_DATE"],
                     total_data_size_in_gib=row["TOTAL_DATA_SIZE_IN_GIB"],
                 )
@@ -159,7 +154,7 @@ def trending_snapshots() -> None:
         return metrics
 
     @task
-    def push_results_to_synapse_table(metrics: List[SnapshotsMetric], **context) -> None:
+    def push_results_to_synapse_table(metrics: List[SnapshotMetrics], **context) -> None:
         """Push the results to a Synapse table."""
         data = []
         today = date.today()
@@ -179,7 +174,7 @@ def trending_snapshots() -> None:
             synapseclient.Table(schema=SYNAPSE_RESULTS_TABLE, values=data)
         )
 
-    top_downloads = get_trending_snapshots()
+    top_downloads = get_trending_snapshot()
     push_to_synapse_table = push_results_to_synapse_table(metrics=top_downloads)
 
     top_downloads >> push_to_synapse_table
