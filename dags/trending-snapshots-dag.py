@@ -157,7 +157,7 @@ def trending_snapshots() -> None:
     def push_results_to_synapse_table(metrics: List[SnapshotMetrics], **context) -> None:
         """Push the results to a Synapse table."""
         data = []
-        today = date.today()
+        export_date = date.today()
         for metric in metrics:
             data.append(
                 [
@@ -165,7 +165,7 @@ def trending_snapshots() -> None:
                     metric.n_unique_users,
                     metric.last_download_date,
                     metric.total_data_size_in_gib,
-                    today
+                    export_date
                 ]
             )
 
