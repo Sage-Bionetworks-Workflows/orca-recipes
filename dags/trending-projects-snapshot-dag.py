@@ -23,7 +23,7 @@ from airflow.providers.snowflake.hooks.snowflake import SnowflakeHook
 from orca.services.synapse import SynapseHook
 
 
-SYNAPSE_RESULTS_TABLE = "syn61932294"
+SYNAPSE_RESULTS_TABLE = "syn61597055"
 
 dag_params = {
     "snowflake_conn_id": Param("SNOWFLAKE_SYSADMIN_PORTAL_RAW_CONN", type="string"),
@@ -34,7 +34,7 @@ dag_params = {
 
 dag_config = {
     # run on the 2nd of every month at midnight
-    "schedule_interval": "*/1 * * * *",
+    "schedule_interval": "0 0 2 * *",
     "start_date": datetime(2024, 1, 1),
     "catchup": False,
     "default_args": {
