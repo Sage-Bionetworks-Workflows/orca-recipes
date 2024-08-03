@@ -91,7 +91,7 @@ def trending_projects_snapshot() -> None:
                     FROM SYNAPSE_DATA_WAREHOUSE.SYNAPSE.NODE_LATEST
                     WHERE 1=1
                     AND NODE_TYPE = 'project'
-                    AND IS_PUBLIC = TRUE
+                    AND IS_PUBLIC
                 ),
                 RECENT_DOWNLOADS AS (
                     SELECT PROJECT_ID, RECORD_DATE, USER_ID
