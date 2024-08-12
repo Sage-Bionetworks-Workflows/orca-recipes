@@ -30,7 +30,7 @@ dag_params = {
     "snowflake_conn_id": Param("SNOWFLAKE_SYSADMIN_PORTAL_RAW_CONN", type="string"),
     "synapse_conn_id": Param("SYNAPSE_ORCA_SERVICE_ACCOUNT_CONN", type="string"),
     "current_date": Param(date.today().strftime("%Y-%m-%d"), type="string"),
-    "month_to_run": Param((date.today() - relativedelta(months=0)).strftime("%Y-%m-%d"), type="string")
+    "month_to_run": Param((date.today() - relativedelta(months=1)).strftime("%Y-%m-%d"), type="string")
     }
 
 dag_config = {
