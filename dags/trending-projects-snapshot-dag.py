@@ -96,7 +96,8 @@ def trending_projects_snapshot() -> None:
                 RECENT_DOWNLOADS AS (
                     SELECT PROJECT_ID, RECORD_DATE, USER_ID
                     FROM SYNAPSE_DATA_WAREHOUSE.SYNAPSE.FILEDOWNLOAD
-                    WHERE DATE_TRUNC('MONTH', RECORD_DATE) = DATE_TRUNC('MONTH', DATE({context["params"]["month_to_run"]}))
+                    WHERE 1=1
+                    AND DATE_TRUNC('MONTH', RECORD_DATE) = DATE_TRUNC('MONTH', DATE('{context["params"]["month_to_run"]}'))
                     AND STACK = 'prod'
                     AND PROJECT_ID IN (SELECT PROJECT_ID FROM PUBLIC_PROJECTS)
                 ),
@@ -142,7 +143,7 @@ def trending_projects_snapshot() -> None:
                     FILE_SIZES.TOTAL_DATA_SIZE_IN_GIB
 
                 ORDER BY 
-                    TOP_10_PUBLIC_PROJECTS.N_UNIQUE_USERS DESC;
+                    TOP_10_PUBLIC_PROJECTS.N_UNIQUE_USERS DESC
             """
 
         cs.execute(query)
