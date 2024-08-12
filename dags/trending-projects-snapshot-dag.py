@@ -30,7 +30,7 @@ dag_params = {
     "snowflake_conn_id": Param("SNOWFLAKE_SYSADMIN_PORTAL_RAW_CONN", type="string"),
     "synapse_conn_id": Param("SYNAPSE_ORCA_SERVICE_ACCOUNT_CONN", type="string"),
     "current_date": Param(date.today().strftime("%Y-%m-%d"), type="string"),
-    "month_to_run": Param((date.today() - relativedelta(months=1)).strftime("%Y-%m-%d"), type="string")
+    "month_to_run": Param((date.today() - relativedelta(months=0)).strftime("%Y-%m-%d"), type="string")
     }
 
 dag_config = {
@@ -55,13 +55,13 @@ class SnapshotMetrics:
         project_id: The ID of the Project
         n_unique_users: The number of unique users who downloaded from the Project
         last_download_date: The date of the last download from the Project
-        total_data_size_in_gib: The current total size of the Project in GiB
+        estimated_project_size_in_gib: The current total size of the Project in GiB
     """
 
     project_id: float
     n_unique_users: int
     last_download_date: int
-    total_data_size_in_gib: float
+    estimated_project_size_in_gib: float
 
 
 @dag(**dag_config)
@@ -112,11 +112,12 @@ def trending_projects_snapshot() -> None:
                     SELECT ID, PROJECT_ID, FILE_HANDLE_ID
                     FROM SYNAPSE_DATA_WAREHOUSE.SYNAPSE.NODE_LATEST
                     WHERE 1=1
+                    AND DATE_TRUNC('MONTH', CHANGE_TIMESTAMP) <= DATE_TRUNC('MONTH', DATE('{context["params"]["month_to_run"]}'))
                     AND NODE_TYPE = 'file'
                     AND PROJECT_ID IN (SELECT PROJECT_ID FROM TOP_10_PUBLIC_PROJECTS)
                 ),
                 FILE_SIZES AS (
-                    SELECT LATEST_FILE_HANDLES.PROJECT_ID, SUM(FILE_LATEST.CONTENT_SIZE) / POWER(1024, 3) AS TOTAL_DATA_SIZE_IN_GIB
+                    SELECT LATEST_FILE_HANDLES.PROJECT_ID, SUM(FILE_LATEST.CONTENT_SIZE) / POWER(1024, 3) AS ESTIMATED_PROJECT_SIZE_IN_GIB
                     FROM LATEST_FILE_HANDLES
                     JOIN SYNAPSE_DATA_WAREHOUSE.SYNAPSE.FILE_LATEST
                     ON LATEST_FILE_HANDLES.FILE_HANDLE_ID = FILE_LATEST.ID
@@ -127,7 +128,7 @@ def trending_projects_snapshot() -> None:
                     TOP_10_PUBLIC_PROJECTS.PROJECT_ID,
                     TOP_10_PUBLIC_PROJECTS.N_UNIQUE_USERS,
                     COALESCE(TO_CHAR(MAX(RECENT_DOWNLOADS.RECORD_DATE), 'YYYY-MM-DD'), 'N/A') AS LAST_DOWNLOAD_DATE,
-                    ROUND(FILE_SIZES.TOTAL_DATA_SIZE_IN_GIB, 3) AS TOTAL_DATA_SIZE_IN_GIB
+                    ROUND(FILE_SIZES.ESTIMATED_PROJECT_SIZE_IN_GIB, 3) AS ESTIMATED_PROJECT_SIZE_IN_GIB
                 FROM 
                     TOP_10_PUBLIC_PROJECTS
 
@@ -140,7 +141,7 @@ def trending_projects_snapshot() -> None:
                 GROUP BY
                     TOP_10_PUBLIC_PROJECTS.PROJECT_ID,
                     TOP_10_PUBLIC_PROJECTS.N_UNIQUE_USERS,
-                    FILE_SIZES.TOTAL_DATA_SIZE_IN_GIB
+                    FILE_SIZES.ESTIMATED_PROJECT_SIZE_IN_GIB
 
                 ORDER BY 
                     TOP_10_PUBLIC_PROJECTS.N_UNIQUE_USERS DESC
@@ -156,7 +157,7 @@ def trending_projects_snapshot() -> None:
                     project_id=row["PROJECT_ID"],
                     n_unique_users=row["N_UNIQUE_USERS"],
                     last_download_date=row["LAST_DOWNLOAD_DATE"],
-                    total_data_size_in_gib=row["TOTAL_DATA_SIZE_IN_GIB"],
+                    estimated_project_size_in_gib=row["ESTIMATED_PROJECT_SIZE_IN_GIB"],
                 )
             )
         return metrics
@@ -172,7 +173,7 @@ def trending_projects_snapshot() -> None:
                     metric.project_id,
                     metric.n_unique_users,
                     metric.last_download_date,
-                    metric.total_data_size_in_gib,
+                    metric.estimated_project_size_in_gib,
                     export_date
                 ]
             )
