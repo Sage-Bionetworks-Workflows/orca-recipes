@@ -112,7 +112,7 @@ def trending_projects_snapshot() -> None:
                     SELECT ID, PROJECT_ID, FILE_HANDLE_ID
                     FROM SYNAPSE_DATA_WAREHOUSE.SYNAPSE.NODE_LATEST
                     WHERE 1=1
-                    AND DATE_TRUNC('MONTH', CHANGE_TIMESTAMP) <= DATE_TRUNC('MONTH', DATE('{context["params"]["month_to_run"]}'))
+                    AND DATE_TRUNC('MONTH', CREATED_ON) <= DATE_TRUNC('MONTH', DATE('{context["params"]["month_to_run"]}'))
                     AND NODE_TYPE = 'file'
                     AND PROJECT_ID IN (SELECT PROJECT_ID FROM TOP_10_PUBLIC_PROJECTS)
                 ),
