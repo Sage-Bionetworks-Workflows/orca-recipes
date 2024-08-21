@@ -166,4 +166,4 @@ def top_public_synapse_projects_from_snowflake_testing() -> None:
     top_downloads >> push_to_synapse_table
 
 
-top_public_synapse_projects_from_snowflake()
+top_public_synapse_projects_from_snowflake_testing()
