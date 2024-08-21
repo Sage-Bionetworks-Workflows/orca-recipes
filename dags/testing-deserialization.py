@@ -86,7 +86,7 @@ class SynTestingData:
 
 
 @dag(**dag_config)
-def top_public_synapse_projects_from_snowflake() -> None:
+def top_public_synapse_projects_from_snowflake_testing() -> None:
     """Execute a query on Snowflake and report the results to a slack channel and
     synapse table."""
 
