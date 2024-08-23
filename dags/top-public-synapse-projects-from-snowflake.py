@@ -155,14 +155,14 @@ def top_public_synapse_projects_from_snowflake() -> None:
                 )
             )
         return metrics
-    
+
     @task.branch()
     def check_backfill(**context) -> str:
         """Check if the backfill is enabled. When it is, do not post to Slack."""
         if context["params"]["backfill"]:
             return "stop_dag"
         return "generate_top_downloads_message"
-    
+
     @task()
     def stop_dag() -> None:
         """Stop the DAG."""
@@ -182,18 +182,20 @@ def top_public_synapse_projects_from_snowflake() -> None:
         return message
 
     @task
-    def post_top_downloads_to_slack(message: str) -> str:
+    def post_top_downloads_to_slack(message: str) -> bool:
         """Post the top downloads to the slack channel."""
         client = WebClient(token=Variable.get("SLACK_DPE_TEAM_BOT_TOKEN"))
         result = client.chat_postMessage(channel="topcharts", text=message)
-        return result
+        print(f"Result of posting to slack: [{result}]")
+        return result is not None
 
     @task
     def push_results_to_synapse_table(metrics: List[DownloadMetric], **context) -> None:
         """Push the results to a Synapse table."""
         data = []
         # convert context["params"]["backfill_date"] to date in same format as date.today()
-        today = date.today() if not context["params"]["backfill"] else datetime.strptime(context["params"]["backfill_date"], "%Y-%m-%d").date()
+        today = date.today() if not context["params"]["backfill"] else datetime.strptime(
+            context["params"]["backfill_date"], "%Y-%m-%d").date()
         yesterday = today - timedelta(
             hours=int(context["params"]["hours_time_delta"])
         )
@@ -217,7 +219,8 @@ def top_public_synapse_projects_from_snowflake() -> None:
     stop = stop_dag()
     slack_message = generate_top_downloads_message(metrics=top_downloads)
     post_to_slack = post_top_downloads_to_slack(message=slack_message)
-    push_to_synapse_table = push_results_to_synapse_table(metrics=top_downloads)
+    push_to_synapse_table = push_results_to_synapse_table(
+        metrics=top_downloads)
 
     top_downloads >> check >> [stop, slack_message]
     slack_message >> post_to_slack
