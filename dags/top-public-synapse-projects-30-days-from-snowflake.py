@@ -1,5 +1,5 @@
 """This script is used to execute a query on Snowflake and report the results to a 
-Synapse table. This retrieves download metrics for Public Synapse Projects for the past 30 days.
+Synapse table. This retrieves download metrics for Public Synapse Projects excluding the Synapse Homepage Project for the past 30 days.
 It is scheduled to run at 00:00 every day."""
 
 from dataclasses import dataclass
@@ -31,6 +31,7 @@ dag_config = {
 }
 
 SYNAPSE_RESULTS_TABLE = "syn55382267"
+SYNAPSE_HOMEPAGE_PROJECT_ID = 23593546
 
 
 @dataclass
@@ -72,7 +73,8 @@ def top_public_synapse_projects_30_days_from_snowflake() -> None:
                     synapse_data_warehouse.synapse.node_latest
                 WHERE
                     node_latest.is_public AND
-                    node_latest.node_type = 'project'
+                    node_latest.node_type = 'project' AND
+                    node_latest.project_id != {SYNAPSE_HOMEPAGE_PROJECT_ID}
             ),
             DEDUP_FILEHANDLE AS (
                 SELECT DISTINCT

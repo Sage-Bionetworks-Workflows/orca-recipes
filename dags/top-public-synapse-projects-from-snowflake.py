@@ -1,7 +1,7 @@
 """This script is used to execute a query on Snowflake and report the results to a
 slack channel and Synapse table. 
-This retrieves the top X publicly downloaded Synapse projects for slack.
-This retrieves all publicly downloaded Synapse projects for the Synapse table.
+This retrieves the top X publicly downloaded Synapse projects excluding the Synapse Homepage Project for slack.
+This retrieves all publicly downloaded Synapse projects excluding the Synapse Homepage Project for the Synapse table.
 See ORCA-301 for more context."""
 
 from dataclasses import dataclass
@@ -43,6 +43,7 @@ BYTE_STRING = "GiB"
 POWER_OF_TWO = 30
 
 SYNAPSE_RESULTS_TABLE = "syn53696951"
+SYNAPSE_HOMEPAGE_PROJECT_ID = 23593546
 
 
 @dataclass
@@ -90,7 +91,8 @@ def top_public_synapse_projects_from_snowflake() -> None:
                     synapse_data_warehouse.synapse.node_latest
                 WHERE
                     node_latest.is_public AND
-                    node_latest.node_type = 'project'
+                    node_latest.node_type = 'project' AND
+                    node_latest.project_id != {SYNAPSE_HOMEPAGE_PROJECT_ID}
             ),
             DEDUP_FILEHANDLE AS (
                 SELECT DISTINCT
