@@ -3,7 +3,7 @@ This script is used to execute a query on Snowflake and report the results to a
 Synapse table. This DAG updates the Trending Projects Snapshots Synapse table
 (https://www.synapse.org/Synapse:syn61597055/tables/) every X number of days with the following metrics:
 
-- Top 10 Projects with the most unique users
+- Top 10 Projects (excluding the Synapse Homepage Project) with the most unique users
 - Number of unique users
 - Last download date
 - Total data size (in GiB) for each project
@@ -25,6 +25,7 @@ from orca.services.synapse import SynapseHook
 
 
 SYNAPSE_RESULTS_TABLE = "syn61597055"
+SYNAPSE_HOMEPAGE_PROJECT_ID = 23593546
 
 dag_params = {
     "snowflake_conn_id": Param("SNOWFLAKE_SYSADMIN_PORTAL_RAW_CONN", type="string"),
@@ -92,6 +93,7 @@ def trending_projects_snapshot() -> None:
                     WHERE 1=1
                     AND NODE_TYPE = 'project'
                     AND IS_PUBLIC
+                    AND PROJECT_ID != {SYNAPSE_HOMEPAGE_PROJECT_ID}
                 ),
                 RECENT_DOWNLOADS AS (
                     SELECT PROJECT_ID, RECORD_DATE, USER_ID
