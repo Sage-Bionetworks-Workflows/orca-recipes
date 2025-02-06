@@ -1,8 +1,21 @@
-"""This script is used to execute a query on Snowflake and report the results to a
-slack channel and Synapse table. 
-This retrieves the top X publicly downloaded Synapse projects excluding the Synapse Homepage Project for slack.
-This retrieves all publicly downloaded Synapse projects excluding the Synapse Homepage Project for the Synapse table.
-See ORCA-301 for more context."""
+"""This DAG executes a query on Snowflake retrieving the top X most downloaded publically abailable Synapse projects from the day prior
+to the provided date (defaults to today's date) and report the results to a Slack channel and Synapse table. 
+See ORCA-301 for more context.
+
+A Note on the `backfill` functionality:
+In addition to the fact that this DAG pulls data from the day prior to the provided date, there is an extra wrinkle when using the `backfill` functionality.
+In the Synapse table UI, data is displayed at the local datetime of the user, but the Snowflake query is performed at UTC time. So, if we take into account both of these time differences
+for someone living in North America, you will need to provide a `backfill_date` 2 days after the date that the data is missing in the Synapse table. For example,
+if data is missing for "2025-01-03", `backfill_date` will need to be set to "2025-01-05". Additionally, be sure to set `backfill` to `true` or the DAG will run normally and post
+the results to Slack.
+
+DAG Parameters:
+- `snowflake_conn_id`: The connection ID for the Snowflake connection.
+- `synapse_conn_id`: The connection ID for the Synapse connection.
+- `hours_time_delta`: The number of hours to subtract from the current date to get the date for the query. Defaults to `24`.
+- `backfill`: Whether to backfill the data. Defaults to `False`.
+- `backfill_date`: The date to backfill the data from. Will be ignored if `backfill` is `False`.
+"""
 
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
@@ -196,11 +209,14 @@ def top_public_synapse_projects_from_snowflake() -> None:
         """Push the results to a Synapse table."""
         data = []
         # convert context["params"]["backfill_date"] to date in same format as date.today()
-        today = date.today() if not context["params"]["backfill"] else datetime.strptime(
-            context["params"]["backfill_date"], "%Y-%m-%d").date()
-        yesterday = today - timedelta(
-            hours=int(context["params"]["hours_time_delta"])
+        today = (
+            date.today()
+            if not context["params"]["backfill"]
+            else datetime.strptime(
+                context["params"]["backfill_date"], "%Y-%m-%d"
+            ).date()
         )
+        yesterday = today - timedelta(hours=int(context["params"]["hours_time_delta"]))
         for metric in metrics:
             data.append(
                 [
@@ -221,8 +237,7 @@ def top_public_synapse_projects_from_snowflake() -> None:
     stop = stop_dag()
     slack_message = generate_top_downloads_message(metrics=top_downloads)
     post_to_slack = post_top_downloads_to_slack(message=slack_message)
-    push_to_synapse_table = push_results_to_synapse_table(
-        metrics=top_downloads)
+    push_to_synapse_table = push_results_to_synapse_table(metrics=top_downloads)
 
     top_downloads >> check >> [stop, slack_message]
     slack_message >> post_to_slack
