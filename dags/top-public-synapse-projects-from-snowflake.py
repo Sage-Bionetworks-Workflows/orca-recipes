@@ -1,8 +1,14 @@
-"""This script is used to execute a query on Snowflake and report the results to a
-slack channel and Synapse table. 
-This retrieves the top X publicly downloaded Synapse projects excluding the Synapse Homepage Project for slack.
-This retrieves all publicly downloaded Synapse projects excluding the Synapse Homepage Project for the Synapse table.
-See ORCA-301 for more context."""
+"""This DAG executes a query on Snowflake retrieving the top X most downloaded publically abailable Synapse projects from the day prior
+to the provided date (defaults to today's date) and report the results to a Slack channel and Synapse table. 
+See ORCA-301 for more context.
+
+A Note on the `backfill` functionality:
+In addition to the fact that this DAG pulls data from the day prior to the provided date, there is an extra wrinkle when using the `backfill` functionality.
+In the Synapse table UI, data is displayed at the local datetime of the user, but the Snowflake query is performed at UTC time. So, if we take into account both of these time differences
+for someone living in North America, you will need to provide a `backfill_date` 2 days after the date that the data is missing in the Synapse table. For example,
+if data is missing for "2025-01-03", `backfill_date` will need to be set to "2025-01-05". Additionally, be sure to set `backfill` to `true` or the DAG will run normally and post
+the results to Slack.
+"""
 
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
