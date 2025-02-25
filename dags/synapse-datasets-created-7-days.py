@@ -2,12 +2,11 @@
 It is scheduled to run daily at 00:00."""
 
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta
+from datetime import date, datetime
 from typing import List
 
 import synapseclient
 from airflow.decorators import dag, task
-from airflow.models import Variable
 from airflow.models.param import Param
 from airflow.providers.snowflake.hooks.snowflake import SnowflakeHook
 from orca.services.synapse import SynapseHook
@@ -20,7 +19,7 @@ dag_params = {
 
 dag_config = {
     "schedule_interval": "0 0 * * *",
-    "start_date": datetime(2025, 3, 1),
+    "start_date": datetime(2025, 2, 1),
     "catchup": False,
     "default_args": {
         "retries": 1,
@@ -74,7 +73,7 @@ def datasets_or_projects_created_7_days() -> None:
             parent_id,
             node_type,
             annotations:annotations:contentType:value as content_type,
-            created_on,
+            TO_DATE(created_on) as entity_created_date,
             created_by,
             is_public,
         FROM 
@@ -87,9 +86,9 @@ def datasets_or_projects_created_7_days() -> None:
             )
         AND 
             (
-                created_on >= CURRENT_TIMESTAMP - INTERVAL '7 days' 
+                entity_created_date >= CURRENT_TIMESTAMP - INTERVAL '7 days' 
             )
-        ORDER BY created_on;
+        ORDER BY entity_created_date;
         """
         print(query)
         cs.execute(query)
@@ -104,7 +103,7 @@ def datasets_or_projects_created_7_days() -> None:
                     node_type=row["NODE_TYPE"],
                     parent_id=row["PARENT_ID"],
                     content_type=row["CONTENT_TYPE"],
-                    created_on=row["CREATED_ON"],
+                    created_on=row["ENTITY_CREATED_DATE"],
                     created_by=row["CREATED_BY"],
                     is_public=row["IS_PUBLIC"]
                 )
