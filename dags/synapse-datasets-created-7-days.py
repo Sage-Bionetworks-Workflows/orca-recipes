@@ -116,7 +116,7 @@ def datasets_or_projects_created_7_days() -> None:
     @task
     def generate_slack_message(entity_created: List[EntityCreated], **context) -> str:
         """Generate the message to be posted to the slack channel."""
-        message = f":synapse: Datasets or projects created in the last 7 days \n\n"
+        message = ":synapse: Datasets or projects created in the last 7 days \n\n"
         for index, row in enumerate(entity_created):
             if row.content_type:
                 data_type = row.content_type.strip("[] \n").strip('"')
