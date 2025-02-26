@@ -1,5 +1,5 @@
-"""This script executes a query on Snowflake to retrieve data about entities created in the past few days and stores the results in a Synapse table. 
-It is scheduled to run daily at 00:00."""
+"""This script executes a query on Snowflake to retrieve data about entities created in the past 7 days and stores the results in a Synapse table. 
+It is scheduled to run every Monday at 00:00 UTC"""
 
 from dataclasses import dataclass
 from datetime import date, datetime
@@ -7,9 +7,11 @@ from typing import List
 
 import synapseclient
 from airflow.decorators import dag, task
+from airflow.models import Variable
 from airflow.models.param import Param
 from airflow.providers.snowflake.hooks.snowflake import SnowflakeHook
 from orca.services.synapse import SynapseHook
+from slack_sdk import WebClient
 
 dag_params = {
     "snowflake_conn_id": Param("SNOWFLAKE_SYSADMIN_PORTAL_RAW_CONN", type="string"),
@@ -18,7 +20,7 @@ dag_params = {
 }
 
 dag_config = {
-    "schedule_interval": "0 0 * * *",
+    "schedule_interval": "0 0 * * 1",
     "start_date": datetime(2025, 2, 1),
     "catchup": False,
     "default_args": {
@@ -109,6 +111,29 @@ def datasets_or_projects_created_7_days() -> None:
                 )
             )
         return entity_created
+    
+    @task
+    def generate_slack_message(entity_created: List[EntityCreated], **context) -> str:
+        """Generate the message to be posted to the slack channel."""
+        message = f":synapse: Datasets or projects created in the last 7 days \n\n"
+        for index, row in enumerate(entity_created):
+            if row.content_type:
+                type = row.content_type.strip("[] \n").strip('"')
+            else:
+                type = row.node_type
+            message += f"{index+1}. <https://www.synapse.org/#!Synapse:syn{row.id}|*{row.name}*> (Type: {type}, Created on: {row.created_on}, Created by: <https://www.synapse.org/Profile:{row.created_by}/profile|this user>, Public: {row.is_public})\n\n"
+            if row.content_type:
+                logger.info("before cleanning", row.content_type)
+                logger.info("after stripping", type)
+        return message
+
+    @task
+    def post_slack_messages(message:str) -> bool:
+        """Post the top downloads to the slack channel."""
+        client = WebClient(token=Variable.get("SLACK_DPE_TEAM_BOT_TOKEN"))
+        result = client.chat_postMessage(channel="hotdrop_test", text=message)
+        print(f"Result of posting to slack: [{result}]")
+        return result is not None
 
     @task
     def push_results_to_synapse_table(entity_created: List[EntityCreated], **context) -> None:
@@ -135,10 +160,14 @@ def datasets_or_projects_created_7_days() -> None:
             synapseclient.Table(schema=SYNAPSE_RESULTS_TABLE, values=data)
         )
 
-    get_entity_created = get_datasets_projects_created_7_days()
-    push_to_synapse_table = push_results_to_synapse_table(entity_created=get_entity_created)
+    entity_created = get_datasets_projects_created_7_days()
+    # push_to_synapse_table = push_results_to_synapse_table(entity_created=entity_created)
+    slack_message = generate_slack_message(entity_created=entity_created)
+    post_to_slack = post_slack_messages(message=slack_message)
 
-    get_entity_created >> push_to_synapse_table
+    entity_created >> slack_message
+    slack_message >> post_to_slack
+    # entity_created >> push_to_synapse_table
 
 
 datasets_or_projects_created_7_days()
