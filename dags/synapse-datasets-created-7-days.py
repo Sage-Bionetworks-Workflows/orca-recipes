@@ -39,14 +39,14 @@ class EntityCreated:
     """Dataclass to record
 
     Attributes:
-    name: The name of this entity.
-    id: The unique immutable ID for this entity.
-    parent_id: parent id of the entity
-    node_type: Type of Node
-    content_type: Content type of folder annotated,
-    created_on: The date this entity was created.
-    created_by: The ID of the user that created this entity.
-    is_public: True to indicate if this entity is public.
+        name: The name of this entity.
+        id: The unique immutable ID for this entity.
+        parent_id: parent id of the entity
+        node_type: Type of Node
+        content_type: Content type of folder annotated,
+        created_on: The date this entity was created.
+        created_by: The ID of the user that created this entity.
+        is_public: True to indicate if this entity is public.
     """
 
     name: str
