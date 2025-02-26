@@ -122,9 +122,6 @@ def datasets_or_projects_created_7_days() -> None:
             else:
                 type = row.node_type
             message += f"{index+1}. <https://www.synapse.org/#!Synapse:syn{row.id}|*{row.name}*> (Type: {type}, Created on: {row.created_on}, Created by: <https://www.synapse.org/Profile:{row.created_by}/profile|this user>, Public: {row.is_public})\n\n"
-            if row.content_type:
-                logger.info("before cleanning", row.content_type)
-                logger.info("after stripping", type)
         return message
 
     @task
