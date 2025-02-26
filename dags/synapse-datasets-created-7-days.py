@@ -35,7 +35,7 @@ SYNAPSE_RESULTS_TABLE = "syn64919238"
 
 @dataclass
 class EntityCreated:
-    """Dataclass to record 
+    """Dataclass to record
 
     Attributes:
     name: The name of this entity.
@@ -107,11 +107,11 @@ def datasets_or_projects_created_7_days() -> None:
                     content_type=row["CONTENT_TYPE"],
                     created_on=row["ENTITY_CREATED_DATE"],
                     created_by=row["CREATED_BY"],
-                    is_public=row["IS_PUBLIC"]
+                    is_public=row["IS_PUBLIC"],
                 )
             )
         return entity_created
-    
+
     @task
     def generate_slack_message(entity_created: List[EntityCreated], **context) -> str:
         """Generate the message to be posted to the slack channel."""
@@ -125,7 +125,7 @@ def datasets_or_projects_created_7_days() -> None:
         return message
 
     @task
-    def post_slack_messages(message:str) -> bool:
+    def post_slack_messages(message: str) -> bool:
         """Post the top downloads to the slack channel."""
         client = WebClient(token=Variable.get("SLACK_DPE_TEAM_BOT_TOKEN"))
         result = client.chat_postMessage(channel="hotdrop_test", text=message)
@@ -133,7 +133,9 @@ def datasets_or_projects_created_7_days() -> None:
         return result is not None
 
     @task
-    def push_results_to_synapse_table(entity_created: List[EntityCreated], **context) -> None:
+    def push_results_to_synapse_table(
+        entity_created: List[EntityCreated], **context
+    ) -> None:
         """Push the results to a Synapse table."""
         data = []
         today = date.today()
@@ -158,13 +160,13 @@ def datasets_or_projects_created_7_days() -> None:
         )
 
     entity_created = get_datasets_projects_created_7_days()
-    # push_to_synapse_table = push_results_to_synapse_table(entity_created=entity_created)
+    push_to_synapse_table = push_results_to_synapse_table(entity_created=entity_created)
     slack_message = generate_slack_message(entity_created=entity_created)
     post_to_slack = post_slack_messages(message=slack_message)
 
     entity_created >> slack_message
     slack_message >> post_to_slack
-    # entity_created >> push_to_synapse_table
+    entity_created >> push_to_synapse_table
 
 
 datasets_or_projects_created_7_days()
