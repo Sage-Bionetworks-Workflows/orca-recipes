@@ -119,10 +119,10 @@ def datasets_or_projects_created_7_days() -> None:
         message = f":synapse: Datasets or projects created in the last 7 days \n\n"
         for index, row in enumerate(entity_created):
             if row.content_type:
-                type = row.content_type.strip("[] \n").strip('"')
+                data_type = row.content_type.strip("[] \n").strip('"')
             else:
-                type = row.node_type
-            message += f"{index+1}. <https://www.synapse.org/#!Synapse:syn{row.id}|*{row.name}*> (Type: {type}, Created on: {row.created_on}, Created by: <https://www.synapse.org/Profile:{row.created_by}/profile|this user>, Public: {row.is_public})\n\n"
+                data_type = row.node_type
+            message += f"{index+1}. <https://www.synapse.org/#!Synapse:syn{row.id}|*{row.name}*> (Type: {data_type}, Created on: {row.created_on}, Created by: <https://www.synapse.org/Profile:{row.created_by}/profile|this user>, Public: {row.is_public})\n\n"
         return message
 
     @task
