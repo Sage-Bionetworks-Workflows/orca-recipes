@@ -129,7 +129,7 @@ def datasets_or_projects_created_7_days() -> None:
     def post_slack_messages(message: str) -> bool:
         """Post the top downloads to the slack channel."""
         client = WebClient(token=Variable.get("SLACK_DPE_TEAM_BOT_TOKEN"))
-        result = client.chat_postMessage(channel="hotdrop_test", text=message)
+        result = client.chat_postMessage(channel="hotdrop", text=message)
         print(f"Result of posting to slack: [{result}]")
         return result is not None
 
