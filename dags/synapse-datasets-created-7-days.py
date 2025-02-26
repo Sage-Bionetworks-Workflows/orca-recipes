@@ -1,5 +1,6 @@
-"""This script executes a query on Snowflake to retrieve data about entities created in the past 7 days and stores the results in a Synapse table. 
-It is scheduled to run every Monday at 00:00 UTC"""
+"""This script executes a query on Snowflake to retrieve data about entities created in the past 7 days and stores the results in a Synapse table.
+It is scheduled to run every Monday at 00:00 UTC.
+"""
 
 from dataclasses import dataclass
 from datetime import date, datetime
