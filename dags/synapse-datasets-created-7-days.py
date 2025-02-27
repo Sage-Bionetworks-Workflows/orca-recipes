@@ -64,6 +64,7 @@ class EntityCreated:
         node_type: Type of Node
         content_type: Content type of folder annotated,
         created_on: The date this entity was created.
+        full_name: Full name of the user that created this entity
         created_by: The ID of the user that created this entity.
         is_public: True to indicate if this entity is public.
     """
