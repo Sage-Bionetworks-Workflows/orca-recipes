@@ -1,9 +1,16 @@
 """This script executes a query on Snowflake to retrieve data about entities created in the past 7 days and stores the results in a Synapse table.
 It is scheduled to run every Monday at 00:00 UTC.
+
+DAG Parameters:
+- `snowflake_conn_id`: The connection ID for the Snowflake connection.
+- `synapse_conn_id`: The connection ID for the Synapse connection.
+- 'current_date_time': The current date time in UTC timezone
+- `backfill`: Whether to backfill the data. Defaults to `False`.
+- `backfill_date_time`: The date time to backfill the data from. Will be ignored if `backfill` is `False`.
 """
 
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from typing import List
 
 import synapseclient
@@ -17,7 +24,12 @@ from slack_sdk import WebClient
 dag_params = {
     "snowflake_conn_id": Param("SNOWFLAKE_SYSADMIN_PORTAL_RAW_CONN", type="string"),
     "synapse_conn_id": Param("SYNAPSE_ORCA_SERVICE_ACCOUNT_CONN", type="string"),
-    "current_date": Param(date.today().strftime("%Y-%m-%d"), type="string"),
+    "current_date_time": Param(
+        datetime.now(timezone.utc).strftime("%Y-%m-%d  %H:%M:%S"), type="string"
+    ),
+    "backfill": Param(False, type="boolean"),
+    # backfill_date_time string format: YYYY-MM-DD HH:MM:SS
+    "backfill_date_time": Param("1900-01-01 00:00:00", type="string"),
 }
 
 dag_config = {
@@ -55,6 +67,7 @@ class EntityCreated:
     node_type: str
     content_type: str
     created_on: str
+    user_name: str
     created_by: str
     is_public: bool
 
@@ -63,33 +76,57 @@ class EntityCreated:
 def datasets_or_projects_created_7_days() -> None:
     """Execute a query on Snowflake and report the results to a Synapse table."""
 
+    @task.branch()
+    def check_backfill(**context) -> str:
+        """Check if the backfill is enabled. When it is, do not post to Slack."""
+        if context["params"]["backfill"]:
+            return "stop_dag"
+        return "generate_slack_message"
+
+    @task()
+    def stop_dag() -> None:
+        """Stop the DAG."""
+        pass
+
     @task
     def get_datasets_projects_created_7_days(**context) -> List[EntityCreated]:
         """Execute the query on Snowflake and return the results."""
         snow_hook = SnowflakeHook(context["params"]["snowflake_conn_id"])
         ctx = snow_hook.get_conn()
         cs = ctx.cursor()
+
+        # set backfill_date to None if backfill is False
+        backfill_date_time = context["params"]["backfill_date_time"]
+        query_date = (
+            None if not context["params"]["backfill"] else f"{backfill_date_time}"
+        )
+
         query = f"""
         SELECT 
             name,
-            id,
+            n.id,
             parent_id,
             node_type,
-            annotations:annotations:contentType:value as content_type,
-            TO_DATE(created_on) as entity_created_date,
+            ARRAY_TO_STRING(annotations:annotations:contentType:value, ', ') as content_type,
+            TO_DATE(n.created_on) as entity_created_date,
             created_by,
+            CONCAT(first_name,' ',last_name) AS user_name,
             is_public,
         FROM 
-            synapse_data_warehouse.synapse.node_latest
+            synapse_data_warehouse.synapse.node_latest as n
+        LEFT JOIN 
+            synapse_data_warehouse.synapse.userprofile_latest as u
+            ON 
+            n.created_by = u.id
         WHERE 
             (
                 node_type IN ('dataset', 'project') 
                 OR 
-                (content_type LIKE '%dataset%' AND content_type IS NOT NULL)
+                (content_type = 'dataset')
             )
         AND 
             (
-                entity_created_date >= CURRENT_TIMESTAMP - INTERVAL '7 days' 
+                entity_created_date >= DATEADD(DAY, -7, '{query_date or context["params"]["current_date_time"]}')
             )
         ORDER BY entity_created_date;
         """
@@ -107,6 +144,7 @@ def datasets_or_projects_created_7_days() -> None:
                     parent_id=row["PARENT_ID"],
                     content_type=row["CONTENT_TYPE"],
                     created_on=row["ENTITY_CREATED_DATE"],
+                    user_name=row["USER_NAME"],
                     created_by=row["CREATED_BY"],
                     is_public=row["IS_PUBLIC"],
                 )
@@ -119,17 +157,17 @@ def datasets_or_projects_created_7_days() -> None:
         message = ":synapse: Datasets or projects created in the last 7 days \n\n"
         for index, row in enumerate(entity_created):
             if row.content_type:
-                data_type = row.content_type.strip("[] \n").strip('"')
+                data_type = row.content_type
             else:
                 data_type = row.node_type
-            message += f"{index+1}. <https://www.synapse.org/#!Synapse:syn{row.id}|*{row.name}*> (Type: {data_type}, Created on: {row.created_on}, Created by: <https://www.synapse.org/Profile:{row.created_by}/profile|this user>, Public: {row.is_public})\n\n"
+            message += f"{index+1}. <https://www.synapse.org/#!Synapse:syn{row.id}|*{row.name}*> (Type: {data_type}, Created on: {row.created_on}, Created by: <https://www.synapse.org/Profile:{row.created_by}/profile|{row.user_name}>, Public: {row.is_public})\n\n"
         return message
 
     @task
     def post_slack_messages(message: str) -> bool:
         """Post the top downloads to the slack channel."""
         client = WebClient(token=Variable.get("SLACK_DPE_TEAM_BOT_TOKEN"))
-        result = client.chat_postMessage(channel="hotdrop", text=message)
+        result = client.chat_postMessage(channel="hotdrops", text=message)
         print(f"Result of posting to slack: [{result}]")
         return result is not None
 
@@ -139,7 +177,14 @@ def datasets_or_projects_created_7_days() -> None:
     ) -> None:
         """Push the results to a Synapse table."""
         data = []
-        today = date.today()
+        # convert context["params"]["backfill_date_time"] to date in same format as date.today()
+        today = (
+            date.today()
+            if not context["params"]["backfill"]
+            else datetime.strptime(
+                context["params"]["backfill_date_time"], "%Y-%m-%d  %H:%M:%S"
+            ).date()
+        )
         for row in entity_created:
             data.append(
                 [
@@ -161,10 +206,13 @@ def datasets_or_projects_created_7_days() -> None:
         )
 
     entity_created = get_datasets_projects_created_7_days()
+    check = check_backfill()
+    stop = stop_dag()
     push_to_synapse_table = push_results_to_synapse_table(entity_created=entity_created)
     slack_message = generate_slack_message(entity_created=entity_created)
     post_to_slack = post_slack_messages(message=slack_message)
 
+    entity_created >> check >> [stop, slack_message]
     entity_created >> slack_message
     slack_message >> post_to_slack
     entity_created >> push_to_synapse_table
