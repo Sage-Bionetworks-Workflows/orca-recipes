@@ -1,12 +1,19 @@
 """This script executes a query on Snowflake to retrieve data about entities created in the past 7 days and stores the results in a Synapse table.
 It is scheduled to run every Monday at 00:00 UTC.
 
+A Note on the `backfill` functionality:
+In addition to the fact that this DAG pulls data from the day prior to the provided date, there is an extra wrinkle when using the `backfill` functionality.
+In the Synapse table UI, data is displayed at the local datetime of the user, but the Snowflake query is performed at UTC time. So, if we take into account both of these time differences
+for someone living in North America, you will need to provide a `backfill_date` 2 days after the date that the data is missing in the Synapse table. For example,
+if data is missing for "2025-01-03", `backfill_date` will need to be set to "2025-01-05". Additionally, be sure to set `backfill` to `true` or the DAG will run normally and post
+the results to Slack.
+
 DAG Parameters:
 - `snowflake_conn_id`: The connection ID for the Snowflake connection.
 - `synapse_conn_id`: The connection ID for the Synapse connection.
 - 'current_date_time': The current date time in UTC timezone
 - `backfill`: Whether to backfill the data. Defaults to `False`.
-- `backfill_date_time`: The date time to backfill the data from. Will be ignored if `backfill` is `False`.
+- `backfill_date_time`: The date time to backfill the data from. in UTC time zone. Will be ignored if `backfill` is `False`.
 """
 
 from dataclasses import dataclass
@@ -67,7 +74,7 @@ class EntityCreated:
     node_type: str
     content_type: str
     created_on: str
-    user_name: str
+    full_name: str
     created_by: str
     is_public: bool
 
@@ -110,7 +117,7 @@ def datasets_or_projects_created_7_days() -> None:
             ARRAY_TO_STRING(annotations:annotations:contentType:value, ', ') as content_type,
             TO_DATE(n.created_on) as entity_created_date,
             created_by,
-            CONCAT(first_name,' ',last_name) AS user_name,
+            CONCAT(first_name,' ',last_name) AS full_name,
             is_public,
         FROM 
             synapse_data_warehouse.synapse.node_latest as n
@@ -144,7 +151,7 @@ def datasets_or_projects_created_7_days() -> None:
                     parent_id=row["PARENT_ID"],
                     content_type=row["CONTENT_TYPE"],
                     created_on=row["ENTITY_CREATED_DATE"],
-                    user_name=row["USER_NAME"],
+                    full_name=row["FULL_NAME"],
                     created_by=row["CREATED_BY"],
                     is_public=row["IS_PUBLIC"],
                 )
@@ -213,7 +220,6 @@ def datasets_or_projects_created_7_days() -> None:
     post_to_slack = post_slack_messages(message=slack_message)
 
     entity_created >> check >> [stop, slack_message]
-    entity_created >> slack_message
     slack_message >> post_to_slack
     entity_created >> push_to_synapse_table
 
