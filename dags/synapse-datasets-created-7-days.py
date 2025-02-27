@@ -168,14 +168,14 @@ def datasets_or_projects_created_7_days() -> None:
                 data_type = row.content_type
             else:
                 data_type = row.node_type
-            message += f"{index+1}. <https://www.synapse.org/#!Synapse:syn{row.id}|*{row.name}*> (Type: {data_type}, Created on: {row.created_on}, Created by: <https://www.synapse.org/Profile:{row.created_by}/profile|{row.user_name}>, Public: {row.is_public})\n\n"
+            message += f"{index+1}. <https://www.synapse.org/#!Synapse:syn{row.id}|*{row.name}*> (Type: {data_type}, Created on: {row.created_on}, Created by: <https://www.synapse.org/Profile:{row.created_by}/profile|{row.full_name}>, Public: {row.is_public})\n\n"
         return message
 
     @task
     def post_slack_messages(message: str) -> bool:
         """Post the top downloads to the slack channel."""
         client = WebClient(token=Variable.get("SLACK_DPE_TEAM_BOT_TOKEN"))
-        result = client.chat_postMessage(channel="hotdrops", text=message)
+        result = client.chat_postMessage(channel="hotdrop_test", text=message)
         print(f"Result of posting to slack: [{result}]")
         return result is not None
 
@@ -216,13 +216,13 @@ def datasets_or_projects_created_7_days() -> None:
     entity_created = get_datasets_projects_created_7_days()
     check = check_backfill()
     stop = stop_dag()
-    push_to_synapse_table = push_results_to_synapse_table(entity_created=entity_created)
+    # push_to_synapse_table = push_results_to_synapse_table(entity_created=entity_created)
     slack_message = generate_slack_message(entity_created=entity_created)
-    post_to_slack = post_slack_messages(message=slack_message)
+    # post_to_slack = post_slack_messages(message=slack_message)
 
     entity_created >> check >> [stop, slack_message]
-    slack_message >> post_to_slack
-    entity_created >> push_to_synapse_table
+    # slack_message >> post_to_slack
+    # entity_created >> push_to_synapse_table
 
 
 datasets_or_projects_created_7_days()
