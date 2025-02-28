@@ -64,7 +64,7 @@ class EntityCreated:
         node_type: Type of Node
         content_type: Content type of folder annotated,
         created_on: The date this entity was created.
-        full_name: Full name of the user that created this entity
+        user_name_full_name: Full name of the user that created this entity. If first name or last name is null, use user name
         created_by: The ID of the user that created this entity.
         is_public: True to indicate if this entity is public.
     """
@@ -75,7 +75,7 @@ class EntityCreated:
     node_type: str
     content_type: str
     created_on: str
-    full_name: str
+    user_name_full_name: str
     created_by: str
     is_public: bool
 
@@ -118,7 +118,7 @@ def datasets_or_projects_created_7_days() -> None:
             ARRAY_TO_STRING(annotations:annotations:contentType:value, ', ') as content_type,
             TO_DATE(n.created_on) as entity_created_date,
             created_by,
-            CONCAT(first_name,' ',last_name) AS full_name,
+            CASE WHEN last_name IS NULL OR first_name is NULL THEN user_name ELSE CONCAT(first_name,' ',last_name)END as user_name_full_name,
             is_public,
         FROM 
             synapse_data_warehouse.synapse.node_latest as n
@@ -152,7 +152,7 @@ def datasets_or_projects_created_7_days() -> None:
                     parent_id=row["PARENT_ID"],
                     content_type=row["CONTENT_TYPE"],
                     created_on=row["ENTITY_CREATED_DATE"],
-                    full_name=row["FULL_NAME"],
+                    user_name_full_name=row["USER_NAME_FULL_NAME"],
                     created_by=row["CREATED_BY"],
                     is_public=row["IS_PUBLIC"],
                 )
@@ -168,7 +168,7 @@ def datasets_or_projects_created_7_days() -> None:
                 data_type = row.content_type
             else:
                 data_type = row.node_type
-            message += f"{index+1}. <https://www.synapse.org/#!Synapse:syn{row.id}|*{row.name}*> (Type: {data_type}, Created on: {row.created_on}, Created by: <https://www.synapse.org/Profile:{row.created_by}/profile|{row.full_name}>, Public: {row.is_public})\n\n"
+            message += f"{index+1}. <https://www.synapse.org/#!Synapse:syn{row.id}|*{row.name}*> (Type: {data_type}, Created on: {row.created_on}, Created by: <https://www.synapse.org/Profile:{row.created_by}/profile|{row.user_name_full_name}>, Public: {row.is_public})\n\n"
         return message
 
     @task
