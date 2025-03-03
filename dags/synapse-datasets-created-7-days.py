@@ -50,7 +50,7 @@ dag_config = {
     "params": dag_params,
 }
 
-SYNAPSE_RESULTS_TABLE = "syn64919238"
+SYNAPSE_RESULTS_TABLE = "syn64951484"
 
 
 @dataclass
@@ -198,8 +198,8 @@ def datasets_or_projects_created_7_days() -> None:
                 [
                     row.name,
                     row.id,
-                    row.node_type,
                     row.parent_id,
+                    row.node_type,
                     row.content_type,
                     row.created_on,
                     row.created_by,
