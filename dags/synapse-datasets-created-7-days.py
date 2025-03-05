@@ -60,7 +60,7 @@ class EntityCreated:
     Attributes:
         name: The name of this entity.
         id: The unique immutable ID for this entity.
-        parent_id: parent id of the entity
+        project_id: project id of the entity
         node_type: Type of Node
         content_type: Content type of folder annotated,
         created_on: The date this entity was created.
@@ -71,7 +71,7 @@ class EntityCreated:
 
     name: str
     id: int
-    parent_id: int
+    project_id: int
     node_type: str
     content_type: str
     created_on: str
@@ -113,7 +113,7 @@ def datasets_or_projects_created_7_days() -> None:
         SELECT 
             name,
             n.id,
-            parent_id,
+            project_id,
             node_type,
             ARRAY_TO_STRING(annotations:annotations:contentType:value, ', ') as content_type,
             TO_DATE(n.created_on) as entity_created_date,
@@ -149,7 +149,7 @@ def datasets_or_projects_created_7_days() -> None:
                     name=row["NAME"],
                     id=row["ID"],
                     node_type=row["NODE_TYPE"],
-                    parent_id=row["PARENT_ID"],
+                    project_id=row["PROJECT_ID"],
                     content_type=row["CONTENT_TYPE"],
                     created_on=row["ENTITY_CREATED_DATE"],
                     user_name_full_name=row["USER_NAME_FULL_NAME"],
@@ -198,7 +198,7 @@ def datasets_or_projects_created_7_days() -> None:
                 [
                     row.name,
                     row.id,
-                    row.parent_id,
+                    row.project_id,
                     row.node_type,
                     row.content_type,
                     row.created_on,
