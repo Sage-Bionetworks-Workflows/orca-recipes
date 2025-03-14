@@ -29,6 +29,7 @@ dag_params = {
     "synapse_conn_id": Param("SYNAPSE_ORCA_SERVICE_ACCOUNT_CONN", type="string"),
     "dataset_collections": Param(["syn50913342"], type="array"),
     "push_results_to_s3": Param(True, type="boolean"),
+    "aws_conn_id": Param("AWS_SYNAPSE_CROISSANT_METADATA_S3_CONN", type="string"),
 }
 
 dag_config = {
