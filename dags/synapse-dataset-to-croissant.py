@@ -324,6 +324,10 @@ def dataset_to_croissant() -> None:
             croissant_json_ld_for_dataset = cs.fetch_pandas_all()
             cs.close()
 
+            if croissant_json_ld_for_dataset.empty:
+                print(f"No content found for {dataset_id}")
+                return
+
             synapse_id = croissant_json_ld_for_dataset["DATASET_SYNAPSE_ID"][0]
             name = croissant_json_ld_for_dataset["NAME"][0]
             push_to_s3 = context["params"]["push_results_to_s3"]
@@ -347,6 +351,7 @@ def dataset_to_croissant() -> None:
                 s3_hook.load_file_obj(file_obj=metadata_file,
                                       key=f"{name}_{synapse_id}_croissant.jsonld",
                                       bucket_name=BUCKET_NAME,
+                                      replace=True,
                                       )
 
         except Exception as e:
