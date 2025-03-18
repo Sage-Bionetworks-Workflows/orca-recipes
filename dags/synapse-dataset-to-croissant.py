@@ -69,6 +69,7 @@ dag_config = {
     "schedule_interval": "0 0 * * 1",
     "start_date": datetime(2025, 2, 1),
     "catchup": False,
+    "max_active_tasks": 4,
     "default_args": {
         "retries": 3,
     },
