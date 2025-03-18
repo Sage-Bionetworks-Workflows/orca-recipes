@@ -4,7 +4,14 @@ This DAG queries snowflake for the given dataset collections to look for dataset
 For each dataset in the dataset collections, it queries the dataset in Snowflake and 
 pushes the results to a Croissant file in S3. The S3 bucket is stored in the
 `org-sagebase-dpe-prod` AWS account. That S3 bucket is deployed to AWS through the code
-in this PR: https://github.com/Sage-Bionetworks-Workflows/eks-stack/pull/57
+in this PR: https://github.com/Sage-Bionetworks-Workflows/eks-stack/pull/57 .
+
+Additional note on the pushing to S3. The way that the S3 hook is set up is that it will
+log in as an AWS user to accomplish the required work. In order for this DAG to run the
+user that is running the DAG must have the correct permissions to access the S3 bucket
+and write to it. This was set up on the `airflow-secrets-backend` user in the 
+`org-sagebase-dpe-prod` AWS account. The user has an inline policy to grant PutObject,
+GetObject, and ListBucket permissions to the S3 bucket.
 
 Simply add the dataset collections to the `dataset_collections` parameter in the DAG to
 run this process for the given dataset collections.
