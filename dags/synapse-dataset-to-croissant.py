@@ -325,7 +325,7 @@ def dataset_to_croissant() -> None:
                     VERSION_NUMBER,
                     CONCAT('syn', id) as DATASET_SYNAPSE_ID
                 FROM synapse_data_warehouse.synapse.node_latest
-                WHERE id = {dataset_id} -- This is the ID of a Dataset
+                WHERE id = {dataset_id}
             ),
             ids_of_files_belonging_to_dataset AS (
                 SELECT REPLACE(ITEM.value:entityId::STRING, 'syn', '') AS entity_ids
