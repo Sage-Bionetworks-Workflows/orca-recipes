@@ -70,7 +70,7 @@ dag_config = {
     "start_date": datetime(2025, 2, 1),
     "catchup": False,
     "default_args": {
-        "retries": 1,
+        "retries": 3,
     },
     "tags": ["snowflake"],
     "params": dag_params,
