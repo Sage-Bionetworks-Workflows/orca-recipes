@@ -136,7 +136,7 @@ def datasets_or_projects_created_7_days() -> None:
             (
                 entity_created_date >= DATEADD(DAY, -7, '{query_date or context["params"]["current_date_time"]}')
             )
-        ORDER BY entity_created_date;
+        ORDER BY ORDER BY is_public DESC, entity_created_date;
         """
         print(query)
         cs.execute(query)
