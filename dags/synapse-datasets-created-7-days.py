@@ -163,26 +163,27 @@ def datasets_or_projects_created_7_days() -> None:
     def generate_slack_message(entity_created: List[EntityCreated], **context) -> str:
         """Generate the message to be posted to the slack channel."""
         message = ":synapse: Datasets or projects created in the last 7 days \n\n"
-        public_ds_message = "Public datasets: \n\n"
-        private_ds_message = "Private datasets: \n\n"
+        public_ds_message = ""
+        private_ds_message = ""
         for index, row in enumerate(entity_created):
             if row.content_type:
                 data_type = row.content_type
             else:
                 data_type = row.node_type
+            printed_message = f"{index+1}. <https://www.synapse.org/#!Synapse:syn{row.id}|*{row.name}*> (Type: {data_type}, Created on: {row.created_on}, Created by: <https://www.synapse.org/Profile:{row.created_by}/profile|{row.user_name_full_name}>, Public: {row.is_public})\n\n"
             if row.is_public:
-                public_ds_message += f"{index+1}. <https://www.synapse.org/#!Synapse:syn{row.id}|*{row.name}*> (Type: {data_type}, Created on: {row.created_on}, Created by: <https://www.synapse.org/Profile:{row.created_by}/profile|{row.user_name_full_name}>, Public: {row.is_public})\n\n"
+                public_ds_message += printed_message
             else:
-                private_ds_message +=f"{index+1}. <https://www.synapse.org/#!Synapse:syn{row.id}|*{row.name}*> (Type: {data_type}, Created on: {row.created_on}, Created by: <https://www.synapse.org/Profile:{row.created_by}/profile|{row.user_name_full_name}>, Public: {row.is_public})\n\n"
-        message = message + public_ds_message
-        message = message + private_ds_message
+                private_ds_message += printed_message
+        message = message + "*Public datasets*: \n\n" + (public_ds_message if public_ds_message else "Nothing to be found.\n\n")
+        message = message + "*Private datasets*: \n\n" + (private_ds_message if private_ds_message else "Nothing to be found.\n\n")
         return message
 
     @task
     def post_slack_messages(message: str) -> bool:
         """Post the top downloads to the slack channel."""
         client = WebClient(token=Variable.get("SLACK_DPE_TEAM_BOT_TOKEN"))
-        result = client.chat_postMessage(channel="hotdrops", text=message)
+        result = client.chat_postMessage(channel="hotdrop_test", text=message)
         print(f"Result of posting to slack: [{result}]")
         return result is not None
 
