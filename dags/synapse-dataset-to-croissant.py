@@ -329,19 +329,28 @@ def dataset_to_croissant() -> None:
                 WHERE id = {dataset_id}
             ),
             ids_of_files_belonging_to_dataset AS (
-                SELECT REPLACE(ITEM.value:entityId::STRING, 'syn', '') AS entity_ids
+                SELECT REPLACE(ITEM.value:entityId::STRING, 'syn', '') AS entity_id, ITEM.value:versionNumber::STRING as version_number
                 FROM entity_metadata,
                 LATERAL FLATTEN(input => entity_metadata.ITEMS) ITEM
             ),
             files_belonging_to_dataset AS (
                 SELECT
                     nl.id,
-                    nl.VERSION_HISTORY,
+                    nl.version_number,
+                    vh.value AS VERSION_HISTORY_ENTRY,
                     nl.ANNOTATIONS,
-                    DATASET_SYNAPSE_ID
-                FROM synapse_data_warehouse.synapse.node_latest as nl, entity_metadata
-                WHERE nl.is_public = True
-                    AND nl.id IN (SELECT * FROM ids_of_files_belonging_to_dataset)
+                    nl.is_public,
+                    ids_of_files_belonging_to_dataset.entity_id,
+                    ids_of_files_belonging_to_dataset.version_number,
+                    entity_metadata.DATASET_SYNAPSE_ID
+                FROM synapse_data_warehouse.synapse.node_latest AS nl
+                JOIN ids_of_files_belonging_to_dataset
+                    ON nl.id = ids_of_files_belonging_to_dataset.entity_id
+                JOIN entity_metadata
+                    ON TRUE -- Ensures the `DATASET_SYNAPSE_ID` is included
+                CROSS JOIN LATERAL FLATTEN(input => nl.VERSION_HISTORY) vh
+                WHERE nl.is_public = TRUE
+                AND vh.value:versionNumber::STRING = ids_of_files_belonging_to_dataset.version_number
             ),
             distribution_pointing_to_files AS (
                 SELECT
@@ -356,7 +365,7 @@ def dataset_to_croissant() -> None:
                         'contentUrl', CONCAT(
                             'https://www.synapse.org/Synapse:', CONCAT('syn', id)),
                         'encodingFormat', 'application/json',
-                        'md5', COALESCE(VERSION_HISTORY[0]:contentMd5, 'unknown_md5'),
+                        'md5', COALESCE(VERSION_HISTORY_ENTRY:contentMd5, 'unknown_md5'),
                         'sha256', 'unknown'
                     ) AS file_object
                 FROM files_belonging_to_dataset
