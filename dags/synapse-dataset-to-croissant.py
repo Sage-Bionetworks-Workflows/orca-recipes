@@ -370,6 +370,7 @@ def dataset_to_croissant() -> None:
                     ) AS file_object
                 FROM files_belonging_to_dataset
             ),
+            -- TODO: Annotation selection must be version dependent, however, the different versions of the annotations are not available in a non-deduplicated table
             distinct_annotation_keys AS (
                 SELECT DATASET_SYNAPSE_ID, ARRAY_AGG(annotation_key) as annotation_keys FROM (
                     SELECT
