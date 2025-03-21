@@ -98,10 +98,7 @@ def datasets_or_projects_created_7_days() -> None:
     @task
     def get_datasets_projects_created_7_days(**context) -> List[EntityCreated]:
         """Execute the query on Snowflake and return the results."""
-        snow_hook = SnowflakeHook(
-        # Set up SnowflakeHook dynamically
-        context["params"]["snowflake_developer_service_conn"]
-        )
+        snow_hook = SnowflakeHook(context["params"]["snowflake_developer_service_conn"])
         ctx = snow_hook.get_conn()
         cs = ctx.cursor()
 
