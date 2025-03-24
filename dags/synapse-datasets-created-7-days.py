@@ -136,7 +136,7 @@ def datasets_or_projects_created_7_days() -> None:
             (
                 entity_created_date >= DATEADD(DAY, -7, '{query_date or context["params"]["current_date_time"]}')
             )
-        ORDER BY entity_created_date;
+        ORDER BY is_public DESC, entity_created_date;
         """
         print(query)
         cs.execute(query)
@@ -163,12 +163,20 @@ def datasets_or_projects_created_7_days() -> None:
     def generate_slack_message(entity_created: List[EntityCreated], **context) -> str:
         """Generate the message to be posted to the slack channel."""
         message = ":synapse: Datasets or projects created in the last 7 days \n\n"
+        public_ds_message = ""
+        private_ds_message = ""
         for index, row in enumerate(entity_created):
             if row.content_type:
                 data_type = row.content_type
             else:
                 data_type = row.node_type
-            message += f"{index+1}. <https://www.synapse.org/#!Synapse:syn{row.id}|*{row.name}*> (Type: {data_type}, Created on: {row.created_on}, Created by: <https://www.synapse.org/Profile:{row.created_by}/profile|{row.user_name_full_name}>, Public: {row.is_public})\n\n"
+            printed_message = f"{index+1}. <https://www.synapse.org/#!Synapse:syn{row.id}|*{row.name}*> (Type: {data_type}, Created on: {row.created_on}, Created by: <https://www.synapse.org/Profile:{row.created_by}/profile|{row.user_name_full_name}>, Public: {row.is_public})\n\n"
+            if row.is_public:
+                public_ds_message += printed_message
+            else:
+                private_ds_message += printed_message
+        message = message + "*Public datasets*: \n\n" + (public_ds_message if public_ds_message else "Nothing to be found.\n\n")
+        message = message + "*Private datasets*: \n\n" + (private_ds_message if private_ds_message else "Nothing to be found.\n\n")
         return message
 
     @task
