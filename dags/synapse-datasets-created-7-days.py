@@ -9,13 +9,12 @@ if data is missing for "2025-01-03", `backfill_date` will need to be set to "202
 the results to Slack.
 
 DAG Parameters:
-- `snowflake_conn_id`: The connection ID for the Snowflake connection.
+- `snowflake_developer_service_conn`: A JSON-formatted string containing the connection details required to authenticate and connect to Snowflake.
 - `synapse_conn_id`: The connection ID for the Synapse connection.
 - 'current_date_time': The current date time in UTC timezone
 - `backfill`: Whether to backfill the data. Defaults to `False`.
 - `backfill_date_time`: The date time to backfill the data from. in UTC time zone. Will be ignored if `backfill` is `False`.
 """
-
 from dataclasses import dataclass
 from datetime import date, datetime, timezone
 from typing import List
@@ -29,7 +28,7 @@ from orca.services.synapse import SynapseHook
 from slack_sdk import WebClient
 
 dag_params = {
-    "snowflake_conn_id": Param("SNOWFLAKE_SYSADMIN_PORTAL_RAW_CONN", type="string"),
+    "snowflake_developer_service_conn": Param("SNOWFLAKE_DEVELOPER_SERVICE_RAW_CONN", type="string"),
     "synapse_conn_id": Param("SYNAPSE_ORCA_SERVICE_ACCOUNT_CONN", type="string"),
     "current_date_time": Param(
         datetime.now(timezone.utc).strftime("%Y-%m-%d  %H:%M:%S"), type="string"
@@ -99,7 +98,7 @@ def datasets_or_projects_created_7_days() -> None:
     @task
     def get_datasets_projects_created_7_days(**context) -> List[EntityCreated]:
         """Execute the query on Snowflake and return the results."""
-        snow_hook = SnowflakeHook(context["params"]["snowflake_conn_id"])
+        snow_hook = SnowflakeHook(context["params"]["snowflake_developer_service_conn"])
         ctx = snow_hook.get_conn()
         cs = ctx.cursor()
 
