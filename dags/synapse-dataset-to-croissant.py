@@ -21,7 +21,7 @@ integration for Apache Airflow. OTEL support is officially added in 2.10.0, but 
 that we also upgrade the production Airflow server.
 
 DAG Parameters:
-- `snowflake_conn_id`: The connection ID for the Snowflake connection.
+- `snowflake_developer_service_conn`: A JSON-formatted string containing the connection details required to authenticate and connect to Snowflake.
 - `synapse_conn_id`: The connection ID for the Synapse connection.
 - `dataset_collections`: The dataset collections to query for datasets.
 - `push_results_to_s3`: A boolean to indicate if the results should be pushed to S3.
@@ -57,7 +57,7 @@ from opentelemetry.trace.propagation.tracecontext import \
     TraceContextTextMapPropagator
 
 dag_params = {
-    "snowflake_conn_id": Param("SNOWFLAKE_SYSADMIN_PORTAL_RAW_CONN", type="string"),
+    "snowflake_developer_service_conn": Param("SNOWFLAKE_DEVELOPER_SERVICE_RAW_CONN", type="string"),
     "synapse_conn_id": Param("SYNAPSE_ORCA_SERVICE_ACCOUNT_CONN", type="string"),
     "dataset_collections": Param(["syn50913342"], type="array"),
     "push_results_to_s3": Param(True, type="boolean"),
@@ -254,7 +254,7 @@ def dataset_to_croissant() -> None:
                 node_type = 'datasetcollection'
                 AND id = {dataset_collection_without_syn}
             """
-            snow_hook = SnowflakeHook(context["params"]["snowflake_conn_id"])
+            snow_hook = SnowflakeHook(context["params"]["snowflake_developer_service_conn"])
             ctx = snow_hook.get_conn()
             cs = ctx.cursor()
 
@@ -501,7 +501,7 @@ def dataset_to_croissant() -> None:
             FROM
                 croissant_metadata;
             """
-            snow_hook = SnowflakeHook(context["params"]["snowflake_conn_id"])
+            snow_hook = SnowflakeHook(context["params"]["snowflake_developer_service_conn"])
             ctx = snow_hook.get_conn()
             cs = ctx.cursor()
 

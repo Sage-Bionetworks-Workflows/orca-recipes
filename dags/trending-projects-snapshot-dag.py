@@ -28,7 +28,7 @@ SYNAPSE_RESULTS_TABLE = "syn61597055"
 SYNAPSE_HOMEPAGE_PROJECT_ID = 23593546
 
 dag_params = {
-    "snowflake_conn_id": Param("SNOWFLAKE_SYSADMIN_PORTAL_RAW_CONN", type="string"),
+    "snowflake_developer_service_conn": Param("SNOWFLAKE_DEVELOPER_SERVICE_RAW_CONN", type="string"),
     "synapse_conn_id": Param("SYNAPSE_ORCA_SERVICE_ACCOUNT_CONN", type="string"),
     "current_date": Param(date.today().strftime("%Y-%m-%d"), type="string"),
     "month_to_run": Param((date.today() - relativedelta(months=1)).strftime("%Y-%m-%d"), type="string")
@@ -83,7 +83,7 @@ def trending_projects_snapshot() -> None:
     @task
     def get_trending_project_snapshot(**context) -> List[SnapshotMetrics]:
         """Execute the query on Snowflake and return the results."""
-        snow_hook = SnowflakeHook(context["params"]["snowflake_conn_id"])
+        snow_hook = SnowflakeHook(context["params"]["snowflake_developer_service_conn"])
         ctx = snow_hook.get_conn()
         cs = ctx.cursor()
         query = f"""

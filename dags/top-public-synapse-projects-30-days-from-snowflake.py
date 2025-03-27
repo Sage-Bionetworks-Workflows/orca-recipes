@@ -14,7 +14,7 @@ from airflow.providers.snowflake.hooks.snowflake import SnowflakeHook
 from orca.services.synapse import SynapseHook
 
 dag_params = {
-    "snowflake_conn_id": Param("SNOWFLAKE_SYSADMIN_PORTAL_RAW_CONN", type="string"),
+    "snowflake_developer_service_conn": Param("SNOWFLAKE_DEVELOPER_SERVICE_RAW_CONN", type="string"),
     "synapse_conn_id": Param("SYNAPSE_ORCA_SERVICE_ACCOUNT_CONN", type="string"),
     "current_date": Param(date.today().strftime("%Y-%m-%d"), type="string"),
 }
@@ -61,7 +61,7 @@ def top_public_synapse_projects_30_days_from_snowflake() -> None:
     @task
     def get_all_time_downloads_from_snowflake(**context) -> List[DownloadMetric]:
         """Execute the query on Snowflake and return the results."""
-        snow_hook = SnowflakeHook(context["params"]["snowflake_conn_id"])
+        snow_hook = SnowflakeHook(context["params"]["snowflake_developer_service_conn"])
         ctx = snow_hook.get_conn()
         cs = ctx.cursor()
         query = f"""
