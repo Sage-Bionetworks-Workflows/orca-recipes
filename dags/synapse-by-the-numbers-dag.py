@@ -59,7 +59,7 @@ def synapse_by_the_numbers_past_month() -> None:
     @task
     def get_synapse_monthly_metrics(**context) -> List[DownloadMetric]:
         """Execute the query on Snowflake and return the results."""
-        snow_hook = SnowflakeHook(context["params"]["SNOWFLAKE_DEVELOPER_SERVICE_RAW_CONN"])
+        snow_hook = SnowflakeHook(context["params"]["snowflake_developer_service_conn"])
         ctx = snow_hook.get_conn()
         cs = ctx.cursor()
         query = f"""
