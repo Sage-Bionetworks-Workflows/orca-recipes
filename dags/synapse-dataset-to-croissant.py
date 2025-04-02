@@ -1,7 +1,7 @@
 """
 This DAG queries snowflake for the given dataset collections to look for datasets.
 
-For each dataset in the dataset collections, it queries the dataset in Snowflake and 
+For each dataset in the dataset collections, it queries the dataset in Snowflake and
 pushes the results to a Croissant file in S3. The S3 bucket is stored in the
 `org-sagebase-dpe-prod` AWS account. That S3 bucket is deployed to AWS through the code
 in this PR: https://github.com/Sage-Bionetworks-Workflows/eks-stack/pull/57 .
@@ -9,7 +9,7 @@ in this PR: https://github.com/Sage-Bionetworks-Workflows/eks-stack/pull/57 .
 Additional note on the pushing to S3. The way that the S3 hook is set up is that it will
 log in as an AWS user to accomplish the required work. In order for this DAG to run the
 user that is running the DAG must have the correct permissions to access the S3 bucket
-and write to it. This was set up on the `airflow-secrets-backend` user in the 
+and write to it. This was set up on the `airflow-secrets-backend` user in the
 `org-sagebase-dpe-prod` AWS account. The user has an inline policy to grant PutObject,
 GetObject, and ListBucket permissions to the S3 bucket.
 
@@ -29,6 +29,7 @@ DAG Parameters:
 - `aws_conn_id`: The connection ID for the AWS connection. Used to authenticate with S3.
 """
 
+import json
 import os
 from datetime import datetime
 from io import BytesIO
@@ -55,12 +56,20 @@ from opentelemetry.sdk.trace import Tracer, TracerProvider
 from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.trace.propagation.tracecontext import \
     TraceContextTextMapPropagator
+from synapseclient import Synapse
+from synapseclient.models import File
+from synapseclient.core.exceptions import SynapseHTTPError, SynapseAuthenticationError
+from synapseclient.core.retry import (
+    with_retry,
+)
+from types import MethodType
 
 dag_params = {
     "snowflake_developer_service_conn": Param("SNOWFLAKE_DEVELOPER_SERVICE_RAW_CONN", type="string"),
     "synapse_conn_id": Param("SYNAPSE_ORCA_SERVICE_ACCOUNT_CONN", type="string"),
     "dataset_collections": Param(["syn50913342"], type="array"),
     "push_results_to_s3": Param(True, type="boolean"),
+    "delete_out_of_date_from_s3": Param(True, type="boolean"),
     "aws_conn_id": Param("AWS_SYNAPSE_CROISSANT_METADATA_S3_CONN", type="string"),
 }
 
@@ -100,9 +109,9 @@ def set_up_tracing() -> Tracer:
     - MY_SERVICE_VERSION: The version of the service.
 
 
-    These attributes are used by the OTLP exporter to tag the telemetry data. They 
+    These attributes are used by the OTLP exporter to tag the telemetry data. They
     should be set to something that uniquely identifies the code that is producing this
-    data. Within the telemetry backend these attributes will be used to filter and 
+    data. Within the telemetry backend these attributes will be used to filter and
     group the data.
     """
     service_name = os.environ.get("SERVICE_NAME", MY_SERVICE_NAME)
@@ -138,9 +147,9 @@ def set_up_logging() -> Logger:
     - MY_SERVICE_VERSION: The version of the service.
 
 
-    These attributes are used by the OTLP exporter to tag the telemetry data. They 
+    These attributes are used by the OTLP exporter to tag the telemetry data. They
     should be set to something that uniquely identifies the code that is producing this
-    data. Within the telemetry backend these attributes will be used to filter and 
+    data. Within the telemetry backend these attributes will be used to filter and
     group the data.
     """
     service_name = os.environ.get("SERVICE_NAME", MY_SERVICE_NAME)
@@ -165,12 +174,245 @@ def set_up_logging() -> Logger:
 
     handler = LoggingHandler(level=NOTSET,
                              logger_provider=logger_provider)
-    getLogger(__name__).addHandler(handler)
-    return getLogger(__name__)
+    logger = getLogger()
+    logger.addHandler(handler)
+    return logger
 
 
 otel_tracer = set_up_tracing()
 otel_logger = set_up_logging()
+
+
+# TODO: Remove this on the next > 4.7.0 release of the Synapse Python Client
+# This is a temporary hack to include the changes from: https://github.com/Sage-Bionetworks/synapsePythonClient/pull/1188
+# The hack is used here because the current SYNPY client does not have an HTTP timeout
+# for requests to Synapse. As a result and due to the significant number of HTTP calls that
+# occur during the DAG, the DAG can stall and never return due to the requests library.
+# https://requests.readthedocs.io/en/latest/user/advanced/#timeouts
+def _rest_call_replacement(
+    self,
+    method,
+    uri,
+    data,
+    endpoint,
+    headers,
+    retryPolicy,
+    requests_session,
+    **kwargs,
+):
+    """
+    See original _rest_call method in the Synapse client for more details.
+    """
+    self.logger.debug(f"Sending {method} request to {uri}")
+    uri, headers = self._build_uri_and_headers(
+        uri, endpoint=endpoint, headers=headers
+    )
+
+    retryPolicy = self._build_retry_policy(retryPolicy)
+    requests_session = requests_session or self._requests_session
+
+    auth = kwargs.pop("auth", self.credentials)
+    requests_method_fn = getattr(requests_session, method)
+    response = with_retry(
+        lambda: requests_method_fn(
+            uri,
+            data=data,
+            headers=headers,
+            auth=auth,
+            timeout=70,
+            **kwargs,
+        ),
+        verbose=self.debug,
+        **retryPolicy,
+    )
+    self._handle_synapse_http_error(response)
+    return response
+
+
+def create_syn_client() -> Synapse:
+    """
+    Create a Synapse client that can be used to query Synapse.
+
+    Returns:
+        The Synapse client.
+    """
+    syn_client: Synapse = Synapse(skip_checks=True)
+    syn_client._rest_call = MethodType(_rest_call_replacement, syn_client)
+    assert syn_client.credentials is None, "Synapse client is not logged out"
+    return syn_client
+
+
+def get_file_instances(
+    synapse_files: List[Dict[str, str]], syn_client: Synapse
+) -> List[File]:
+    """
+    Get the file instances for the given list of files.
+
+    Arguments:
+        synapse_files: The list of files to get the file instances for.
+        syn_client: The Synapse client to use to get the file instances.
+
+    Returns:
+        The list of file instances.
+    """
+    file_metadata: List[File] = []
+    for synapse_file in synapse_files:
+        try:
+            file_instance = File(id=synapse_file.get(
+                "file_id"), version_number=synapse_file.get("file_version"), download_file=False).get(synapse_client=syn_client)
+            file_metadata.append(file_instance)
+        except SynapseHTTPError as ex:
+            if "404 Client Error" in str(ex):
+                otel_logger.warning(
+                    f"File {synapse_file.get('file_id')} not found in Synapse.")
+            else:
+                raise ex
+        except SynapseAuthenticationError as ex:
+            if "You are not logged in and do not have access to a requested resource." in str(ex):
+                otel_logger.warning(
+                    f"File {synapse_file.get('file_id')} is not anonymously accessible.")
+            else:
+                raise ex
+    return file_metadata
+
+
+def construct_distribution_section_for_files(files_attached_to_dataset: List[File], **context) -> List[Dict[str, str]]:
+    """
+    Construct the distribution section for the files attached to the dataset. This is
+    used to extract various metadata from the files and create a FileObject for each
+    file.
+
+
+    When we do not have the content_md5 for a file, we need to query Snowflake to get
+    the content_md5 for the file. This is done by querying the synapse_data_warehouse
+    database in Snowflake.
+
+    Arguments:
+        files_attached_to_dataset: The list of files attached to the dataset.
+        context: The context of the DAG run.
+
+    Returns:
+        The distribution section for the files attached to the dataset.
+    """
+    distribution_files = []
+    files_to_find_md5_in_snowflake = {}
+
+    for file in files_attached_to_dataset:
+        file: File = file
+        if not file.file_handle or not file.file_handle.content_md5:
+            files_to_find_md5_in_snowflake[int(file.id.replace(
+                "syn", ""))] = file.version_number
+
+    file_md5s = None
+    if files_to_find_md5_in_snowflake:
+        snow_hook = SnowflakeHook(
+            context["params"]["snowflake_developer_service_conn"])
+        ctx = snow_hook.get_conn()
+        cs = ctx.cursor()
+        ids_of_files = list(files_to_find_md5_in_snowflake.keys())
+        id_and_version_pairs = []
+        for file_id, version in files_to_find_md5_in_snowflake.items():
+            id_and_version_pairs.append(file_id)
+            id_and_version_pairs.append(version)
+
+        query = f"""
+        WITH version_data AS (
+            SELECT
+                nl.id,
+                flattened.value:versionNumber::int AS versionNumber,
+                flattened.value:contentMd5::string AS contentMd5
+            FROM synapse_data_warehouse.synapse.node_latest AS nl,
+            LATERAL FLATTEN(input => nl.VERSION_HISTORY) AS flattened
+            WHERE nl.id IN ({', '.join(['%s'] * len(ids_of_files))})
+            AND nl.is_public = TRUE
+        )
+        SELECT
+            vd.id,
+            vd.versionNumber,
+            vd.contentMd5
+        FROM version_data AS vd
+        WHERE (vd.id, vd.versionNumber) IN ({', '.join(['(%s, %s)'] * (len(id_and_version_pairs)//2))});
+        """
+        try:
+            cs.execute(
+                query,
+                (ids_of_files + id_and_version_pairs),
+            )
+            file_md5s = cs.fetch_pandas_all()
+        finally:
+            cs.close()
+
+    for file in files_attached_to_dataset:
+        file: File = file
+        if file.file_handle and file.file_handle.content_md5:
+            file_md5 = file.file_handle.content_md5
+        elif not file_md5s.empty and int(file.id.replace("syn", "")) in file_md5s["ID"].values:
+            file_md5 = file_md5s.loc[file_md5s["ID"] == int(
+                file.id.replace("syn", "")), "CONTENTMD5"].values[0]
+        else:
+            file_md5 = "unknown_md5"
+
+        distribution_files.append(
+            {
+                "@type": "FileObject",
+                "@id": f"{file.id}.{file.version_number}",
+                "name": f"{file.name}",
+                "description": f"Data file associated with {file.name}",
+                "contentUrl": f"https://www.synapse.org/Synapse:{file.id}.{file.version_number}",
+                "encodingFormat": "application/json",
+                "md5": file_md5,
+                "sha256": "unknown",
+            }
+        )
+    return distribution_files
+
+
+def construct_record_set_section_for_files(files_attached_to_dataset: List[File]) -> Dict[str, str]:
+    """
+    Construct the record set section for the files attached to the dataset. This is used
+    to extract the keys from the annotations of the files and create a Field for each
+    key.
+
+    Arguments:
+        files_attached_to_dataset: The list of files attached to the dataset.
+
+    Returns:
+        The record set section for the files attached to the dataset.
+    """
+    unique_annotation_keys = set()
+
+    for file in files_attached_to_dataset:
+        file: File = file
+        file_annotations = file.annotations.keys()
+        for key in file_annotations:
+            unique_annotation_keys.add(key)
+
+    metadata_fields = []
+    # Sort the set of unique_annotation_keys ignoring case, but keep the case in the result
+    unique_annotation_keys = sorted(unique_annotation_keys, key=str.casefold)
+
+    for key in unique_annotation_keys:
+        metadata_fields.append(
+            {
+                "@type": "Field",
+                "@id": f"metadata/{key}",
+                "name": key,
+                "description": "",
+                "dataType": "sc:Text",
+                "source": {
+                    "fileObject": {"@id": "metadata"},
+                    "extract": {"column": key}
+                }
+            }
+        )
+
+    return {
+        "@type": "RecordSet",
+        "@id": "default",
+        "name": "default",
+        "description": "Metadata for the dataset",
+        "field": metadata_fields
+    }
 
 
 @dag(**dag_config)
@@ -242,36 +484,32 @@ def dataset_to_croissant() -> None:
         with otel_tracer.start_span("query_synapse_dataset_collection_for_datasets", context=TraceContextTextMapPropagator().extract(root_carrier_context)) as span:
             span.set_attribute("airflow.dataset_collection",
                                dataset_collection)
-            dataset_collection_without_syn = dataset_collection.replace(
-                "syn", "")
-            query = f"""
-            SELECT 
-                REPLACE(ITEM.value:entityId::STRING, 'syn', '') AS DATASET_IDS
-            FROM 
-                SYNAPSE_DATA_WAREHOUSE.SYNAPSE.NODE_LATEST,
-            LATERAL FLATTEN(input => ITEMS) ITEM
-            WHERE
-                node_type = 'datasetcollection'
-                AND id = {dataset_collection_without_syn}
-            """
-            snow_hook = SnowflakeHook(context["params"]["snowflake_developer_service_conn"])
-            ctx = snow_hook.get_conn()
-            cs = ctx.cursor()
 
             otel_logger.info(
                 f"Performing query for dataset_collection {dataset_collection}")
 
+            syn_client = create_syn_client()
+
             try:
-                cs.execute(query)
-                datasets = cs.fetch_pandas_all()
-                cs.close()
                 results = []
-                for syn_id in datasets["DATASET_IDS"].tolist():
-                    results.append({"dataset_id": syn_id.replace("syn", "")})
-                results
+                dataset_collection = syn_client.get(
+                    dataset_collection, downloadFile=False)
+
+                if not hasattr(dataset_collection, "datasetItems") or not dataset_collection.get("datasetItems"):
+                    otel_logger.warning(
+                        f"No datasets found for dataset collection {dataset_collection}")
+                    return results
+                dataset_items = dataset_collection.get("datasetItems")
+                otel_logger.info(dataset_items)
+                for dataset_item in dataset_items:
+                    syn_id = dataset_item["entityId"]
+                    version_number = dataset_item["versionNumber"]
+                    results.append({"dataset_id": syn_id, "dataset_version": version_number,
+                                   "dataset_collection": dataset_collection})
+
             except Exception as ex:
                 otel_logger.exception(
-                    "Failed to query snowflake for datasets.")
+                    "Failed to query synapse for datasets.")
                 otel_tracer.span_processor.force_flush()
                 otel_logger.handlers[0].flush()
                 raise ex
@@ -299,7 +537,69 @@ def dataset_to_croissant() -> None:
         return return_value
 
     @task
-    def query_snowflake_and_push_croissant_file(root_carrier_context: Dict, dataset_id: str, **context) -> None:
+    def delete_non_current_files_from_s3(
+        root_carrier_context: Dict, combined_dataset_collection_and_datasets: List[Dict[str, str]], **context
+    ) -> None:
+        """
+        Delete the non-current files from S3. This is used to remove the old files
+        from S3 that are no longer needed. A "non-current" file is defined as a
+        croissant JSON LD file which is no longer present in any Dataset collection.
+
+        This can occur if the dataset has been removed from the dataset collection, or
+        if there is a new version of the dataset that has been added to the dataset
+        collection.
+
+        Arguments:
+            dataset_id: The ID of the dataset to delete the files for.
+            dataset_version: The version of the dataset to delete the files for.
+            dataset_collection: The collection of the dataset to delete the files for.
+        """
+        with otel_tracer.start_as_current_span("delete_non_current_files_from_s3", context=TraceContextTextMapPropagator().extract(root_carrier_context)) as span:
+            s3_hook = S3Hook(
+                aws_conn_id=context["params"]["aws_conn_id"], region_name=REGION_NAME)
+            bucket_objects = s3_hook.list_keys(bucket_name=BUCKET_NAME)
+
+            objects_to_delete = []
+
+            if bucket_objects:
+                for bucket_object in bucket_objects:
+                    split_fields = bucket_object.split("_")
+                    if len(split_fields) > 5:
+                        dataset_id = split_fields[1]
+                        dataset_version = split_fields[2]
+                        dataset_collection = split_fields[4]
+                        match_found_for_object = False
+                        # Check if the object is not in the current dataset collection
+                        for combined_dataset_collection_and_dataset in combined_dataset_collection_and_datasets:
+                            if (dataset_collection == combined_dataset_collection_and_dataset["dataset_collection"] and
+                                    dataset_id == combined_dataset_collection_and_dataset["dataset_id"] and
+                                    dataset_version == str(combined_dataset_collection_and_dataset["dataset_version"])):
+                                match_found_for_object = True
+                                break
+                        if not match_found_for_object:
+                            objects_to_delete.append(bucket_object)
+                    else:
+                        objects_to_delete.append(bucket_object)
+
+            if objects_to_delete:
+                delete_out_of_date_from_s3 = context["params"]["delete_out_of_date_from_s3"]
+                if delete_out_of_date_from_s3:
+                    otel_logger.info(
+                        f"Deleting the following objects from S3: {objects_to_delete}")
+                    s3_hook.delete_objects(
+                        bucket=BUCKET_NAME, keys=objects_to_delete)
+                else:
+                    otel_logger.info(
+                        f"Found objects to delete from S3, but not deleting due to `delete_out_of_date_from_s3` param: {objects_to_delete}")
+            else:
+                otel_logger.info(
+                    "No objects to delete from S3. All objects are current.")
+            otel_tracer.span_processor.force_flush()
+            otel_logger.handlers[0].flush()
+            return None
+
+    @task
+    def query_snowflake_and_push_croissant_file(root_carrier_context: Dict, dataset_id: str, dataset_version: int, dataset_collection: str, **context) -> None:
         """
         Query the Snowflake database for the dataset in order to perform the Croissant
         transformation and push the results to S3.
@@ -308,236 +608,142 @@ def dataset_to_croissant() -> None:
             dataset_id: The ID of the dataset to query in Snowflake.
         """
         with otel_tracer.start_as_current_span("query_snowflake_and_push_croissant_file", context=TraceContextTextMapPropagator().extract(root_carrier_context)) as span:
+            push_to_s3 = context["params"]["push_results_to_s3"]
+            span.set_attribute("airflow.push_results_to_s3", push_to_s3)
             if not dataset_id:
                 otel_logger.info("No dataset found")
                 otel_tracer.span_processor.force_flush()
                 otel_logger.handlers[0].flush()
                 return
 
-            span.set_attribute("airflow.dataset_id", f"syn{dataset_id}")
-
-            query = f"""
-            WITH entity_metadata AS (
-                SELECT
-                    items,
-                    name,
-                    ANNOTATIONS,
-                    CREATED_ON,
-                    VERSION_NUMBER,
-                    CONCAT('syn', id) as DATASET_SYNAPSE_ID
-                FROM synapse_data_warehouse.synapse.node_latest
-                WHERE id = {dataset_id}
-            ),
-            ids_of_files_belonging_to_dataset AS (
-                SELECT REPLACE(ITEM.value:entityId::STRING, 'syn', '') AS entity_id, ITEM.value:versionNumber::STRING as version_number
-                FROM entity_metadata,
-                LATERAL FLATTEN(input => entity_metadata.ITEMS) ITEM
-            ),
-            files_belonging_to_dataset AS (
-                SELECT
-                    nl.id,
-                    nl.version_number,
-                    vh.value AS VERSION_HISTORY_ENTRY,
-                    nl.ANNOTATIONS,
-                    nl.is_public,
-                    ids_of_files_belonging_to_dataset.entity_id,
-                    ids_of_files_belonging_to_dataset.version_number,
-                    entity_metadata.DATASET_SYNAPSE_ID
-                FROM synapse_data_warehouse.synapse.node_latest AS nl
-                JOIN ids_of_files_belonging_to_dataset
-                    ON nl.id = ids_of_files_belonging_to_dataset.entity_id
-                JOIN entity_metadata
-                    ON TRUE -- Ensures the `DATASET_SYNAPSE_ID` is included
-                CROSS JOIN LATERAL FLATTEN(input => nl.VERSION_HISTORY) vh
-                WHERE nl.is_public = TRUE
-                AND vh.value:versionNumber::STRING = ids_of_files_belonging_to_dataset.version_number
-            ),
-            distribution_pointing_to_files AS (
-                SELECT
-                    CONCAT('syn', id) as SYNAPSE_ID,
-                    DATASET_SYNAPSE_ID,
-                    OBJECT_CONSTRUCT(
-                        '@type', 'FileObject',
-                        '@id', CONCAT('syn', id),
-                        'name', CONCAT('syn', id),
-                        'description', CONCAT(
-                            'Data file associated with ', CONCAT('syn', id)),
-                        'contentUrl', CONCAT(
-                            'https://www.synapse.org/Synapse:', CONCAT('syn', id)),
-                        'encodingFormat', 'application/json',
-                        'md5', COALESCE(VERSION_HISTORY_ENTRY:contentMd5, 'unknown_md5'),
-                        'sha256', 'unknown'
-                    ) AS file_object
-                FROM files_belonging_to_dataset
-            ),
-            -- TODO: Annotation selection must be version dependent, however, the different versions of the annotations are not available in a non-deduplicated table
-            distinct_annotation_keys AS (
-                SELECT DATASET_SYNAPSE_ID, ARRAY_AGG(annotation_key) as annotation_keys FROM (
-                    SELECT
-                        DATASET_SYNAPSE_ID,
-                        key as annotation_key
-                    FROM files_belonging_to_dataset,
-                    LATERAL FLATTEN(input => ANNOTATIONS:annotations) AS annotation
-                    GROUP BY DATASET_SYNAPSE_ID, key
-                ) GROUP BY DATASET_SYNAPSE_ID
-            ),
-            fields_pointing_to_metadata AS (
-                SELECT
-                    DATASET_SYNAPSE_ID,
-                    OBJECT_CONSTRUCT(
-                        '@type', 'RecordSet',
-                        '@id', 'default',
-                        'name', 'default',
-                        'description', 'Metadata for the dataset',
-                        'field', ARRAY_AGG(
-                            OBJECT_CONSTRUCT(
-                                '@type', 'cr:Field',
-                                '@id', CONCAT('metadata', '/', value),
-                                'name', value,
-                                -- 'description', '',
-                                'dataType', 'sc:Text',
-                                'source', OBJECT_CONSTRUCT(
-                                    'fileObject', OBJECT_CONSTRUCT(
-                                        '@id', 'metadata'),
-                                    'extract', OBJECT_CONSTRUCT('column', value)
-                                )
-                            )
-                        )
-                    ) AS record_set
-                FROM distinct_annotation_keys,
-                LATERAL FLATTEN(input => distinct_annotation_keys.annotation_keys)
-                GROUP BY DATASET_SYNAPSE_ID
-            ),
-            croissant_metadata AS (
-                SELECT
-                    entity_metadata.DATASET_SYNAPSE_ID,
-                    entity_metadata.name,
-                    OBJECT_CONSTRUCT(
-                        '@context', OBJECT_CONSTRUCT(
-                            '@language', 'en',
-                            '@vocab', 'https://schema.org/',
-                            'citeAs', 'cr:citeAs',
-                            'column', 'cr:column',
-                            'conformsTo', 'dct:conformsTo',
-                            'cr', 'http://mlcommons.org/croissant/',
-                            'rai', 'http://mlcommons.org/croissant/RAI/',
-                            'data', OBJECT_CONSTRUCT(
-                                '@id', 'cr:data', '@type', '@json'),
-                            'dataType', OBJECT_CONSTRUCT(
-                                '@id', 'cr:dataType', '@type', '@vocab'),
-                            'dct', 'http://purl.org/dc/terms/',
-                            'examples', OBJECT_CONSTRUCT(
-                                '@id', 'cr:examples', '@type', '@json'),
-                            'extract', 'cr:extract',
-                            'field', 'cr:field',
-                            'fileProperty', 'cr:fileProperty',
-                            'fileObject', 'cr:fileObject',
-                            'fileSet', 'cr:fileSet',
-                            'format', 'cr:format',
-                            'includes', 'cr:includes',
-                            'isLiveDataset', 'cr:isLiveDataset',
-                            'jsonPath', 'cr:jsonPath',
-                            'key', 'cr:key',
-                            'md5', 'cr:md5',
-                            'parentField', 'cr:parentField',
-                            'path', 'cr:path',
-                            'recordSet', 'cr:recordSet',
-                            'references', 'cr:references',
-                            'regex', 'cr:regex',
-                            'repeated', 'cr:repeated',
-                            'replace', 'cr:replace',
-                            'sc', 'https://schema.org/',
-                            'separator', 'cr:separator',
-                            'source', 'cr:source',
-                            'subField', 'cr:subField',
-                            'transform', 'cr:transform'
-                        ),
-                        '@type', 'Dataset',
-                        'name', COALESCE(entity_metadata.name, 'Synapse Dataset'),
-                        'description', COALESCE(ANNOTATIONS:annotations:description:value[0], 'A dataset containing annotations for genomic data from Synapse.'),
-                        'url', CONCAT('https://www.synapse.org/Synapse:',
-                                    entity_metadata.DATASET_SYNAPSE_ID),
-                        'citation', COALESCE(ANNOTATIONS:annotations:citation:value[0], 'unknown_citation'),
-                        'datePublished', COALESCE(CREATED_ON, 'unknown_date'),
-                        'license', COALESCE(ANNOTATIONS:annotations:license:value[0], 'unknown_license'),
-                        'version', COALESCE(VERSION_NUMBER, 'unknown_version'),
-                        'distribution', ARRAY_PREPEND(ARRAY_AGG(distribution_pointing_to_files.file_object),
-                                            OBJECT_CONSTRUCT(
-                                                '@type', 'FileObject',
-                                                '@id', 'metadata',
-                                                'name', 'metadata',
-                                                'description', CONCAT(
-                                                    'Metadata associated with ', entity_metadata.DATASET_SYNAPSE_ID),
-                                                'contentUrl', CONCAT(
-                                                    'https://www.synapse.org/Synapse:', entity_metadata.DATASET_SYNAPSE_ID),
-                                                'encodingFormat', 'application/csv',
-                                                'md5', '',
-                                                'sha256', 'unknown'
-                                            )
-                                        ),
-                        'recordSet', fields_pointing_to_metadata.record_set
-                    ) AS metadata
-                FROM
-                    entity_metadata, fields_pointing_to_metadata
-                JOIN
-                    distribution_pointing_to_files
-                ON
-                    distribution_pointing_to_files.DATASET_SYNAPSE_ID = fields_pointing_to_metadata.DATASET_SYNAPSE_ID
-                GROUP BY
-                    entity_metadata.DATASET_SYNAPSE_ID,
-                    entity_metadata.name,
-                    fields_pointing_to_metadata.DATASET_SYNAPSE_ID,
-                    fields_pointing_to_metadata.record_set,
-                    entity_metadata.name,
-                    entity_metadata.ANNOTATIONS,
-                    entity_metadata.CREATED_ON,
-                    entity_metadata.VERSION_NUMBER
-            )
-
-            SELECT
-                metadata::STRING AS croissant_metadata,
-                DATASET_SYNAPSE_ID,
-                name
-            FROM
-                croissant_metadata;
-            """
-            snow_hook = SnowflakeHook(context["params"]["snowflake_developer_service_conn"])
-            ctx = snow_hook.get_conn()
-            cs = ctx.cursor()
-
-            otel_logger.info(
-                f"Performing query for dataset {dataset_id}")
+            span.set_attribute("airflow.dataset_id", f"{dataset_id}")
+            path_to_remove = None
+            syn_client = create_syn_client()
+            file_ids_and_versions_attached_to_dataset = []
 
             try:
-                push_to_s3 = context["params"]["push_results_to_s3"]
-                span.set_attribute("airflow.push_results_to_s3", push_to_s3)
+                dataset = syn_client.get(
+                    f"{dataset_id}.{dataset_version}", downloadFile=False)
+                span.set_attribute("airflow.dataset_name", dataset.name)
 
-                cs.execute(query)
-                croissant_json_ld_for_dataset = cs.fetch_pandas_all()
-                cs.close()
-
-                if croissant_json_ld_for_dataset.empty:
+                if not hasattr(dataset, "datasetItems") or not dataset.get("datasetItems"):
                     span.set_attribute("airflow.croissant_result", False)
-                    otel_logger.info(
-                        f"No content found for {dataset_id}")
-                    otel_tracer.span_processor.force_flush()
-                    otel_logger.handlers[0].flush()
+                    otel_logger.warning(
+                        f"No files found for dataset {dataset_id}.{dataset_version}")
                     return
+                dataset_items = dataset.get("datasetItems")
+                for dataset_item in dataset_items:
+                    syn_id = dataset_item["entityId"]
+                    version_number = dataset_item["versionNumber"]
+                    file_ids_and_versions_attached_to_dataset.append(
+                        {"file_id": syn_id, "file_version": version_number})
 
-                synapse_id = croissant_json_ld_for_dataset["DATASET_SYNAPSE_ID"][0]
-                name = croissant_json_ld_for_dataset["NAME"][0]
+            except Exception as ex:
+                otel_logger.exception(
+                    f"Failed to query synapse dataset for files. {dataset_id}")
+                otel_tracer.span_processor.force_flush()
+                otel_logger.handlers[0].flush()
+                raise ex
+            finally:
+                if path_to_remove:
+                    os.remove(path_to_remove)
 
-                span.set_attribute("airflow.dataset_name", name)
-                span.set_attribute("airflow.croissant_result", True)
+            file_ids_and_versions_attached_to_dataset.sort(
+                key=lambda x: x["file_id"])
 
+            otel_logger.info(file_ids_and_versions_attached_to_dataset)
+            files_attached_to_dataset: List[File] = get_file_instances(
+                synapse_files=file_ids_and_versions_attached_to_dataset, syn_client=syn_client)
+            if not files_attached_to_dataset:
+                otel_logger.warning(
+                    f"No files found for dataset {dataset_id}.{dataset_version}")
+                span.set_attribute("airflow.croissant_result", False)
+                return
+            span.set_attribute("airflow.croissant_result", True)
+
+            distribution_files = [{
+                "@type": "FileObject",
+                "@id": "metadata",
+                "contentUrl": f"https://www.synapse.org/Synapse:{dataset_id}.{dataset_version}",
+                "name": "metadata",
+                "description": f"Metadata associated with {dataset.name}",
+                "encodingFormat": "application/csv",
+                "md5": "unknown",
+                "sha256": "unknown"
+            }] + construct_distribution_section_for_files(files_attached_to_dataset, **context)
+
+            record_set = construct_record_set_section_for_files(
+                files_attached_to_dataset=files_attached_to_dataset)
+
+            croissant_file = {
+                "@context": {
+                    "@language": "en",
+                    "@vocab": "https://schema.org/",
+                    "citeAs": "cr:citeAs",
+                    "column": "cr:column",
+                    "conformsTo": "dct:conformsTo",
+                    "cr": "http://mlcommons.org/croissant/",
+                    "rai": "http://mlcommons.org/croissant/RAI/",
+                    "data": {
+                        "@id": "cr:data",
+                        "@type": "@json"
+                    },
+                    "dataType": {
+                        "@id": "cr:dataType",
+                        "@type": "@vocab"
+                    },
+                    "dct": "http://purl.org/dc/terms/",
+                    "examples": {
+                        "@id": "cr:examples",
+                        "@type": "@json"
+                    },
+                    "extract": "cr:extract",
+                    "field": "cr:field",
+                    "fileProperty": "cr:fileProperty",
+                    "fileObject": "cr:fileObject",
+                    "fileSet": "cr:fileSet",
+                    "format": "cr:format",
+                    "includes": "cr:includes",
+                    "isLiveDataset": "cr:isLiveDataset",
+                    "jsonPath": "cr:jsonPath",
+                    "key": "cr:key",
+                    "md5": "cr:md5",
+                    "parentField": "cr:parentField",
+                    "path": "cr:path",
+                    "recordSet": "cr:recordSet",
+                    "references": "cr:references",
+                    "regex": "cr:regex",
+                    "repeated": "cr:repeated",
+                    "replace": "cr:replace",
+                    "sc": "https://schema.org/",
+                    "separator": "cr:separator",
+                    "source": "cr:source",
+                    "subField": "cr:subField",
+                    "transform": "cr:transform"
+                },
+                "@type": "Dataset",
+                "@id": f"{dataset_id}.{dataset_version}",
+                "name": f"{dataset.name}",
+                "description": f"Dataset for {dataset.name}",
+                "url": f"https://www.synapse.org/Synapse:{dataset_id}.{dataset_version}",
+                "citation": "unknown_citation",
+                "datePublished": dataset.modifiedOn,
+                "license": dataset.license[0] if hasattr(dataset, "license") else "unknown_license",
+                "version": dataset_version,
+                "dct:conformsTo": "http://mlcommons.org/croissant/1.0",
+                "distribution": distribution_files,
+                "recordSet": record_set,
+            }
+
+            try:
                 if not push_to_s3:
                     otel_logger.info(
-                        f"Croissant file for [dataset: {name}, id: {synapse_id}]:\n{croissant_json_ld_for_dataset['CROISSANT_METADATA'][0]}")
+                        f"Croissant file for [dataset: {dataset.name}, id: {dataset_id}.{dataset_version}]:\n{json.dumps(croissant_file)}")
                 else:
                     otel_logger.info(
-                        f"Uploading croissant file for [dataset: {name}, id: {synapse_id}]")
+                        f"Uploading croissant file for [dataset: {dataset.name}, id: {dataset_id}.{dataset_version}]")
 
-                    croissant_metadata_bytes = croissant_json_ld_for_dataset["CROISSANT_METADATA"][0].encode(
+                    croissant_metadata_bytes = json.dumps(croissant_file).encode(
                         'utf-8')
                     metadata_file = BytesIO(croissant_metadata_bytes)
                     s3_hook = S3Hook(
@@ -547,7 +753,7 @@ def dataset_to_croissant() -> None:
                     )
 
                     s3_hook.load_file_obj(file_obj=metadata_file,
-                                          key=f"{name}_{synapse_id}_croissant.jsonld",
+                                          key=f"{dataset.name}_{dataset_id}_v{dataset_version}_datasetCollection_{dataset_collection}_croissant.jsonld",
                                           bucket_name=BUCKET_NAME,
                                           replace=True,
                                           )
@@ -567,8 +773,14 @@ def dataset_to_croissant() -> None:
     datasets = query_synapse_dataset_collection_for_datasets.partial(root_carrier_context=root_carrier_context).expand_kwargs(
         get_dataset_collections(root_carrier_context=root_carrier_context))
 
+    combined_dataset_lists = combine_dataset_lists(
+        root_carrier_context=root_carrier_context, dataset_ids=datasets)
+
     query_snowflake_and_push_croissant_file.partial(root_carrier_context=root_carrier_context).expand_kwargs(
-        combine_dataset_lists(root_carrier_context=root_carrier_context, dataset_ids=datasets))
+        combined_dataset_lists)
+
+    delete_non_current_files_from_s3(root_carrier_context=root_carrier_context,
+                                     combined_dataset_collection_and_datasets=combined_dataset_lists)
 
 
 dataset_to_croissant()
