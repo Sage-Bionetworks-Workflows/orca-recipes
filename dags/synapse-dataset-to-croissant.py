@@ -26,6 +26,10 @@ DAG Parameters:
 - `dataset_collections`: The dataset collections to query for datasets.
 - `push_results_to_s3`: A boolean to indicate if the results should be pushed to S3.
                         When set to `False`, the results will be printed to the logs.
+- `delete_out_of_date_from_s3`: A boolean to indicate if the old files should be 
+                        deleted from S3. When set to `False`, the old files will not 
+                        be deleted, but a message will be logged to indicate that
+                        the files will be deleted when set to `True`.
 - `aws_conn_id`: The connection ID for the AWS connection. Used to authenticate with S3.
 """
 
