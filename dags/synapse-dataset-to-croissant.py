@@ -304,6 +304,7 @@ def construct_distribution_section_for_files(files_attached_to_dataset: List[Fil
     for file in files_attached_to_dataset:
         file: File = file
         if not file.file_handle or not file.file_handle.content_md5:
+            # TODO: Handle for cases where a file may be included twice within the dataset
             files_to_find_md5_in_snowflake[int(file.id.replace(
                 "syn", ""))] = file.version_number
 
