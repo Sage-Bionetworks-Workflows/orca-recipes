@@ -14,7 +14,7 @@ from airflow.providers.snowflake.hooks.snowflake import SnowflakeHook
 from orca.services.synapse import SynapseHook
 
 dag_params = {
-    "snowflake_conn_id": Param("SNOWFLAKE_SYSADMIN_PORTAL_RAW_CONN", type="string"),
+    "snowflake_developer_service_conn": Param("SNOWFLAKE_DEVELOPER_SERVICE_RAW_CONN", type="string"),
     "synapse_conn_id": Param("SYNAPSE_ORCA_SERVICE_ACCOUNT_CONN", type="string"),
     # date string with the format: YYYY-MM-DD including the month that we want to run the queries for
     "month_to_run": Param((date.today() - relativedelta(months=1)).strftime("%Y-%m-%d"), type="string"),
@@ -59,7 +59,7 @@ def synapse_by_the_numbers_past_month() -> None:
     @task
     def get_synapse_monthly_metrics(**context) -> List[DownloadMetric]:
         """Execute the query on Snowflake and return the results."""
-        snow_hook = SnowflakeHook(context["params"]["snowflake_conn_id"])
+        snow_hook = SnowflakeHook(context["params"]["snowflake_developer_service_conn"])
         ctx = snow_hook.get_conn()
         cs = ctx.cursor()
         query = f"""

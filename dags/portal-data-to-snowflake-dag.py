@@ -9,8 +9,8 @@ from orca.services.synapse import SynapseHook
 from snowflake.connector.pandas_tools import write_pandas
 
 dag_params = {
-    "snowflake_conn_id": Param(
-        "SNOWFLAKE_SYSADMIN_PORTAL_RAW_CONN", type="string"
+    "snowflake_developer_service_conn": Param(
+        "SNOWFLAKE_DEVELOPER_SERVICE_RAW_CONN", type="string"
     ),
     "synapse_conn_id": Param("SYNAPSE_ORCA_SERVICE_ACCOUNT_CONN", type="string"),
 }
@@ -64,7 +64,7 @@ def portal_data_to_snowflake():
 
     @task
     def lead_portal_data_to_snowflake(portal_data, **context):
-        snow_hook = SnowflakeHook(context["params"]["snowflake_conn_id"])
+        snow_hook = SnowflakeHook(context["params"]["snowflake_developer_service_conn"])
         # For now we will overwrite tables each time
         for portal_name, info in portal_data.items():
             write_pandas(
