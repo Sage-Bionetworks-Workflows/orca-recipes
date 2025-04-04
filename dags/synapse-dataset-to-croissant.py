@@ -6,7 +6,7 @@ This DAG interacts with a few different services to accomplish the following:
 - (Synapse, Unauthenticated) For each Anonymously accessible dataset, query Synapse Anonymously to retrieve the files attached to the dataset
 - (Snowflake, Authenticated) For each file which is not Anonymously downloadable, query Snowflake to retrieve the content_md5 (Authenticated calls to the datawarehouse)
 - (S3, Authenticated) For each dataset push an object a public S3 bucket in the `org-sagebase-dpe-prod` AWS account
-- (Synapse, Unauthenticated) For each dataset Anonymously query a Synapse table which contains links to the S3 object
+- (Synapse, Authenticated) For each dataset query a Synapse table which contains links to the S3 object
 - (Synapse, Authenticated) Delete rows from the Synapse table which are not in a dataset collection
 - (Synapse, Aauthenticated) For each dataset push a link for the S3 object to a Synapse table via the authenticated Synapse client
 - (S3, Authenticated) Delete S3 objects from the S3 bucket which are not in a dataset collection
@@ -214,7 +214,6 @@ def create_client(self) -> Synapse:
     """
     See original create_client method in for more details.
     """
-    print("I am in the replacement create_client method")
     client = Synapse(silent=True, skip_checks=True)
     auth_token = self.config.auth_token
 
@@ -634,7 +633,7 @@ def execute_push_to_s3(dataset: Entity, dataset_id: str, dataset_version: str, s
         raise ex
 
 
-def execute_push_to_synapse(push_to_synapse: bool, dataset: Entity, dataset_id: str, dataset_version: str, dataset_collection: str, s3_url: str, syn_client: Synapse, **context) -> None:
+def execute_push_to_synapse(push_to_synapse: bool, dataset: Entity, dataset_id: str, dataset_version: str, dataset_collection: str, s3_url: str, **context) -> None:
     """
     Handle the push to Synapse of the croissant file link. This is done by using
     an unauthenticated Synapse client to first query the table to determine if an
@@ -668,7 +667,14 @@ def execute_push_to_synapse(push_to_synapse: bool, dataset: Entity, dataset_id: 
 
         # TODO: When 4.8.0 of the SYNPY client is released this may be
         # replaced by the upsert functionality
-        existing_row = syn_client.tableQuery(
+
+        # Warning: Using an authenticated Synapse Client during this section of code
+        syn_hook = SynapseHook(
+            context["params"]["synapse_conn_id"])
+        authenticated_syn_client: Synapse = syn_hook.client
+        authenticated_syn_client._rest_call = MethodType(
+            _rest_call_replacement, authenticated_syn_client)
+        existing_row = authenticated_syn_client.tableQuery(
             query=f"SELECT * FROM {SYNAPSE_TABLE_FOR_CROISSANT_LINKS} WHERE dataset = '{dataset_id}' AND dataset_version = {dataset_version} AND dataset_collection = '{dataset_collection}'", resultsAs="csv")
         existing_row_df = existing_row.asDataFrame()
         os.remove(existing_row.filepath)
@@ -687,13 +693,6 @@ def execute_push_to_synapse(push_to_synapse: bool, dataset: Entity, dataset_id: 
         )
         temp_dir = tempfile.mkdtemp()
         filepath = os.path.join(temp_dir, "table.csv")
-
-        # Warning: Using an authenticated Synapse Client during this section of code
-        syn_hook = SynapseHook(
-            context["params"]["synapse_conn_id"])
-        authenticated_syn_client: Synapse = syn_hook.client
-        authenticated_syn_client._rest_call = MethodType(
-            _rest_call_replacement, authenticated_syn_client)
 
         schema = authenticated_syn_client.get(
             SYNAPSE_TABLE_FOR_CROISSANT_LINKS)
@@ -1138,7 +1137,7 @@ def dataset_to_croissant() -> None:
 
             s3_url = f"https://{BUCKET_NAME}.s3.us-east-1.amazonaws.com/{quote_plus(s3_key)}"
             execute_push_to_synapse(push_to_synapse=push_to_synapse, dataset=dataset, dataset_id=dataset_id,
-                                    dataset_version=dataset_version, dataset_collection=dataset_collection, s3_url=s3_url, syn_client=syn_client, **context)
+                                    dataset_version=dataset_version, dataset_collection=dataset_collection, s3_url=s3_url, **context)
 
         otel_tracer.span_processor.force_flush()
         otel_logger.handlers[0].flush()
