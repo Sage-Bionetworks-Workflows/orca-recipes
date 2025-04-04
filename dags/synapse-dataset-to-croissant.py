@@ -717,7 +717,7 @@ def execute_push_to_synapse(push_to_synapse: bool, dataset: Entity, dataset_id: 
 
 @dag(**dag_config)
 def dataset_to_croissant() -> None:
-    """Execute a query on Snowflake and report the results to a Synapse table.
+    """Execute api calls to Synapse, and queries on snowflake to convert datasets into croissant JSON-LD files.
 
 
     DAG Parameters:
