@@ -1,7 +1,23 @@
 """
-This DAG queries snowflake for the given dataset collections to look for datasets.
+This DAG interacts with a few different services to accomplish the following:
 
-For each dataset in the dataset collections, it queries the dataset in Snowflake and
+- (Synapse, Unauthenticated) Given list of dataset collections query Synapse to retrieve Anonymously accessible datasets
+- (Synapse, Unauthenticated) For each dataset in the dataset collections, query Synapse Anonymously to retrieve metadata about each dataset
+- (Synapse, Unauthenticated) For each Anonymously accessible dataset, query Synapse Anonymously to retrieve the files attached to the dataset
+- (Snowflake, Authenticated) For each file which is not Anonymously downloadable, query Snowflake to retrieve the content_md5 (Authenticated calls to the datawarehouse)
+- (S3, Authenticated) For each dataset push an object a public S3 bucket in the `org-sagebase-dpe-prod` AWS account
+- (Synapse, Unauthenticated) For each dataset Anonymously query a Synapse table which contains links to the S3 object
+- (Synapse, Authenticated) Delete rows from the Synapse table which are not in a dataset collection
+- (Synapse, Aauthenticated) For each dataset push a link for the S3 object to a Synapse table via the authenticated Synapse client
+- (S3, Authenticated) Delete S3 objects from the S3 bucket which are not in a dataset collection
+
+
+To add more datasets to be proceed by this dag:
+Simply add the dataset collections to the `dataset_collections` parameter in the DAG to
+run this process for the given dataset collections.
+
+
+For each dataset in the dataset collections, it queries the dataset in Synapse and
 pushes the results to a Croissant file in S3. The S3 bucket is stored in the
 `org-sagebase-dpe-prod` AWS account. That S3 bucket is deployed to AWS through the code
 in this PR: https://github.com/Sage-Bionetworks-Workflows/eks-stack/pull/57 .
@@ -11,38 +27,30 @@ log in as an AWS user to accomplish the required work. In order for this DAG to 
 user that is running the DAG must have the correct permissions to access the S3 bucket
 and write to it. This was set up on the `airflow-secrets-backend` user in the
 `org-sagebase-dpe-prod` AWS account. The user has an inline policy to grant PutObject,
-GetObject, and ListBucket permissions to the S3 bucket.
-
-Simply add the dataset collections to the `dataset_collections` parameter in the DAG to
-run this process for the given dataset collections.
+GetObject, DeleteObject, and ListBucket permissions to the S3 bucket.
 
 In addition this DAG has been set up with the first iteration of the OpenTelemetry
 integration for Apache Airflow. OTEL support is officially added in 2.10.0, but requires
-that we also upgrade the production Airflow server.
+that we also set up the production Airflow server to support OTEL.
 
 DAG Parameters:
-- `snowflake_developer_service_conn`: A JSON-formatted string containing the connection details required to authenticate and connect to Snowflake.
-- `synapse_conn_id`: The connection ID for the Synapse connection.
-- `dataset_collections`: The dataset collections to query for datasets.
-- `push_results_to_s3`: A boolean to indicate if the results should be pushed to S3.
-                        When set to `False`, the results will be printed to the logs.
-- `delete_out_of_date_from_s3`: A boolean to indicate if the old files should be 
-                        deleted from S3. When set to `False`, the old files will not 
-                        be deleted, but a message will be logged to indicate that
-                        the files will be deleted when set to `True`.
-- `aws_conn_id`: The connection ID for the AWS connection. Used to authenticate with S3.
+- Review the DAG Parameters under the `@dag` decorated function
 """
 
 import json
 import os
+import re
+import tempfile
 from datetime import datetime
 from io import BytesIO
 from logging import NOTSET, Logger, getLogger
-from typing import Dict, List
+from types import MethodType
+from typing import Any, Dict, List
+from urllib.parse import quote_plus
 
 from airflow.decorators import dag, task
-from airflow.models.param import Param
 from airflow.models import Variable
+from airflow.models.param import Param
 from airflow.providers.amazon.aws.hooks.s3 import S3Hook
 from airflow.providers.snowflake.hooks.snowflake import SnowflakeHook
 from opentelemetry import context as otel_context
@@ -60,20 +68,25 @@ from opentelemetry.sdk.trace import Tracer, TracerProvider
 from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.trace.propagation.tracecontext import \
     TraceContextTextMapPropagator
-from synapseclient import Synapse
+from orca.services.synapse import SynapseHook
+from orca.errors import ConfigError
+from orca.services.synapse.client_factory import SynapseClientFactory
+from pandas import DataFrame
+from synapseclient import Entity, Synapse, Table
+from synapseclient.core.exceptions import (SynapseAuthenticationError,
+                                           SynapseHTTPError)
+from synapseclient.core.retry import with_retry
 from synapseclient.models import File
-from synapseclient.core.exceptions import SynapseHTTPError, SynapseAuthenticationError
-from synapseclient.core.retry import (
-    with_retry,
-)
-from types import MethodType
 
 dag_params = {
     "snowflake_developer_service_conn": Param("SNOWFLAKE_DEVELOPER_SERVICE_RAW_CONN", type="string"),
     "synapse_conn_id": Param("SYNAPSE_ORCA_SERVICE_ACCOUNT_CONN", type="string"),
     "dataset_collections": Param(["syn50913342"], type="array"),
     "push_results_to_s3": Param(True, type="boolean"),
+    "push_links_to_synapse": Param(True, type="boolean"),
     "delete_out_of_date_from_s3": Param(True, type="boolean"),
+    "delete_out_of_date_from_synapse": Param(True, type="boolean"),
+    "dataset_collections_for_cleanup": Param(["syn50913342"], type="array"),
     "aws_conn_id": Param("AWS_SYNAPSE_CROISSANT_METADATA_S3_CONN", type="string"),
 }
 
@@ -101,6 +114,14 @@ MY_SERVICE_NAME = "airflow-synapse-dataset-to-croissant"
 # the deployment environment here.
 MY_DEPLOYMENT_ENVIRONMENT = "prod"
 # MY_DEPLOYMENT_ENVIRONMENT = "local"
+
+SYNAPSE_TABLE_FOR_CROISSANT_LINKS = "syn65903895"
+
+# Regular expression to match `_{dataset_id}.{dataset_version}_`
+DATASET_ID_VERSION_PATTERN = r"_syn\d+\.\d+_"
+
+# Regular expression to match `_datasetCollection_{dataset_collection}_`
+DATASET_COLLECTION_PATTERN = r"_datasetCollection_syn\d+_"
 
 
 def set_up_tracing() -> Tracer:
@@ -187,12 +208,39 @@ otel_tracer = set_up_tracing()
 otel_logger = set_up_logging()
 
 
+# TODO: Remove this on the next release of py-orca
+# This is a temporary hack to include the changes from: https://github.com/Sage-Bionetworks-Workflows/py-orca/pull/50
+def create_client(self) -> Synapse:
+    """
+    See original create_client method in for more details.
+    """
+    print("I am in the replacement create_client method")
+    client = Synapse(silent=True, skip_checks=True)
+    auth_token = self.config.auth_token
+
+    if auth_token is None:
+        message = f"Config ({self.config}) is missing auth_token."
+        raise ConfigError(message)
+
+    # Ignore authentication error (leave that to `test_client_request`)
+    try:
+        client.login(authToken=auth_token)
+    except SynapseAuthenticationError:
+        pass
+
+    return client
+
+
+SynapseClientFactory.create_client = create_client
+
 # TODO: Remove this on the next > 4.7.0 release of the Synapse Python Client
 # This is a temporary hack to include the changes from: https://github.com/Sage-Bionetworks/synapsePythonClient/pull/1188
 # The hack is used here because the current SYNPY client does not have an HTTP timeout
 # for requests to Synapse. As a result and due to the significant number of HTTP calls that
 # occur during the DAG, the DAG can stall and never return due to the requests library.
 # https://requests.readthedocs.io/en/latest/user/advanced/#timeouts
+
+
 def _rest_call_replacement(
     self,
     method,
@@ -301,24 +349,24 @@ def construct_distribution_section_for_files(files_attached_to_dataset: List[Fil
     distribution_files = []
     files_to_find_md5_in_snowflake = {}
 
+    ids_of_files = []
+    id_and_version_pairs = []
     for file in files_attached_to_dataset:
         file: File = file
         if not file.file_handle or not file.file_handle.content_md5:
-            # TODO: Handle for cases where a file may be included twice within the dataset
+            modified_file_id = int(file.id.replace("syn", ""))
+            ids_of_files.append(modified_file_id)
+            id_and_version_pairs.append(modified_file_id)
+            id_and_version_pairs.append(file.version_number)
             files_to_find_md5_in_snowflake[int(file.id.replace(
                 "syn", ""))] = file.version_number
 
     file_md5s = None
-    if files_to_find_md5_in_snowflake:
+    if ids_of_files:
         snow_hook = SnowflakeHook(
             context["params"]["snowflake_developer_service_conn"])
         ctx = snow_hook.get_conn()
         cs = ctx.cursor()
-        ids_of_files = list(files_to_find_md5_in_snowflake.keys())
-        id_and_version_pairs = []
-        for file_id, version in files_to_find_md5_in_snowflake.items():
-            id_and_version_pairs.append(file_id)
-            id_and_version_pairs.append(version)
 
         query = f"""
         WITH version_data AS (
@@ -420,9 +468,284 @@ def construct_record_set_section_for_files(files_attached_to_dataset: List[File]
     }
 
 
+def extract_s3_objects_to_delete(bucket_objects: List[str], dataset_collections_to_consider_for_deletion: List[str], combined_dataset_collection_and_datasets: List[Dict[str, str]]) -> List[str]:
+    """
+    Extract the S3 objects to delete from the S3 bucket. This is done by retrieving
+    all of the objects in the S3 bucket and checking if the object matches one of the
+    datasets that will be kept after the full DAG as been run. Every object in the S3
+    bucket that matches the pattern `_syn####.###_` and
+    `_datasetCollection_syn####_` will be considered for deletion. The DAG param
+    `dataset_collections_for_cleanup` is used to filter the objects that will be
+    considered for deletion as the second filter.
+
+    The last filter enforces that each object in the S3 bucket must match a dataset
+    id, dataset version, dataset collection, and dataset name in the
+    `combined_dataset_collection_and_datasets` list. If the object does not match
+    any of the objects in the list, then it will be marked for deletion.
+
+    Arguments:
+        bucket_objects: The list of objects in the S3 bucket.
+        dataset_collections_to_consider_for_deletion: The dataset collections to
+            consider for deletion. This is passed in from the
+            `dataset_collections_for_cleanup` DAG parameter.
+    """
+    objects_to_delete = []
+
+    if not bucket_objects:
+        otel_logger.info(
+            "No objects found in S3.")
+        return objects_to_delete
+
+    for bucket_object in bucket_objects:
+        dataset_id_and_version = re.search(
+            DATASET_ID_VERSION_PATTERN, bucket_object)
+        dataset_collection = re.search(
+            DATASET_COLLECTION_PATTERN, bucket_object)
+
+        if not dataset_id_and_version or not dataset_collection:
+            otel_logger.info(
+                f"Object {bucket_object} does not match the pattern. Skipping.")
+            continue
+
+        dataset_collection = dataset_collection.group(0).replace(
+            "_datasetCollection_", "").replace("_", "")
+
+        if dataset_collection not in dataset_collections_to_consider_for_deletion:
+            otel_logger.info(
+                f"Object {bucket_object} does not match a dataset collection present in `dataset_collections_for_cleanup`. Skipping.")
+            continue
+
+        dataset_id, dataset_version = dataset_id_and_version.group(0).split(
+            ".")
+        dataset_id = dataset_id.replace("_", "")
+        dataset_version = dataset_version.replace("_", "")
+        dataset_name = bucket_object.split(dataset_id_and_version.group(0))[0]
+
+        match_found_for_object = False
+
+        for combined_dataset_collection_and_dataset in combined_dataset_collection_and_datasets:
+            if (dataset_collection == combined_dataset_collection_and_dataset["dataset_collection"] and
+                    dataset_id == combined_dataset_collection_and_dataset["dataset_id"] and
+                    dataset_version == str(combined_dataset_collection_and_dataset["dataset_version"]) and
+                    dataset_name == combined_dataset_collection_and_dataset["dataset_name"]):
+                match_found_for_object = True
+                break
+        if not match_found_for_object:
+            objects_to_delete.append(bucket_object)
+
+    return objects_to_delete
+
+
+def extract_synapse_rows_to_delete(synapse_rows: DataFrame, combined_dataset_collection_and_datasets: List[Dict[str, str]]) -> List[str]:
+    """
+    Extract the rows to delete from the Synapse table. This is done by retrieving the
+    dataset ids along with their versions from the dataset collections passed in via
+    the `dataset_collections_for_cleanup` DAG parameter. The rows to delete are
+    determined by checking if the dataset id and version are present in the
+    `combined_dataset_collection_and_datasets` list. If the dataset id and version
+    are not present in the list, then the row is marked for deletion.
+
+    Arguments:
+        synapse_rows: A Pandas DataFrame with the columns `dataset`, `dataset_version`,
+            `dataset_collection`, and `ROW_ID`.
+        combined_dataset_collection_and_datasets: The combined list of dataset IDs,
+            dataset collections, and dataset versions to use to determine which
+            datasets to delete.
+
+    Returns:
+        The list of rows to delete from the Synapse table.
+    """
+    rows_to_delete = []
+
+    if synapse_rows.empty:
+        otel_logger.info(
+            "No rows found in Synapse.")
+        return rows_to_delete
+
+    for synapse_row in synapse_rows.itertuples():
+        dataset_collection = synapse_row.dataset_collection
+        dataset_id = synapse_row.dataset
+        dataset_version = synapse_row.dataset_version
+        row_id = synapse_row.ROW_ID
+
+        match_found_for_object = False
+
+        for combined_dataset_collection_and_dataset in combined_dataset_collection_and_datasets:
+            if (dataset_collection == combined_dataset_collection_and_dataset["dataset_collection"] and
+                    dataset_id == combined_dataset_collection_and_dataset["dataset_id"] and
+                    dataset_version == combined_dataset_collection_and_dataset["dataset_version"]):
+                match_found_for_object = True
+                break
+        if not match_found_for_object:
+            rows_to_delete.append(row_id)
+
+    return rows_to_delete
+
+
+def execute_push_to_s3(dataset: Entity, dataset_id: str, dataset_version: str, s3_key: str, croissant_file: Dict[str, Any], push_to_s3: bool, **context) -> None:
+    """
+    Handle the push to S3 of the croissant file. This is done by using the S3Hook to
+    upload the file to S3. The S3 bucket is stored in the `org-sagebase-dpe-prod` AWS
+    account.
+
+    Arguments:
+        dataset: The dataset to push to S3.
+        dataset_id: The ID of the dataset.
+        dataset_version: The version of the dataset.
+        s3_key: The S3 key to use to push the file to S3.
+        croissant_file: The croissant file to push to S3.
+        push_to_s3: A boolean to indicate if the results should be pushed to S3.
+            When set to `False`, the results will be printed to the logs.
+        context: The context of the DAG run.
+
+    Returns:
+
+    """
+    try:
+        if not push_to_s3:
+            otel_logger.info(
+                f"Croissant file for [dataset: {dataset.name}, id: {dataset_id}.{dataset_version}]:\n{json.dumps(croissant_file)}")
+            return
+
+        otel_logger.info(
+            f"Uploading croissant file for [dataset: {dataset.name}, id: {dataset_id}.{dataset_version}]")
+
+        croissant_metadata_bytes = json.dumps(croissant_file).encode(
+            'utf-8')
+        metadata_file = BytesIO(croissant_metadata_bytes)
+        s3_hook = S3Hook(
+            aws_conn_id=context["params"]["aws_conn_id"], region_name=REGION_NAME, extra_args={
+                "ContentType": "application/ld+json"
+            }
+        )
+
+        otel_logger.info(
+            f"Uploading croissant file to S3: {s3_key}")
+        s3_hook.load_file_obj(file_obj=metadata_file,
+                              key=s3_key,
+                              bucket_name=BUCKET_NAME,
+                              replace=True,
+                              )
+    except Exception as ex:
+        otel_logger.exception(
+            "Failed to query snowflake and push croissant file to S3.")
+        otel_tracer.span_processor.force_flush()
+        otel_logger.handlers[0].flush()
+        raise ex
+
+
+def execute_push_to_synapse(push_to_synapse: bool, dataset: Entity, dataset_id: str, dataset_version: str, dataset_collection: str, s3_url: str, syn_client: Synapse, **context) -> None:
+    """
+    Handle the push to Synapse of the croissant file link. This is done by using
+    an unauthenticated Synapse client to first query the table to determine if an
+    update is needed. If the link already exists with the expected S3 URL, then
+    skip the update. If the link does not exist or the S3 URL is different, then
+    update the link with the new S3 URL using the authenticated Synapse client.
+
+    Arguments:
+        push_to_synapse: A boolean to indicate if the results should be pushed to
+            Synapse. When set to `False`, the results will be printed to the logs.
+        dataset: The dataset to push to Synapse.
+        dataset_id: The ID of the dataset.
+        dataset_version: The version of the dataset.
+        dataset_collection: The ID of the dataset collection where the dataset came from.
+        s3_url: The S3 URL to use for the value of the cell in the table.
+        syn_client: The unauthenticated Synapse client to use to query the table.
+        context: The context of the DAG run.
+
+    Returns:
+        None
+    """
+    try:
+        if not push_to_synapse:
+            otel_logger.info(
+                f"Croissant file link for [dataset: {dataset.name}, id: {dataset_id}.{dataset_version}]: {s3_url}")
+            return
+
+        otel_logger.info(
+            f"Uploading croissant file link to Synapse table {SYNAPSE_TABLE_FOR_CROISSANT_LINKS}"
+        )
+
+        # TODO: When 4.8.0 of the SYNPY client is released this may be
+        # replaced by the upsert functionality
+        existing_row = syn_client.tableQuery(
+            query=f"SELECT * FROM {SYNAPSE_TABLE_FOR_CROISSANT_LINKS} WHERE dataset = '{dataset_id}' AND dataset_version = {dataset_version} AND dataset_collection = '{dataset_collection}'", resultsAs="csv")
+        existing_row_df = existing_row.asDataFrame()
+        os.remove(existing_row.filepath)
+        if not existing_row_df.empty and existing_row_df["croissant_file_s3_object"].values[0] == s3_url:
+            otel_logger.info(
+                f"Croissant file link already exists in Synapse table {SYNAPSE_TABLE_FOR_CROISSANT_LINKS}. Skipping.")
+            return
+
+        df = DataFrame(
+            data={
+                "dataset": [dataset_id],
+                "dataset_version": [dataset_version],
+                "dataset_collection": [dataset_collection],
+                "croissant_file_s3_object": [s3_url]
+            }
+        )
+        temp_dir = tempfile.mkdtemp()
+        filepath = os.path.join(temp_dir, "table.csv")
+
+        # Warning: Using an authenticated Synapse Client during this section of code
+        syn_hook = SynapseHook(
+            context["params"]["synapse_conn_id"])
+        authenticated_syn_client: Synapse = syn_hook.client
+        authenticated_syn_client._rest_call = MethodType(
+            _rest_call_replacement, authenticated_syn_client)
+
+        schema = authenticated_syn_client.get(
+            SYNAPSE_TABLE_FOR_CROISSANT_LINKS)
+        if existing_row_df.empty:
+            # If the row does not exist, create a new row
+            authenticated_syn_client.store(
+                Table(schema=schema, values=df, filepath=filepath))
+        else:
+            # Update the existing row with the new value
+            existing_row_df["croissant_file_s3_object"] = [s3_url]
+            authenticated_syn_client.store(
+                Table(schema=schema, values=existing_row_df, filepath=filepath))
+
+        os.remove(filepath)
+    except Exception as ex:
+        otel_logger.exception(
+            "Failed to push croissant file link to Synapse.")
+        otel_tracer.span_processor.force_flush()
+        otel_logger.handlers[0].flush()
+        raise ex
+
+
 @dag(**dag_config)
 def dataset_to_croissant() -> None:
-    """Execute a query on Snowflake and report the results to a Synapse table."""
+    """Execute a query on Snowflake and report the results to a Synapse table.
+
+
+    DAG Parameters:
+    - `snowflake_developer_service_conn`: A JSON-formatted string containing the connection details required to authenticate and connect to Snowflake.
+    - `synapse_conn_id`: The connection ID for the Synapse connection.
+    - `dataset_collections`: The dataset collections to query for datasets.
+    - `push_results_to_s3`: A boolean to indicate if the results should be pushed to S3.
+                            When set to `False`, the results will be printed to the logs.
+    - `delete_out_of_date_from_s3`: A boolean to indicate if the old files should be 
+                            deleted from S3. When set to `False`, the old files will not 
+                            be deleted, but a message will be logged to indicate that
+                            the files will be deleted when set to `True`.
+    - `push_links_to_synapse`: A boolean to indicate if the links should be pushed to
+                            Synapse. When set to `False`, the links will not be pushed,
+                            but a message will be logged to indicate that the links will
+                            be pushed when set to `True`.
+    - `delete_out_of_date_from_synapse`: A boolean to indicate if the old files should be
+                            deleted from Synapse. When set to `False`, the old files will
+                            not be deleted, but a message will be logged to indicate that
+                            the files will be deleted when set to `True`.
+    - `dataset_collections_for_cleanup`: The dataset collections to query for datasets
+                            to delete the old files from S3. Also consider the Synapse table
+                            where links back to Synapse entities are connected with the S3
+                            object. When this is filled this array is used to filter the
+                            S3 objects which will be considered for deletion.
+    - `aws_conn_id`: The connection ID for the AWS connection. Used to authenticate with S3.
+    """
 
     @task
     def create_root_span(**context) -> Dict:
@@ -497,20 +820,30 @@ def dataset_to_croissant() -> None:
 
             try:
                 results = []
-                dataset_collection = syn_client.get(
+                dataset_collection_entity = syn_client.get(
                     dataset_collection, downloadFile=False)
 
-                if not hasattr(dataset_collection, "datasetItems") or not dataset_collection.get("datasetItems"):
+                if not hasattr(dataset_collection_entity, "datasetItems") or not dataset_collection_entity.get("datasetItems"):
                     otel_logger.warning(
                         f"No datasets found for dataset collection {dataset_collection}")
                     return results
-                dataset_items = dataset_collection.get("datasetItems")
+                dataset_items = dataset_collection_entity.get("datasetItems")
                 otel_logger.info(dataset_items)
                 for dataset_item in dataset_items:
                     syn_id = dataset_item["entityId"]
                     version_number = dataset_item["versionNumber"]
+
+                    try:
+                        dataset = syn_client.get(
+                            f"{syn_id}.{version_number}", downloadFile=False)
+                        span.set_attribute(
+                            "airflow.dataset_name", dataset.name)
+                    except Exception as ex:
+                        otel_logger.warning(
+                            f"Failed to get dataset {syn_id}.{version_number} from Synapse: {ex}")
+
                     results.append({"dataset_id": syn_id, "dataset_version": version_number,
-                                   "dataset_collection": dataset_collection})
+                                   "dataset_collection": dataset_collection, "dataset_name": dataset.name})
 
             except Exception as ex:
                 otel_logger.exception(
@@ -535,56 +868,46 @@ def dataset_to_croissant() -> None:
         Returns:
             The combined list of dataset IDs.
         """
-        with otel_tracer.start_as_current_span("combine_dataset_lists", context=TraceContextTextMapPropagator().extract(root_carrier_context)) as span:
+        with otel_tracer.start_as_current_span("combine_dataset_lists", context=TraceContextTextMapPropagator().extract(root_carrier_context)):
             return_value = [
                 dataset for datasets in dataset_ids for dataset in datasets]
         otel_tracer.span_processor.force_flush()
         return return_value
 
     @task
-    def delete_non_current_files_from_s3(
+    def delete_non_current_croissant_file_in_s3(
         root_carrier_context: Dict, combined_dataset_collection_and_datasets: List[Dict[str, str]], **context
     ) -> None:
         """
-        Delete the non-current files from S3. This is used to remove the old files
-        from S3 that are no longer needed. A "non-current" file is defined as a
-        croissant JSON LD file which is no longer present in any Dataset collection.
+        Delete the non-current croissant files from S3. 
+        This is used to remove the old files from S3 that are no longer needed. 
+        A "non-current" file is defined as a croissant JSON LD file which is no longer
+        present in any Dataset collection.
 
         This can occur if the dataset has been removed from the dataset collection, or
         if there is a new version of the dataset that has been added to the dataset
         collection.
 
         Arguments:
-            dataset_id: The ID of the dataset to delete the files for.
-            dataset_version: The version of the dataset to delete the files for.
-            dataset_collection: The collection of the dataset to delete the files for.
+            root_carrier_context: The root carrier context to use for the trace context.
+            combined_dataset_collection_and_datasets: The combined list of dataset IDs,
+                dataset collections, and dataset versions to use to determine which
+                datasets to delete.
+
+        Returns:
+            None
         """
         with otel_tracer.start_as_current_span("delete_non_current_files_from_s3", context=TraceContextTextMapPropagator().extract(root_carrier_context)) as span:
             s3_hook = S3Hook(
                 aws_conn_id=context["params"]["aws_conn_id"], region_name=REGION_NAME)
             bucket_objects = s3_hook.list_keys(bucket_name=BUCKET_NAME)
 
-            objects_to_delete = []
-
-            if bucket_objects:
-                for bucket_object in bucket_objects:
-                    split_fields = bucket_object.split("_")
-                    if len(split_fields) > 5:
-                        dataset_id = split_fields[1]
-                        dataset_version = split_fields[2]
-                        dataset_collection = split_fields[4]
-                        match_found_for_object = False
-                        # Check if the object is not in the current dataset collection
-                        for combined_dataset_collection_and_dataset in combined_dataset_collection_and_datasets:
-                            if (dataset_collection == combined_dataset_collection_and_dataset["dataset_collection"] and
-                                    dataset_id == combined_dataset_collection_and_dataset["dataset_id"] and
-                                    dataset_version == str(combined_dataset_collection_and_dataset["dataset_version"])):
-                                match_found_for_object = True
-                                break
-                        if not match_found_for_object:
-                            objects_to_delete.append(bucket_object)
-                    else:
-                        objects_to_delete.append(bucket_object)
+            objects_to_delete = extract_s3_objects_to_delete(
+                bucket_objects=bucket_objects,
+                dataset_collections_to_consider_for_deletion=context[
+                    "params"]["dataset_collections_for_cleanup"],
+                combined_dataset_collection_and_datasets=combined_dataset_collection_and_datasets,
+            )
 
             if objects_to_delete:
                 delete_out_of_date_from_s3 = context["params"]["delete_out_of_date_from_s3"]
@@ -604,7 +927,68 @@ def dataset_to_croissant() -> None:
             return None
 
     @task
-    def query_snowflake_and_push_croissant_file(root_carrier_context: Dict, dataset_id: str, dataset_version: int, dataset_collection: str, **context) -> None:
+    def delete_non_current_croissant_file_in_synapse(
+        root_carrier_context: Dict, combined_dataset_collection_and_datasets: List[Dict[str, str]], **context
+    ) -> None:
+        """
+        Delete the non-current croissant files from the Synapse table. 
+        This is used to remove the old files from Synapse that are no longer needed. 
+        A "non-current" file is defined as a croissant JSON LD file which is no longer
+        present in any Dataset collection.
+
+        This can occur if the dataset has been removed from the dataset collection, or
+        if there is a new version of the dataset that has been added to the dataset
+        collection.
+
+        Arguments:
+            root_carrier_context: The root carrier context to use for the trace context.
+            combined_dataset_collection_and_datasets: The combined list of dataset IDs,
+                dataset collections, and dataset versions to use to determine which
+                datasets to delete.
+
+        Returns:
+            None
+        """
+        # Warning: Using an authenticated Synapse Client during this section of code
+        with otel_tracer.start_as_current_span("delete_non_current_files_from_s3", context=TraceContextTextMapPropagator().extract(root_carrier_context)) as span:
+            syn_hook = SynapseHook(context["params"]["synapse_conn_id"])
+            syn_client: Synapse = syn_hook.client
+            syn_client._rest_call = MethodType(
+                _rest_call_replacement, syn_client)
+            dataset_collections_to_consider_for_deletion = [f"'{ds}'" for ds in context[
+                "params"]["dataset_collections_for_cleanup"]]
+            query = f"SELECT * FROM {SYNAPSE_TABLE_FOR_CROISSANT_LINKS} WHERE dataset_collection in ({','.join(dataset_collections_to_consider_for_deletion)})"
+            table_results = syn_client.tableQuery(
+                query=query, resultsAs="csv")
+            table_dataframe = table_results.asDataFrame(
+                rowIdAndVersionInIndex=False)
+            os.remove(table_results.filepath)
+            rows_to_delete = extract_synapse_rows_to_delete(
+                synapse_rows=table_dataframe,
+                combined_dataset_collection_and_datasets=combined_dataset_collection_and_datasets,
+            )
+
+            if rows_to_delete:
+                delete_out_of_date_from_synapse = context["params"]["delete_out_of_date_from_synapse"]
+                if delete_out_of_date_from_synapse:
+                    otel_logger.info(
+                        f"Deleting the following rows from Synapse: {rows_to_delete}")
+                    results_from_synapse = syn_client.tableQuery(
+                        query=f"SELECT ROW_ID, ROW_VERSION FROM {SYNAPSE_TABLE_FOR_CROISSANT_LINKS} WHERE ROW_ID in ({','.join(rows_to_delete)})", resultsAs="csv")
+                    syn_client.delete(results_from_synapse)
+                    os.remove(results_from_synapse.filepath)
+                else:
+                    otel_logger.info(
+                        f"Found rows to delete from Synapse, but not deleting due to `delete_out_of_date_from_synapse` param: {rows_to_delete}")
+            else:
+                otel_logger.info(
+                    "No rows to delete from Synapse. All rows are current.")
+            otel_tracer.span_processor.force_flush()
+            otel_logger.handlers[0].flush()
+            return None
+
+    @task
+    def query_and_push_croissant_file(root_carrier_context: Dict, dataset_id: str, dataset_version: int, dataset_collection: str, **context) -> None:
         """
         Query the Snowflake database for the dataset in order to perform the Croissant
         transformation and push the results to S3.
@@ -612,9 +996,12 @@ def dataset_to_croissant() -> None:
         Arguments:
             dataset_id: The ID of the dataset to query in Snowflake.
         """
-        with otel_tracer.start_as_current_span("query_snowflake_and_push_croissant_file", context=TraceContextTextMapPropagator().extract(root_carrier_context)) as span:
+        with otel_tracer.start_as_current_span("query_and_push_croissant_file", context=TraceContextTextMapPropagator().extract(root_carrier_context)) as span:
             push_to_s3 = context["params"]["push_results_to_s3"]
+            push_to_synapse = context["params"]["push_links_to_synapse"]
             span.set_attribute("airflow.push_results_to_s3", push_to_s3)
+            span.set_attribute(
+                "airflow.push_links_to_synapse", push_to_synapse)
             if not dataset_id:
                 otel_logger.info("No dataset found")
                 otel_tracer.span_processor.force_flush()
@@ -659,11 +1046,13 @@ def dataset_to_croissant() -> None:
             otel_logger.info(file_ids_and_versions_attached_to_dataset)
             files_attached_to_dataset: List[File] = get_file_instances(
                 synapse_files=file_ids_and_versions_attached_to_dataset, syn_client=syn_client)
+
             if not files_attached_to_dataset:
                 otel_logger.warning(
                     f"No files found for dataset {dataset_id}.{dataset_version}")
                 span.set_attribute("airflow.croissant_result", False)
                 return
+
             span.set_attribute("airflow.croissant_result", True)
 
             distribution_files = [{
@@ -729,7 +1118,7 @@ def dataset_to_croissant() -> None:
                 "@type": "Dataset",
                 "@id": f"{dataset_id}.{dataset_version}",
                 "name": f"{dataset.name}",
-                "description": f"Dataset for {dataset.name}",
+                "description": dataset.description if hasattr(dataset, "description") and dataset.description else f"Dataset for {dataset.name}",
                 "url": f"https://www.synapse.org/Synapse:{dataset_id}.{dataset_version}",
                 "citation": "unknown_citation",
                 "datePublished": dataset.modifiedOn,
@@ -740,35 +1129,16 @@ def dataset_to_croissant() -> None:
                 "recordSet": record_set,
             }
 
-            try:
-                if not push_to_s3:
-                    otel_logger.info(
-                        f"Croissant file for [dataset: {dataset.name}, id: {dataset_id}.{dataset_version}]:\n{json.dumps(croissant_file)}")
-                else:
-                    otel_logger.info(
-                        f"Uploading croissant file for [dataset: {dataset.name}, id: {dataset_id}.{dataset_version}]")
+            # The logic to push the file to S3 and push to Synapse is occurring within
+            # the same DAG task is to prevent any issues with the large amount of
+            # content that would need to be passed between tasks.
+            s3_key = f"{dataset.name}_{dataset_id}.{dataset_version}_datasetCollection_{dataset_collection}_croissant.jsonld"
+            execute_push_to_s3(dataset=dataset, dataset_id=dataset_id, dataset_version=dataset_version,
+                               s3_key=s3_key, croissant_file=croissant_file, push_to_s3=push_to_s3, **context)
 
-                    croissant_metadata_bytes = json.dumps(croissant_file).encode(
-                        'utf-8')
-                    metadata_file = BytesIO(croissant_metadata_bytes)
-                    s3_hook = S3Hook(
-                        aws_conn_id=context["params"]["aws_conn_id"], region_name=REGION_NAME, extra_args={
-                            "ContentType": "application/ld+json"
-                        }
-                    )
-
-                    s3_hook.load_file_obj(file_obj=metadata_file,
-                                          key=f"{dataset.name}_{dataset_id}_v{dataset_version}_datasetCollection_{dataset_collection}_croissant.jsonld",
-                                          bucket_name=BUCKET_NAME,
-                                          replace=True,
-                                          )
-
-            except Exception as ex:
-                otel_logger.exception(
-                    "Failed to query snowflake and push croissant file to S3.")
-                otel_tracer.span_processor.force_flush()
-                otel_logger.handlers[0].flush()
-                raise ex
+            s3_url = f"https://{BUCKET_NAME}.s3.us-east-1.amazonaws.com/{quote_plus(s3_key)}"
+            execute_push_to_synapse(push_to_synapse=push_to_synapse, dataset=dataset, dataset_id=dataset_id,
+                                    dataset_version=dataset_version, dataset_collection=dataset_collection, s3_url=s3_url, syn_client=syn_client, **context)
 
         otel_tracer.span_processor.force_flush()
         otel_logger.handlers[0].flush()
@@ -781,11 +1151,14 @@ def dataset_to_croissant() -> None:
     combined_dataset_lists = combine_dataset_lists(
         root_carrier_context=root_carrier_context, dataset_ids=datasets)
 
-    query_snowflake_and_push_croissant_file.partial(root_carrier_context=root_carrier_context).expand_kwargs(
+    query_and_push_croissant_file.partial(root_carrier_context=root_carrier_context).expand_kwargs(
         combined_dataset_lists)
 
-    delete_non_current_files_from_s3(root_carrier_context=root_carrier_context,
-                                     combined_dataset_collection_and_datasets=combined_dataset_lists)
+    delete_non_current_croissant_file_in_s3(root_carrier_context=root_carrier_context,
+                                            combined_dataset_collection_and_datasets=combined_dataset_lists)
+
+    delete_non_current_croissant_file_in_synapse(root_carrier_context=root_carrier_context,
+                                                 combined_dataset_collection_and_datasets=combined_dataset_lists)
 
 
 dataset_to_croissant()
