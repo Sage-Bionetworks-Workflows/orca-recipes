@@ -8,7 +8,7 @@ This DAG interacts with a few different services to accomplish the following:
 - (S3, Authenticated) For each dataset push an object a public S3 bucket in the `org-sagebase-dpe-prod` AWS account
 - (Synapse, Authenticated) For each dataset query a Synapse table which contains links to the S3 object
 - (Synapse, Authenticated) Delete rows from the Synapse table which are not in a dataset collection
-- (Synapse, Aauthenticated) For each dataset push a link for the S3 object to a Synapse table via the authenticated Synapse client
+- (Synapse, Authenticated) For each dataset push a link for the S3 object to a Synapse table via the authenticated Synapse client
 - (S3, Authenticated) Delete S3 objects from the S3 bucket which are not in a dataset collection
 
 
