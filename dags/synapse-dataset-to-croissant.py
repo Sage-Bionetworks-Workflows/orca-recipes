@@ -487,6 +487,12 @@ def extract_s3_objects_to_delete(bucket_objects: List[str], dataset_collections_
         dataset_collections_to_consider_for_deletion: The dataset collections to
             consider for deletion. This is passed in from the
             `dataset_collections_for_cleanup` DAG parameter.
+        combined_dataset_collection_and_datasets: The combined list of dataset IDs,
+            dataset collections, and dataset versions to use to determine which
+            datasets to delete.
+
+    Returns:
+        The list of objects to delete from the S3 bucket.
     """
     objects_to_delete = []
 
