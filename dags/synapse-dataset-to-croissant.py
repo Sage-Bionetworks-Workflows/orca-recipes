@@ -523,10 +523,17 @@ def extract_s3_objects_to_delete(bucket_objects: List[str], dataset_collections_
         match_found_for_object = False
 
         for combined_dataset_collection_and_dataset in combined_dataset_collection_and_datasets:
-            if (dataset_collection == combined_dataset_collection_and_dataset["dataset_collection"] and
-                    dataset_id == combined_dataset_collection_and_dataset["dataset_id"] and
-                    dataset_version == str(combined_dataset_collection_and_dataset["dataset_version"]) and
-                    dataset_name == combined_dataset_collection_and_dataset["dataset_name"]):
+
+            matches_dataset_collection = dataset_collection == combined_dataset_collection_and_dataset[
+                "dataset_collection"]
+            matches_dataset_id = dataset_id == combined_dataset_collection_and_dataset[
+                "dataset_id"]
+            matches_dataset_version = dataset_version == str(
+                combined_dataset_collection_and_dataset["dataset_version"])
+            matches_dataset_name = dataset_name == combined_dataset_collection_and_dataset[
+                "dataset_name"]
+
+            if matches_dataset_collection and matches_dataset_id and matches_dataset_version and matches_dataset_name:
                 match_found_for_object = True
                 break
         if not match_found_for_object:
@@ -636,7 +643,7 @@ def execute_push_to_s3(dataset: Entity, dataset_id: str, dataset_version: str, s
 def execute_push_to_synapse(push_to_synapse: bool, dataset: Entity, dataset_id: str, dataset_version: str, dataset_collection: str, s3_url: str, **context) -> None:
     """
     Handle the push to Synapse of the croissant file link. This is done by using
-    an unauthenticated Synapse client to first query the table to determine if an
+    an authenticated Synapse client to first query the table to determine if an
     update is needed. If the link already exists with the expected S3 URL, then
     skip the update. If the link does not exist or the S3 URL is different, then
     update the link with the new S3 URL using the authenticated Synapse client.
@@ -993,7 +1000,14 @@ def dataset_to_croissant() -> None:
         transformation and push the results to S3.
 
         Arguments:
-            dataset_id: The ID of the dataset to query in Snowflake.
+            root_carrier_context: The root carrier context to use for the trace context.
+            dataset_id: The ID of the dataset to query.
+            dataset_version: The version of the dataset to query.
+            dataset_collection: The ID of the dataset collection to query.
+            context: The context of the DAG run.
+
+        Returns:
+            None
         """
         with otel_tracer.start_as_current_span("query_and_push_croissant_file", context=TraceContextTextMapPropagator().extract(root_carrier_context)) as span:
             push_to_s3 = context["params"]["push_results_to_s3"]
@@ -1017,11 +1031,15 @@ def dataset_to_croissant() -> None:
                     f"{dataset_id}.{dataset_version}", downloadFile=False)
                 span.set_attribute("airflow.dataset_name", dataset.name)
 
+                # The dataset entity in synapse returned a list of files that are
+                # attached to the dataset. This is used to get the file IDs and
+                # versions of the files that are attached to the dataset.
                 if not hasattr(dataset, "datasetItems") or not dataset.get("datasetItems"):
                     span.set_attribute("airflow.croissant_result", False)
                     otel_logger.warning(
                         f"No files found for dataset {dataset_id}.{dataset_version}")
                     return
+
                 dataset_items = dataset.get("datasetItems")
                 for dataset_item in dataset_items:
                     syn_id = dataset_item["entityId"]
@@ -1039,6 +1057,7 @@ def dataset_to_croissant() -> None:
                 if path_to_remove:
                     os.remove(path_to_remove)
 
+            # Sort so we have a consistent order for the data shown in the croissant file
             file_ids_and_versions_attached_to_dataset.sort(
                 key=lambda x: x["file_id"])
 
@@ -1054,6 +1073,10 @@ def dataset_to_croissant() -> None:
 
             span.set_attribute("airflow.croissant_result", True)
 
+            # The distribution section of the croissant file is used to describe the
+            # files that are attached to the dataset. The first `metadata` file is
+            # used to describe the metadata associated with the dataset and where to find
+            # it on the Synapse server (The Dataset view)
             distribution_files = [{
                 "@type": "FileObject",
                 "@id": "metadata",
