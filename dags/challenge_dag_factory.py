@@ -28,6 +28,14 @@ def resolve_dag_config(challenge_name: str, dag_params: dict, config: dict) -> d
     If the challenge configuration provides a custom `dag_config`, use it
     (ensuring any ISO-format dates are converted and that task parameters are injected).
     Otherwise, return the default DAG configuration.
+
+    Arguments:
+        challenge_name: The name of the challenge.
+        dag_params: A dictionary of DAG parameters.
+        config: The challenge configuration.
+
+    Returns:
+        dict: The resolved DAG configuration.
     """
     if 'dag_config' in config and config['dag_config']:
         custom_config = config['dag_config'].copy()
@@ -41,11 +49,11 @@ def resolve_dag_config(challenge_name: str, dag_params: dict, config: dict) -> d
         return custom_config
     else:
         return {
-            "schedule_interval": "*/5 * * * *",
+            "schedule_interval": "*/1 * * * *",
             "start_date": datetime(2024, 4, 9),
             "catchup": False,
             "default_args": {"retries": 2},
-            "tags": [challenge_name],
+            "tags": "nextflow_tower",
             "params": dag_params,
         }
 
@@ -71,7 +79,7 @@ def create_challenge_dag(challenge_name: str, config: dict):
     # Resolve the complete DAG configuration.
     dag_config = resolve_dag_config(challenge_name, dag_params, config)
 
-    # Create a unique DAG id for the challenge.
+    # Create a unique DAG ID for the challenge.
     dag_id = f"{challenge_name}_challenge_dag"
 
     @dag(dag_id=dag_id, **dag_config)
