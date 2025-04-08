@@ -21,6 +21,33 @@ def load_challenge_configs():
     with open(CONFIG_FILE, "r") as f:
         return yaml.safe_load(f)
 
+def resolve_dag_config(challenge_name: str, dag_params: dict, config: dict) -> dict:
+    """
+    Return the DAG configuration for a challenge.
+
+    If the challenge configuration provides a custom `dag_config`, use it
+    (ensuring any ISO-format dates are converted and that task parameters are injected).
+    Otherwise, return the default DAG configuration.
+    """
+    if 'dag_config' in config and config['dag_config']:
+        custom_config = config['dag_config'].copy()
+        if 'start_date' in custom_config:
+            # Convert a start_date provided as an ISO format string to a datetime object.
+            custom_config['start_date'] = datetime.fromisoformat(custom_config['start_date'])
+        # Always ensure that task parameters are included.
+        custom_config['params'] = dag_params
+        if 'tags' not in custom_config:
+            custom_config['tags'] = [challenge_name]
+        return custom_config
+    else:
+        return {
+            "schedule_interval": "*/5 * * * *",
+            "start_date": datetime(2024, 4, 9),
+            "catchup": False,
+            "default_args": {"retries": 2},
+            "tags": [challenge_name],
+            "params": dag_params,
+        }
 
 def create_challenge_dag(challenge_name: str, config: dict):
     # Generate a new uuid if none is provided.
@@ -41,14 +68,8 @@ def create_challenge_dag(challenge_name: str, config: dict):
         "uuid": Param(config["uuid"], type="string"),
     }
 
-    dag_config = {
-        "schedule_interval": "*/5 * * * *",  # Adjust schedule as needed.
-        "start_date": datetime(2024, 4, 9),
-        "catchup": False,
-        "default_args": {"retries": 2},
-        "tags": [challenge_name],
-        "params": dag_params,
-    }
+    # Resolve the complete DAG configuration.
+    dag_config = resolve_dag_config(challenge_name, dag_params, config)
 
     # Create a unique DAG id for the challenge.
     dag_id = f"{challenge_name}_challenge_dag"
