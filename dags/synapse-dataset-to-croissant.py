@@ -12,7 +12,7 @@ This DAG interacts with a few different services to accomplish the following:
 - (S3, Authenticated) Delete S3 objects from the S3 bucket which are not in a dataset collection
 
 
-To add more datasets to be proceed by this dag:
+To add more datasets to be processed by this dag:
 Simply add the dataset collections to the `dataset_collections` parameter in the DAG to
 run this process for the given dataset collections.
 
@@ -41,6 +41,7 @@ import json
 import os
 import re
 import tempfile
+import mimetypes
 from datetime import datetime
 from io import BytesIO
 from logging import NOTSET, Logger, getLogger
@@ -69,14 +70,13 @@ from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.trace.propagation.tracecontext import \
     TraceContextTextMapPropagator
 from orca.services.synapse import SynapseHook
-from orca.errors import ConfigError
-from orca.services.synapse.client_factory import SynapseClientFactory
 from pandas import DataFrame
 from synapseclient import Entity, Synapse, Table
 from synapseclient.core.exceptions import (SynapseAuthenticationError,
                                            SynapseHTTPError)
 from synapseclient.core.retry import with_retry
 from synapseclient.models import File
+from synapseclient.core.utils import delete_none_keys
 
 dag_params = {
     "snowflake_developer_service_conn": Param("SNOWFLAKE_DEVELOPER_SERVICE_RAW_CONN", type="string"),
@@ -207,31 +207,6 @@ def set_up_logging() -> Logger:
 otel_tracer = set_up_tracing()
 otel_logger = set_up_logging()
 
-
-# TODO: Remove this on the next release of py-orca
-# This is a temporary hack to include the changes from: https://github.com/Sage-Bionetworks-Workflows/py-orca/pull/50
-def create_client(self) -> Synapse:
-    """
-    See original create_client method in for more details.
-    """
-    client = Synapse(silent=True, skip_checks=True)
-    auth_token = self.config.auth_token
-
-    if auth_token is None:
-        message = f"Config ({self.config}) is missing auth_token."
-        raise ConfigError(message)
-
-    # Ignore authentication error (leave that to `test_client_request`)
-    try:
-        client.login(authToken=auth_token)
-    except SynapseAuthenticationError:
-        pass
-
-    return client
-
-
-SynapseClientFactory.create_client = create_client
-
 # TODO: Remove this on the next > 4.7.0 release of the Synapse Python Client
 # This is a temporary hack to include the changes from: https://github.com/Sage-Bionetworks/synapsePythonClient/pull/1188
 # The hack is used here because the current SYNPY client does not have an HTTP timeout
@@ -352,15 +327,14 @@ def construct_distribution_section_for_files(files_attached_to_dataset: List[Fil
     id_and_version_pairs = []
     for file in files_attached_to_dataset:
         file: File = file
-        if not file.file_handle or not file.file_handle.content_md5:
-            modified_file_id = int(file.id.replace("syn", ""))
-            ids_of_files.append(modified_file_id)
-            id_and_version_pairs.append(modified_file_id)
-            id_and_version_pairs.append(file.version_number)
-            files_to_find_md5_in_snowflake[int(file.id.replace(
-                "syn", ""))] = file.version_number
+        modified_file_id = int(file.id.replace("syn", ""))
+        ids_of_files.append(modified_file_id)
+        id_and_version_pairs.append(modified_file_id)
+        id_and_version_pairs.append(file.version_number)
+        files_to_find_md5_in_snowflake[int(file.id.replace(
+            "syn", ""))] = file.version_number
 
-    file_md5s = None
+    file_md5_and_types = None
     if ids_of_files:
         snow_hook = SnowflakeHook(
             context["params"]["snowflake_developer_service_conn"])
@@ -372,7 +346,8 @@ def construct_distribution_section_for_files(files_attached_to_dataset: List[Fil
             SELECT
                 nl.id,
                 flattened.value:versionNumber::int AS versionNumber,
-                flattened.value:contentMd5::string AS contentMd5
+                flattened.value:contentMd5::string AS contentMd5,
+                flattened.value:fileHandleId::int AS fileHandleId
             FROM synapse_data_warehouse.synapse.node_latest AS nl,
             LATERAL FLATTEN(input => nl.VERSION_HISTORY) AS flattened
             WHERE nl.id IN ({', '.join(['%s'] * len(ids_of_files))})
@@ -381,8 +356,12 @@ def construct_distribution_section_for_files(files_attached_to_dataset: List[Fil
         SELECT
             vd.id,
             vd.versionNumber,
-            vd.contentMd5
+            vd.contentMd5,
+            vd.fileHandleId,
+            COALESCE(fl.content_type, 'NOT_SET') as CONTENT_TYPE,
         FROM version_data AS vd
+        LEFT JOIN synapse_data_warehouse.synapse.file_latest fl
+            ON fl.id = vd.fileHandleId
         WHERE (vd.id, vd.versionNumber) IN ({', '.join(['(%s, %s)'] * (len(id_and_version_pairs)//2))});
         """
         try:
@@ -390,28 +369,42 @@ def construct_distribution_section_for_files(files_attached_to_dataset: List[Fil
                 query,
                 (ids_of_files + id_and_version_pairs),
             )
-            file_md5s = cs.fetch_pandas_all()
+            file_md5_and_types = cs.fetch_pandas_all()
         finally:
             cs.close()
 
     for file in files_attached_to_dataset:
         file: File = file
-        if file.file_handle and file.file_handle.content_md5:
-            file_md5 = file.file_handle.content_md5
-        elif not file_md5s.empty and int(file.id.replace("syn", "")) in file_md5s["ID"].values:
-            file_md5 = file_md5s.loc[file_md5s["ID"] == int(
+        if not file_md5_and_types.empty and int(file.id.replace("syn", "")) in file_md5_and_types["ID"].values:
+            file_md5 = file_md5_and_types.loc[file_md5_and_types["ID"] == int(
                 file.id.replace("syn", "")), "CONTENTMD5"].values[0]
+            
+            file_content_type = file_md5_and_types.loc[file_md5_and_types["ID"] == int(
+                file.id.replace("syn", "")), "CONTENT_TYPE"].values[0]
         else:
             file_md5 = "unknown_md5"
+
+        if not file_content_type or file_content_type == "NOT_SET":
+            if file.file_handle and file.file_handle.file_name:
+                file_content_type = mimetypes.guess_type(
+                    file.file_handle.file_name, strict=False)[0]
+            else:
+                file_content_type = mimetypes.guess_type(
+                    file.name, strict=False)[0]
+                
+            if not file_content_type:
+                # For binary documents without a specific or known subtype, application/octet-stream should be used.
+                # Source: https://developer.mozilla.org/en-US/docs/Web/HTTP/Guides/MIME_types
+                file_content_type = "application/octet-stream"
 
         distribution_files.append(
             {
                 "@type": "FileObject",
                 "@id": f"{file.id}.{file.version_number}",
                 "name": f"{file.name}",
-                "description": f"Data file associated with {file.name}",
+                "description": file.description if file.description else f"Data file associated with {file.name}",
                 "contentUrl": f"https://www.synapse.org/Synapse:{file.id}.{file.version_number}",
-                "encodingFormat": "application/json",
+                "encodingFormat": file_content_type,
                 "md5": file_md5,
                 "sha256": "unknown",
             }
@@ -689,8 +682,11 @@ def execute_push_to_synapse(push_to_synapse: bool, dataset: Entity, dataset_id: 
             _rest_call_replacement, authenticated_syn_client)
         existing_row = authenticated_syn_client.tableQuery(
             query=f"SELECT * FROM {SYNAPSE_TABLE_FOR_CROISSANT_LINKS} WHERE dataset = '{dataset_id}' AND dataset_version = {dataset_version} AND dataset_collection = '{dataset_collection}'", resultsAs="csv")
-        existing_row_df = existing_row.asDataFrame()
-        os.remove(existing_row.filepath)
+
+        try:
+            existing_row_df = existing_row.asDataFrame()
+        finally:
+            os.remove(existing_row.filepath)
         if not existing_row_df.empty and existing_row_df["croissant_file_s3_object"].values[0] == s3_url:
             otel_logger.info(
                 f"Croissant file link already exists in Synapse table {SYNAPSE_TABLE_FOR_CROISSANT_LINKS}. Skipping.")
@@ -1148,14 +1144,38 @@ def dataset_to_croissant() -> None:
                 "name": f"{dataset.name}",
                 "description": dataset.description if hasattr(dataset, "description") and dataset.description else f"Dataset for {dataset.name}",
                 "url": f"https://www.synapse.org/Synapse:{dataset_id}.{dataset_version}",
-                "citation": "unknown_citation",
                 "datePublished": dataset.modifiedOn,
                 "license": dataset.license[0] if hasattr(dataset, "license") else "unknown_license",
                 "version": dataset_version,
                 "dct:conformsTo": "http://mlcommons.org/croissant/1.0",
                 "distribution": distribution_files,
                 "recordSet": record_set,
+                # https://github.com/nf-osi/nf-metadata-dictionary/blob/main/registered-json-schemas/PortalDataset.json
+                # These fields are derived from: https://raw.githubusercontent.com/nf-osi/nf-metadata-dictionary/refs/heads/main/registered-json-schemas/PortalDataset.json
+                # If a more specific schema is needed, then we can add a mapping for the dataset to point to the schema and pull these in dynamically.
+                "accessType": dataset.accessType[0] if hasattr(dataset, "accessType") else None,
+                "alternateName": dataset.alternateName[0] if hasattr(dataset, "alternateName") else None,
+                "citation": dataset.citation[0] if hasattr(dataset, "citation") else None,
+                "conditionsOfAccess": dataset.conditionsOfAccess[0] if hasattr(dataset, "conditionsOfAccess") else None,
+                "countryOfOrigin": dataset.countryOfOrigin if hasattr(dataset, "countryOfOrigin") else None,
+                "dataType": dataset.dataType if hasattr(dataset, "dataType") else None,
+                "dataUseModifiers": dataset.dataUseModifiers if hasattr(dataset, "dataUseModifiers") else None,
+                "diseaseFocus": dataset.diseaseFocus if hasattr(dataset, "diseaseFocus") else None,
+                "funder": dataset.funder if hasattr(dataset, "funder") else None,
+                "individualCount": dataset.individualCount[0] if hasattr(dataset, "individualCount") else None,
+                "keywords": dataset.keywords if hasattr(dataset, "keywords") else None,
+                "manifestation": dataset.manifestation if hasattr(dataset, "manifestation") else None,
+                "measurementTechnique": dataset.measurementTechnique if hasattr(dataset, "measurementTechnique") else None,
+                "series": dataset.series[0] if hasattr(dataset, "series") else None,
+                "species": dataset.species if hasattr(dataset, "species") else None,
+                "specimenCount": dataset.specimenCount[0] if hasattr(dataset, "specimenCount") else None,
+                "studyId": dataset.studyId[0] if hasattr(dataset, "studyId") else None,
+                "subject": dataset.subject if hasattr(dataset, "subject") else None,
+                "title": dataset.title[0] if hasattr(dataset, "title") else None,
+                "visualizeDataOn": dataset.visualizeDataOn if hasattr(dataset, "visualizeDataOn") else None,
+                "yearProcessed": dataset.yearProcessed[0] if hasattr(dataset, "yearProcessed") else None
             }
+            delete_none_keys(croissant_file)
 
             # The logic to push the file to S3 and push to Synapse is occurring within
             # the same DAG task is to prevent any issues with the large amount of
