@@ -378,7 +378,7 @@ def construct_distribution_section_for_files(files_attached_to_dataset: List[Fil
         if not file_md5_and_types.empty and int(file.id.replace("syn", "")) in file_md5_and_types["ID"].values:
             file_md5 = file_md5_and_types.loc[file_md5_and_types["ID"] == int(
                 file.id.replace("syn", "")), "CONTENTMD5"].values[0]
-            
+
             file_content_type = file_md5_and_types.loc[file_md5_and_types["ID"] == int(
                 file.id.replace("syn", "")), "CONTENT_TYPE"].values[0]
         else:
@@ -391,7 +391,7 @@ def construct_distribution_section_for_files(files_attached_to_dataset: List[Fil
             else:
                 file_content_type = mimetypes.guess_type(
                     file.name, strict=False)[0]
-                
+
             if not file_content_type:
                 # For binary documents without a specific or known subtype, application/octet-stream should be used.
                 # Source: https://developer.mozilla.org/en-US/docs/Web/HTTP/Guides/MIME_types
@@ -1148,8 +1148,6 @@ def dataset_to_croissant() -> None:
                 "license": dataset.license[0] if hasattr(dataset, "license") else "unknown_license",
                 "version": dataset_version,
                 "dct:conformsTo": "http://mlcommons.org/croissant/1.0",
-                "distribution": distribution_files,
-                "recordSet": record_set,
                 # https://github.com/nf-osi/nf-metadata-dictionary/blob/main/registered-json-schemas/PortalDataset.json
                 # These fields are derived from: https://raw.githubusercontent.com/nf-osi/nf-metadata-dictionary/refs/heads/main/registered-json-schemas/PortalDataset.json
                 # If a more specific schema is needed, then we can add a mapping for the dataset to point to the schema and pull these in dynamically.
@@ -1173,7 +1171,9 @@ def dataset_to_croissant() -> None:
                 "subject": dataset.subject if hasattr(dataset, "subject") else None,
                 "title": dataset.title[0] if hasattr(dataset, "title") else None,
                 "visualizeDataOn": dataset.visualizeDataOn if hasattr(dataset, "visualizeDataOn") else None,
-                "yearProcessed": dataset.yearProcessed[0] if hasattr(dataset, "yearProcessed") else None
+                "yearProcessed": dataset.yearProcessed[0] if hasattr(dataset, "yearProcessed") else None,
+                "distribution": distribution_files,
+                "recordSet": record_set,
             }
             delete_none_keys(croissant_file)
 
