@@ -53,7 +53,7 @@ def resolve_dag_config(challenge_name: str, dag_params: dict, config: dict) -> d
             "start_date": datetime(2024, 4, 9),
             "catchup": False,
             "default_args": {"retries": 2},
-            "tags": "nextflow_tower",
+            "tags": ["nextflow_tower"],
             "params": dag_params,
         }
 
