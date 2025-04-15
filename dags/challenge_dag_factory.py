@@ -37,25 +37,33 @@ def resolve_dag_config(challenge_name: str, dag_params: dict, config: dict) -> d
     Returns:
         dict: The resolved DAG configuration.
     """
-    if 'dag_config' in config and config['dag_config']:
-        custom_config = config['dag_config'].copy()
-        if 'start_date' in custom_config:
-            # Convert a start_date provided as an ISO format string to a datetime object.
-            custom_config['start_date'] = datetime.fromisoformat(custom_config['start_date'])
-        # Always ensure that task parameters are included.
-        custom_config['params'] = dag_params
-        if 'tags' not in custom_config:
-            custom_config['tags'] = [challenge_name]
-        return custom_config
-    else:
-        return {
-            "schedule_interval": "*/1 * * * *",
-            "start_date": datetime(2024, 4, 9),
-            "catchup": False,
-            "default_args": {"retries": 2},
-            "tags": ["nextflow_tower"],
-            "params": dag_params,
-        }
+    
+    # Start with default configuration
+    dag_config = {
+        "schedule_interval": "*/1 * * * *",
+        "start_date": datetime(2024, 4, 9),
+        "catchup": False,
+        "default_args": {"retries": 2},
+        "tags": ["nextflow_tower"],
+        "params": dag_params,
+    }
+
+    # Update with any custom configuration if provided
+    if config.get('dag_config'):
+        dag_config.update(config['dag_config'])
+        
+        # Ensure start_date is a datetime object if provided
+        if 'start_date' in dag_config and isinstance(dag_config['start_date'], str):
+            dag_config['start_date'] = datetime.fromisoformat(dag_config['start_date'])
+            
+        # Ensure challenge name is in tags
+        if 'tags' in dag_config:
+            if challenge_name not in dag_config['tags']:
+                dag_config['tags'].append(challenge_name)
+        else:
+            dag_config['tags'] = [challenge_name]
+
+    return dag_config
 
 def create_challenge_dag(challenge_name: str, config: dict):
 
