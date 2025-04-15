@@ -58,9 +58,13 @@ def resolve_dag_config(challenge_name: str, dag_params: dict, config: dict) -> d
         }
 
 def create_challenge_dag(challenge_name: str, config: dict):
+
+    @task
+    def generate_run_uuid():
+        return str(uuid.uuid4())
+    
     # Generate a new uuid if none is provided.
-    if not config.get("uuid"):
-        config["uuid"] = str(uuid.uuid4())
+    run_uuid = generate_run_uuid()
 
     # Define parameters for the DAG, including new per-challenge settings.
     dag_params = {
@@ -73,7 +77,6 @@ def create_challenge_dag(challenge_name: str, config: dict):
         "tower_compute_env_type": Param(config["tower_compute_env_type"], type="string"),
         "bucket_name": Param(config["bucket_name"], type="string"),
         "key": Param(config["key"], type="string"),
-        "uuid": Param(config["uuid"], type="string"),
     }
 
     # Resolve the complete DAG configuration.
@@ -109,7 +112,7 @@ def create_challenge_dag(challenge_name: str, config: dict):
             pass
 
         @task
-        def stage_submissions_manifest(submissions, **context):
+        def stage_submissions_manifest(submissions, run_uuid, **context):
             # Use per-challenge bucket and key settings from the DAG params.
             bucket_name = context["params"]["bucket_name"]
             key_root = context["params"]["key"]
@@ -121,7 +124,6 @@ def create_challenge_dag(challenge_name: str, config: dict):
             df = pd.DataFrame({"submission_id": submissions})
             csv_file = "submissions.csv"
             df.to_csv(csv_file, index=False)
-            run_uuid = context["params"]["uuid"]
             # Create a key path that incorporates the unique run identifier.
             s3_key = f"{key_root}/{run_uuid}/{csv_file}"
             # Upload the file.
@@ -131,9 +133,8 @@ def create_challenge_dag(challenge_name: str, config: dict):
             return f"s3://{bucket_name}/{s3_key}"
 
         @task
-        def launch_workflow(manifest_path, **context):
+        def launch_workflow(manifest_path, run_uuid,**context):
             hook = NextflowTowerHook(context["params"]["tower_conn_id"])
-            run_uuid = context["params"]["uuid"]
             info = LaunchInfo(
                 run_name=f"{challenge_name}-evaluation-{run_uuid}",
                 pipeline="https://github.com/Sage-Bionetworks-Workflows/nf-synapse-challenge",
@@ -156,8 +157,8 @@ def create_challenge_dag(challenge_name: str, config: dict):
         submissions = get_new_submissions()
         submissions_updated = update_submission_statuses(submissions)
         stop = stop_dag()
-        manifest_path = stage_submissions_manifest(submissions)
-        run_id = launch_workflow(manifest_path)
+        manifest_path = stage_submissions_manifest(submissions, run_uuid)
+        run_id = launch_workflow(manifest_path, run_uuid)
         monitor = monitor_workflow(run_id)
 
         submissions >> submissions_updated >> [stop, manifest_path]
