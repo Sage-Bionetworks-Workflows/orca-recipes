@@ -16,9 +16,9 @@ from orca.services.synapse import SynapseHook
 CONFIG_FILE = os.path.join(os.path.dirname(__file__), "challenge_configs.yaml")
 
 
-def load_challenge_configs():
+def load_challenge_configs(config_file=CONFIG_FILE):
     """Load challenge configurations from a YAML file."""
-    with open(CONFIG_FILE, "r") as f:
+    with open(config_file, "r") as f:
         return yaml.safe_load(f)
 
 def resolve_dag_config(challenge_name: str, dag_params: dict, config: dict) -> dict:
