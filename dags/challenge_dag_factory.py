@@ -130,18 +130,35 @@ def create_challenge_dag(challenge_name: str, config: dict):
             )
             # Create a CSV manifest from submissions.
             df = pd.DataFrame({"submission_id": submissions})
-            csv_file = "submissions.csv"
-            df.to_csv(csv_file, index=False)
-            # Create a key path that incorporates the unique run identifier.
-            s3_key = f"{key_root}/{run_uuid}/{csv_file}"
-            # Upload the file.
-            s3_hook.load_file(filename=csv_file, key=s3_key, bucket_name=bucket_name)
-            os.remove(csv_file)
+
+            # Create a text buffer to hold the CSV data in-memory
+            text_buffer = io.StringIO()
+
+            # Write the data into the buffer
+            df.to_csv(text_buffer, index=False)
+
+            # Get the data from the buffer
+            submissions_content = text_buffer.getvalue()
+
+            # Encode the data to bytes for the s3 upload
+            submissions_bytes = submissions_content.getvalue().encode("utf-8")
+            
+            # Create a bytes bufferobject
+            bytes_buffer = io.BytesIO(submissions_bytes)
+
+            # Create a key path that incorporates the unique run identifier
+            s3_key = f"{key_root}/{run_uuid}/submissions.csv"
+
+            # Upload the file
+            s3_hook.load_file_obj(file_obj=bytes_buffer,
+                                  key=s3_key,
+                                  bucket_name=bucket_name)
+
             # Return S3 URI.
             return f"s3://{bucket_name}/{s3_key}"
 
         @task
-        def launch_workflow(manifest_path, run_uuid,**context):
+        def launch_workflow(manifest_path, run_uuid, **context):
             hook = NextflowTowerHook(context["params"]["tower_conn_id"])
             info = LaunchInfo(
                 run_name=f"{challenge_name}-evaluation-{run_uuid}",
