@@ -1,3 +1,4 @@
+import io
 import os
 import uuid
 from datetime import datetime
@@ -141,7 +142,7 @@ def create_challenge_dag(challenge_name: str, config: dict):
             submissions_content = text_buffer.getvalue()
 
             # Encode the data to bytes for the s3 upload
-            submissions_bytes = submissions_content.getvalue().encode("utf-8")
+            submissions_bytes = submissions_content.encode("utf-8")
             
             # Create a bytes bufferobject
             bytes_buffer = io.BytesIO(submissions_bytes)
@@ -152,7 +153,8 @@ def create_challenge_dag(challenge_name: str, config: dict):
             # Upload the file
             s3_hook.load_file_obj(file_obj=bytes_buffer,
                                   key=s3_key,
-                                  bucket_name=bucket_name)
+                                  bucket_name=bucket_name,
+                                  replace=True)
 
             # Return S3 URI.
             return f"s3://{bucket_name}/{s3_key}"
