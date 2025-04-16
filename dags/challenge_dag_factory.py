@@ -1,5 +1,5 @@
 import io
-import os
+import requests
 import uuid
 from datetime import datetime
 import yaml
@@ -14,13 +14,21 @@ from orca.services.nextflowtower.models import LaunchInfo
 from orca.services.synapse import SynapseHook
 
 # Define the path to your challenge configuration file.
-CONFIG_FILE = os.path.join(os.path.dirname(__file__), "challenge_configs.yaml")
+CONFIG_URL = "https://raw.githubusercontent.com/Sage-Bionetworks-Workflows/orca-recipes/dpe-1266-olfactory-challenge/dags/challenge_configs.yaml"
 
 
-def load_challenge_configs(config_file=CONFIG_FILE):
-    """Load challenge configurations from a YAML file."""
-    with open(config_file, "r") as f:
-        return yaml.safe_load(f)
+def load_challenge_configs(url=CONFIG_URL):
+    """Load challenge configurations from a raw GitHub URL."""
+
+    response = requests.get(url)
+
+    if not response.ok:
+            raise RuntimeError(
+                f"Failed to fetch challenge configs... "
+                f"Status code: {response.status_code}, reason: {response.reason}"
+            )
+
+    return yaml.safe_load(response.text)
 
 def resolve_dag_config(challenge_name: str, dag_params: dict, config: dict) -> dict:
     """
