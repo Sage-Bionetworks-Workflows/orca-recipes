@@ -170,13 +170,13 @@ def create_challenge_dag(challenge_name: str, config: dict):
                 profiles=["tower", context["params"]["challenge_profile"]],
                 params={"manifest": manifest_path},
             )
-            run_id = hook.ops.launch_workflow(info, context["params"]["tower_compute_env_type"])
-            return run_id
+            tower_run_id = hook.ops.launch_workflow(info, context["params"]["tower_compute_env_type"])
+            return tower_run_id
 
         @task.sensor(poke_interval=60, timeout=604800, mode="reschedule")
-        def monitor_workflow(run_id, **context):
+        def monitor_workflow(tower_run_id, **context):
             hook = NextflowTowerHook(context["params"]["tower_conn_id"])
-            workflow = hook.ops.get_workflow(run_id)
+            workflow = hook.ops.get_workflow(tower_run_id)
             print(f"Current workflow state: {workflow.status.state.value}")
             return workflow.status.is_done
 
@@ -185,11 +185,11 @@ def create_challenge_dag(challenge_name: str, config: dict):
         submissions_updated = update_submission_statuses(submissions)
         stop = stop_dag()
         manifest_path = stage_submissions_manifest(submissions, run_uuid)
-        run_id = launch_workflow(manifest_path, run_uuid)
-        monitor = monitor_workflow(run_id)
+        tower_run_id = launch_workflow(manifest_path, run_uuid)
+        monitor = monitor_workflow(tower_run_id)
 
         submissions >> submissions_updated >> [stop, manifest_path]
-        manifest_path >> run_id >> monitor
+        manifest_path >> tower_run_id >> monitor
 
     return challenge_dag()
 
