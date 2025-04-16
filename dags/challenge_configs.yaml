@@ -47,7 +47,7 @@ simple2:
   bucket_name: "example-dev-project-tower-scratch"
   key: "work"
   dag_config:
-    schedule_interval: "*/1 * * * *"
+    schedule_interval: "*/5 * * * *"
     start_date: "2024-04-09T00:00:00"  # ISO-format date string; will be converted in the DAG factory
     catchup: false
     default_args:
