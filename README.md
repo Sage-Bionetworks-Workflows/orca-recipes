@@ -84,8 +84,10 @@ and the DAG factory pattern in this repository.
 
 ### TL;DR
 
-To add a DAG for your challenge, make a pull request introducing a profile to the `challenge_configs.yaml` file with the parameters listed in (TODO LINK).
-See below for a template you can follow. Modify everything in `<>` and remove the `<>` when complete:
+To add a DAG for your challenge, make a pull request introducing a profile to the `challenge_configs.yaml` file with the parameters listed in [Creating Your Challenge DAG Config](#creating-your-challenge-dag-config).
+See below for a template you can follow.
+
+Modify everything in `<>` and remove the `<>` when complete:
 
 ```
 <my-challenge>:
@@ -141,57 +143,31 @@ See below for a list of parameters and their descriptions:
 
 #### Parameters
 
-1. synapse_conn_id: The Airflow connection ID used to connect to the Synapse service. This connection is utilized when fetching submission data and updating statuses. **Use `SYNAPSE_ORCA_SERVICE_ACCOUNT_CONN`**.
-1. aws_conn_id: The connection ID for AWS. This enables the DAG to upload CSV files (manifests) to an S3 bucket via the S3 hook. **Use `AWS_TOWER_PROD_S3_CONN`**.
-1. revision: Specifies the version or Git commit revision of the `main` branch in the `nf-synapse-challenge` repository (which houses your workflow). This ensures that the correct version of your workflow is deployed when the DAG triggers a run. **Use `main` or a specific commit SHA which points to the desired version**.
-1. challenge_profile: Identifies the Nextflow Tower challenge profile you contributed in `nextflow.config` of the `nf-synapse-challenge` repository. This parameter customizes the execution environment for the workflow.
-1. tower_conn_id: The Airflow connection ID for the Nextflow Tower (Seqera) workspace used when launching and monitoring the workflow execution.
-1. tower_view_id: The identifier used to query the submission view on Synapse. It tells the DAG, to _tell the workflow_, where to look for submissions to fetch and process.
-1. tower_compute_env_type: Indicates the compute environment (for example, "spot") to be used when launching the workflow. **Use `spot` for challenges that will take less computational time to evaluate the submissions. Use `on-demand` otherwise**.
-1. bucket_name: The S3 bucket where the challenge-related files (such as CSV manifests) will be stored.
-1. key: The S3 key prefix (or folder path) under which files are uploaded. At runtime, a unique run-specific UUID is appended to this key to ensure that files are uniquely identified and organized. Since this folder
-   path lives in a scratch bucket, you can leverage one of the folders that are configured to delete stale objects based on a certain number of days ([see here](https://sagebionetworks.jira.com/wiki/spaces/WF/pages/2191556616/Getting+Started+with+Nextflow+and+Seqera+Platform#Tower-Project-Breakdown) for more details). This will affect what value you put here. For example, **if you would like for these workflow outputs to live for 10 days, use `10days/my_project_folder`**.
-1. dag_config: A nested dictionary containing additional DAG scheduling and runtime parameters:
-        schedule_interval:
-        A cron expression that determines how frequently the DAG is triggered.
+1. `synapse_conn_id`: The Airflow connection ID used to connect to the Synapse service. This connection is utilized when fetching submission data and updating statuses. **Use `SYNAPSE_ORCA_SERVICE_ACCOUNT_CONN`**.  
+1. `aws_conn_id`: The connection ID for AWS. This enables the DAG to upload CSV files (manifests) to an S3 bucket via the S3 hook. **Use `AWS_TOWER_PROD_S3_CONN`**.  
+1. `revision`: Specifies the version or Git commit revision of the `main` branch in the `nf-synapse-challenge` repository (which houses your workflow). This ensures that the correct version of your workflow is deployed when the DAG triggers a run. **Use `main` or a specific commit SHA which points to the desired version**.  
+1. `challenge_profile`: Identifies the Nextflow Tower challenge profile you contributed in `nextflow.config` of the `nf-synapse-challenge` repository. This parameter customizes the execution environment for the workflow.  
+1. `tower_conn_id`: The Airflow connection ID for the Nextflow Tower (Seqera) workspace used when launching and monitoring the workflow execution.  
+1. `tower_view_id`: The identifier used to query the submission view on Synapse. It tells the DAG, to _tell the workflow_, where to look for submissions to fetch and process.  
+1. `tower_compute_env_type`: Indicates the compute environment (for example, `"spot"`) to be used when launching the workflow. **Use `spot` for challenges that will take less computational time to evaluate the submissions. Use `on-demand` otherwise**.  
+1. `bucket_name`: The S3 bucket where the challenge-related files (such as CSV manifests) will be stored.  
+1. `key`: The S3 key prefix (or folder path) under which files are uploaded. At runtime, a unique run-specific UUID is appended to this key to ensure that files are uniquely identified and organized. Since this folder path lives in a scratch bucket, you can leverage one of the folders that are configured to delete stale objects based on a certain number of days ([see here](https://sagebionetworks.jira.com/wiki/spaces/WF/pages/2191556616/Getting+Started+with+Nextflow+and+Seqera+Platform#Tower-Project-Breakdown) for more details). This will affect what value you put here. For example, **if you would like for these workflow outputs to live for 10 days, use `10days/my_project_folder`**.  
+1. `dag_config`: A nested dictionary containing additional DAG scheduling and runtime parameters:  
+   * `schedule_interval`: A cron expression that determines how frequently the DAG is triggered.  
+   * `start_date`: An ISO-formatted date string that specifies when the DAG should start running. The DAG factory converts this to a Python datetime object.  
+   * `catchup`: A Boolean flag that indicates whether Airflow should run missed DAG runs (catch up) if the scheduler falls behind.  
+   * `default_args`: Standard Airflow arguments for the DAG. For example, you can set the number of retries for tasks.  
+   * `tags`: A list of tags for categorizing the DAG in the Airflow UI.
 
-        start_date:
-        An ISO-formatted date string that specifies when the DAG should start running. The DAG factory converts this to a Python datetime object.
 
-        catchup:
-        A Boolean flag that indicates whether Airflow should run missed DAG runs (catch up) if the scheduler falls behind.
-
-        default_args:
-        Standard Airflow arguments for the DAG. For example, you can set the number of retries for tasks.
-
-        tags:
-        A list of tags for categorizing the DAG in the Airflow UI.
-
-How It All Works Together
-
-    Configuration Loading:
-    The DAG factory reads challenge_configs.yaml to load the configuration for each challenge.
-
-    DAG Creation:
-    For each challenge configuration, the factory creates a new DAG with the provided connection IDs, file upload settings, and scheduling parameters. Dynamic values, such as a unique run UUID, are generated at runtime.
-
-    Task Dependencies:
-    The created DAG consists of several tasks (submission fetching, status updating, CSV generation, workflow launching, and monitoring) that depend on each other. The unique run UUID is used to tag outputs (like the S3 key) to ensure that each run is isolated.
-
-Contributing a New Challenge DAG
+### Contributing a New Challenge DAG
 
 To contribute a new challenge:
 
-    Add/Update Configuration:
-    Create a new section in challenge_configs.yaml with a unique challenge key. Provide all required parameters as described above.
-
-    Validate the Parameters:
-    Make sure all connection IDs, S3 bucket names, and the revision match your environment and the workflow you intend to run.
-
-    Test in Your Environment:
-    Validate the new configuration by running your DAG in a local or staging environment before deploying to production.
-
-    Submit a Pull Request:
-    Follow the project's contribution guidelines to submit your changes.
+1. **Add/Update Configuration**: Create a new section in `challenge_configs.yaml` with a unique challenge key. Provide all required parameters as described above.
+1. **Validate the Parameters**: Make sure all connection IDs, S3 bucket names, and the revision match your environment and the workflow you intend to run.
+1. **Submit a Pull Request**: Make a pull request to submit your changes. A repository maintainer will do a revision and work with you in the next step.
+1. **Test in Your Environment**: Validate the new configuration by running your DAG in a codespace environment before merging and deploying to production.
+1. **Merge your Pull Request**: Once your changes have been tested, your PR is ready for merge and a maintainer will ensure your DAG is created and running in Airflow production!
 
 By following these guidelines, you will successfully contribute a deployable challenge DAG customized for your needs.
