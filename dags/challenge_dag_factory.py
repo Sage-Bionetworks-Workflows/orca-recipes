@@ -14,7 +14,7 @@ from orca.services.nextflowtower.models import LaunchInfo
 from orca.services.synapse import SynapseHook
 
 # Define the path to your challenge configuration file.
-CONFIG_URL = "https://raw.githubusercontent.com/Sage-Bionetworks-Workflows/orca-recipes/dpe-1266-olfactory-challenge/dags/challenge_configs.yaml"
+CONFIG_URL = "https://raw.githubusercontent.com/Sage-Bionetworks-Workflows/orca-recipes/main/dags/challenge_configs.yaml"
 
 
 def load_challenge_configs(url=CONFIG_URL):
