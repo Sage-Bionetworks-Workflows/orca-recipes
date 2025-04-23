@@ -25,7 +25,7 @@ olfactory-2025:
   tower_conn_id: "OLFACTORY_CHALLENGE_PROJECT_TOWER_CONN"
   tower_view_id: "syn66279193"
   tower_compute_env_type: "spot"
-  bucket_name: "TODO"
+  bucket_name: "olfactory-challenge-project-tower-scratch"
   key: "10days/olfactory_challenge"
   dag_config:
     schedule_interval: "*/1 * * * *"
