@@ -91,8 +91,8 @@ Modify everything in `<>` and remove the `<>` when complete:
 
 ```
 <my-challenge>:
-  synapse_conn_id: "SYNAPSE_ORCA_SERVICE_ACCOUNT_CONN"
-  aws_conn_id: "AWS_TOWER_PROD_S3_CONN"
+  synapse_conn_id: "<MY_SYNAPSE_CONN_ID>"
+  aws_conn_id: "<MY_AWS_CONN_ID>"
   revision: "<1a2b3c4d>"
   challenge_profile: "<my_challenge_profile>"
   tower_conn_id: "<MY_CHALLENGE_PROJECT_TOWER_CONN>"
@@ -108,6 +108,15 @@ Modify everything in `<>` and remove the `<>` when complete:
       retries: 2
     tags:
       - "nextflow_tower"
+```
+
+Note that while `synapse_conn_id` and `aws_conn_id` are customizable, we do have connection IDs already in-place
+for you to use that will connect you to Synapse (through DPE's ORCA Service Account) and to AWS. But feel free to swap
+these for your own if they do not suit your needs.
+
+```
+synapse_conn_id: "SYNAPSE_ORCA_SERVICE_ACCOUNT_CONN"
+aws_conn_id: "AWS_TOWER_PROD_S3_CONN"
 ```
 
 ----
@@ -146,11 +155,11 @@ See below for a list of parameters and their descriptions:
 1. `synapse_conn_id`: The Airflow connection ID used to connect to the Synapse service. This connection is utilized when fetching submission data and updating statuses. **Use `SYNAPSE_ORCA_SERVICE_ACCOUNT_CONN`**.  
 1. `aws_conn_id`: The connection ID for AWS. This enables the DAG to upload CSV files (manifests) to an S3 bucket via the S3 hook. **Use `AWS_TOWER_PROD_S3_CONN`**.  
 1. `revision`: Specifies the version or Git commit revision of the `main` branch in the `nf-synapse-challenge` repository (which houses your workflow). This ensures that the correct version of your workflow is deployed when the DAG triggers a run. **Use `main` or a specific commit SHA which points to the desired version**.  
-1. `challenge_profile`: Identifies the Nextflow Tower challenge profile you contributed in `nextflow.config` of the `nf-synapse-challenge` repository. This parameter customizes the execution environment for the workflow.  
-1. `tower_conn_id`: This is the connection URI to the Seqera tower workspace for your challenge. This is needed so your challenge DAG can execute the workflow runs in your desired Seqera workspace.
+1. `challenge_profile`: Identifies the Nextflow Tower challenge profile you contributed in `nextflow.config` of the `nf-synapse-challenge` repository. This parameter customizes the execution environment for the workflow. See example of a previous profile contribution [here](https://github.com/Sage-Bionetworks-Workflows/nf-synapse-challenge/pull/47). 
+1. `tower_conn_id`: The Airflow connection ID to connection URI of the Seqera tower workspace for your challenge. This is needed so your challenge DAG can execute the workflow runs in your desired Seqera workspace.
 1. `tower_view_id`: The identifier used to query the submission view on Synapse. It tells the DAG, to _tell the workflow_, where to look for submissions to fetch and process.  
 1. `tower_compute_env_type`: Indicates the compute environment (for example, `"spot"`) to be used when launching the workflow. **Use `spot` for challenges that will take less computational time to evaluate the submissions. Use `on-demand` otherwise**.  
-1. `bucket_name`: The S3 bucket where the challenge-related files (such as CSV manifests) will be stored.  
+1. `bucket_name`: The S3 bucket where the challenge-related files (such as CSV manifests) will be stored. Note that the Seqera Platform workspaces can only access the S3 buckets assigned to them.
 1. `key`: The S3 key prefix (or folder path) under which files are uploaded. At runtime, a unique run-specific UUID is appended to this key to ensure that files are uniquely identified and organized. Since this folder path lives in a scratch bucket, you can leverage one of the folders that are configured to delete stale objects based on a certain number of days ([see here](https://sagebionetworks.jira.com/wiki/spaces/WF/pages/2191556616/Getting+Started+with+Nextflow+and+Seqera+Platform#Tower-Project-Breakdown) for more details). This will affect what value you put here. For example, **if you would like for these workflow outputs to live for 10 days, use `10days/my_project_folder`**.  
 1. `dag_config`: A nested dictionary containing additional DAG scheduling and runtime parameters:  
    * `schedule_interval`: A cron expression that determines how frequently the DAG is triggered.  
