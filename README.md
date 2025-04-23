@@ -77,6 +77,10 @@ to GHCR. In order to accomplish this task:
 
 ## Contributing a Challenge DAG
 
+As part of propping up a new Synapse-hosted challenge, the workflow you choose in [nf-synapse-challenge](https://github.com/Sage-Bionetworks-Workflows/nf-synapse-challenge/tree/main) will need to
+be automated to run for challenge submissions on a rolling basis. For this we leverage Airflow DAGs to perform these
+automated executions of your customized challenge workflow.
+
 This section describes how you can contribute a new challenge DAG by configuring the `challenge_configs.yaml` file
 and the DAG factory pattern in this repository.
 
@@ -122,10 +126,6 @@ aws_conn_id: "AWS_TOWER_PROD_S3_CONN"
 ----
 
 ### Overview
-
-As part of propping up a new Synapse-hosted challenge, the workflow you choose in [nf-synapse-challenge](https://github.com/Sage-Bionetworks-Workflows/nf-synapse-challenge/tree/main) will need to
-be automated to run for challenge submissions on a rolling basis. For this we leverage Airflow DAGs to perform these
-automated executions of your customized challenge workflow.
 
 For introducing a challenge DAG, there are two files that come into play:
 
