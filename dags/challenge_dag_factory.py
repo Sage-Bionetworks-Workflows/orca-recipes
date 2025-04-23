@@ -20,7 +20,7 @@ CONFIG_URL = "https://raw.githubusercontent.com/Sage-Bionetworks-Workflows/orca-
 def load_challenge_configs(url=CONFIG_URL):
     """Load challenge configurations from a raw GitHub URL."""
 
-    response = requests.get(url)
+    response = requests.get(url, timeout=10)
 
     if not response.ok:
             raise RuntimeError(
