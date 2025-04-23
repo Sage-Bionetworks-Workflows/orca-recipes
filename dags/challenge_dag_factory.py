@@ -14,7 +14,7 @@ from orca.services.nextflowtower.models import LaunchInfo
 from orca.services.synapse import SynapseHook
 
 # Define the path to your challenge configuration file.
-CONFIG_URL = "https://raw.githubusercontent.com/Sage-Bionetworks-Workflows/orca-recipes/main/dags/challenge_configs.yaml"
+CONFIG_URL = "https://raw.githubusercontent.com/Sage-Bionetworks-Workflows/orca-recipes/dpe-1266-olfactory-challenge/dags/challenge_configs.yaml"
 
 
 def load_challenge_configs(url=CONFIG_URL):
@@ -76,13 +76,6 @@ def resolve_dag_config(challenge_name: str, dag_params: dict, config: dict) -> d
 
 def create_challenge_dag(challenge_name: str, config: dict):
 
-    @task
-    def generate_run_uuid():
-        return str(uuid.uuid4())
-    
-    # Generate a new uuid if none is provided.
-    run_uuid = generate_run_uuid()
-
     # Define parameters for the DAG, including new per-challenge settings.
     dag_params = {
         "synapse_conn_id": Param(config["synapse_conn_id"], type="string"),
@@ -104,6 +97,11 @@ def create_challenge_dag(challenge_name: str, config: dict):
 
     @dag(dag_id=dag_id, **dag_config)
     def challenge_dag():
+
+        @task
+        def generate_run_uuid():
+            return str(uuid.uuid4())
+
         @task
         def get_new_submissions(**context):
             hook = SynapseHook(context["params"]["synapse_conn_id"])
@@ -190,6 +188,7 @@ def create_challenge_dag(challenge_name: str, config: dict):
 
         # Set up task dependencies.
         submissions = get_new_submissions()
+        run_uuid = generate_run_uuid()
         submissions_updated = update_submission_statuses(submissions)
         stop = stop_dag()
         manifest_path = stage_submissions_manifest(submissions, run_uuid)
