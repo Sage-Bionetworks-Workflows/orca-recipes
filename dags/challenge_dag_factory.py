@@ -1,4 +1,5 @@
 import io
+import os
 import requests
 import uuid
 from datetime import datetime
@@ -105,12 +106,11 @@ def create_challenge_dag(challenge_name: str, config: dict):
         @task(do_xcom_push=False)
         def verify_bucket_name(**context):
             hook = NextflowTowerHook(context["params"]["tower_conn_id"])
-            workspace = hook.ops.workspace
+            workspace = os.path.basename(hook.ops.workspace)
+
             bucket_name = context["params"]["bucket_name"].lower()
-            print(bucket_name)
             expected_bucket_names = [f"{workspace}{suffix}".lower() for suffix in ["-tower-scratch", "-tower-bucket"]]
-            print(expected_bucket_names)
-            print('----')
+
             if bucket_name not in expected_bucket_names:
                 raise ValueError(f"Invalid bucket name: {bucket_name}. Expected one of {expected_bucket_names}")
 
