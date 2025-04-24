@@ -103,6 +103,16 @@ def create_challenge_dag(challenge_name: str, config: dict):
             return str(uuid.uuid4())
 
         @task
+        def verify_bucket_name(**context):
+            hook = NextflowTowerHook(context["params"]["tower_conn_id"])
+            workspace = hook.ops.workspace
+            bucket_name = context["params"]["bucket_name"]
+
+            expected_bucket_names = [f"{workspace}{suffix}" for suffix in ["-tower-scratch", "-tower-bucket"]]
+            if bucket_name not in expected_bucket_names:
+                raise ValueError(f"Invalid bucket name: {bucket_name}. Expected one of {expected_bucket_names}")
+
+        @task
         def get_new_submissions(**context):
             hook = SynapseHook(context["params"]["synapse_conn_id"])
             submissions = hook.ops.get_submissions_with_status(
@@ -189,6 +199,7 @@ def create_challenge_dag(challenge_name: str, config: dict):
         # Set up task dependencies.
         submissions = get_new_submissions()
         run_uuid = generate_run_uuid()
+        verify_bucket_name()
         submissions_updated = update_submission_statuses(submissions)
         stop = stop_dag()
         manifest_path = stage_submissions_manifest(submissions, run_uuid)
