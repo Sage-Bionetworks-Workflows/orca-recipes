@@ -102,7 +102,7 @@ def create_challenge_dag(challenge_name: str, config: dict):
         def generate_run_uuid():
             return str(uuid.uuid4())
 
-        @task
+        @task(do_xcom_push=False)
         def verify_bucket_name(**context):
             hook = NextflowTowerHook(context["params"]["tower_conn_id"])
             workspace = hook.ops.workspace
@@ -196,17 +196,18 @@ def create_challenge_dag(challenge_name: str, config: dict):
             print(f"Current workflow state: {workflow.status.state.value}")
             return workflow.status.is_done
 
-        # Set up task dependencies.
+        # Set up task dependencies and declare the order of execution
+        verify = verify_bucket_name()
         submissions = get_new_submissions()
         run_uuid = generate_run_uuid()
-        verify_bucket_name()
         submissions_updated = update_submission_statuses(submissions)
         stop = stop_dag()
         manifest_path = stage_submissions_manifest(submissions, run_uuid)
         tower_run_id = launch_workflow(manifest_path, run_uuid)
         monitor = monitor_workflow(tower_run_id)
 
-        submissions >> submissions_updated >> [stop, manifest_path]
+        # Fail fast if ``bucket_name`` is invalid
+        verify >> submissions >> submissions_updated >> [stop, manifest_path]
         manifest_path >> tower_run_id >> monitor
 
     return challenge_dag()
