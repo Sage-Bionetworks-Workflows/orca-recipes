@@ -200,8 +200,8 @@ def create_challenge_dag(challenge_name: str, config: dict):
 
         # Set up task dependencies and declare the order of execution
         verify = verify_bucket_name()
-        submissions = get_new_submissions()
         run_uuid = generate_run_uuid()
+        submissions = get_new_submissions()
         submissions_updated = update_submission_statuses(submissions)
         stop = stop_dag()
         manifest_path = stage_submissions_manifest(submissions, run_uuid)
