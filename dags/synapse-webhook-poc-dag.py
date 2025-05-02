@@ -10,7 +10,7 @@ from typing import List, Dict, Any, Union
 
 from airflow.decorators import dag, task
 from airflow.models.param import Param
-from airflow.providers.amazon.aws.hooks.sqs import SQSHook
+from airflow.providers.amazon.aws.hooks.sqs import SqsHook
 
 from orca.services.synapse import SynapseHook
 
@@ -73,7 +73,7 @@ def sqs_polling_synapse_notification_dag():
         Poll the SQS queue for messages.
         This task will return only when messages are found or when it times out.
         """
-        sqs_hook = SQSHook(aws_conn_id=context["params"]["aws_conn_id"])
+        sqs_hook = SqsHook(aws_conn_id=context["params"]["aws_conn_id"])
         queue_url = context["params"]["sqs_queue_url"]
         max_messages = context["params"]["max_messages"]
         wait_time_seconds = context["params"]["wait_time_seconds"]
