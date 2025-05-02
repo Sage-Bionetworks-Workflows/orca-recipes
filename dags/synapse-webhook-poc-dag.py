@@ -95,7 +95,7 @@ def sqs_polling_synapse_notification_dag():
         )
 
         if "Messages" in response and len(response["Messages"]) > 0:
-            # Delete messages from the queue
+            # Consume messages from the queue
             entries = [
                 {"Id": msg["MessageId"], "ReceiptHandle": msg["ReceiptHandle"]}
                 for msg in response["Messages"]
