@@ -59,7 +59,8 @@ dag_params = {
 
 
 @dag(
-    schedule_interval="*/15 * * * *",  # Run every 15 minutes
+    # Disabled schedule for testing
+    # schedule_interval="*/15 * * * *",  # Run every 15 minutes
     start_date=datetime(2023, 1, 1),
     catchup=False,
     default_args={
@@ -95,7 +96,7 @@ def sqs_polling_synapse_notification_dag():
         )
 
         if "Messages" in response and len(response["Messages"]) > 0:
-            # Consume messages from the queue
+            # Delete messages from the queue
             entries = [
                 {"Id": msg["MessageId"], "ReceiptHandle": msg["ReceiptHandle"]}
                 for msg in response["Messages"]
