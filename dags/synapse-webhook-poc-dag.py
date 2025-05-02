@@ -19,6 +19,11 @@ dag_params = {
     "aws_conn_id": Param(
         "AWS_DNT_DEV_SQS_CONN", type="string", description="AWS connection ID to use"
     ),
+    "region_name": Param(
+        "us-east-1",
+        type="string",
+        description="AWS region where the SQS queue is located",
+    ),
     "sqs_queue_url": Param(
         "https://sqs.us-east-1.amazonaws.com/631692904429/dev-synapse-sqs-create-queue",
         type="string",
@@ -73,7 +78,10 @@ def sqs_polling_synapse_notification_dag():
         Poll the SQS queue for messages.
         This task will return only when messages are found or when it times out.
         """
-        sqs_hook = SqsHook(aws_conn_id=context["params"]["aws_conn_id"])
+        sqs_hook = SqsHook(
+            aws_conn_id=context["params"]["aws_conn_id"],
+            region_name=context["params"]["region_name"],
+        )
         queue_url = context["params"]["sqs_queue_url"]
         max_messages = context["params"]["max_messages"]
         wait_time_seconds = context["params"]["wait_time_seconds"]
