@@ -5,6 +5,7 @@ This DAG demonstrates polling an SQS queue and sending notifications to Synapse 
 3. Send notifications to Synapse users about the received messages
 """
 
+import json
 from datetime import datetime
 from typing import List, Dict, Any, Union
 
@@ -119,11 +120,15 @@ def sqs_polling_synapse_notification_dag():
 
         processed_messages = []
         for message in messages:
-            # Here you could transform or process the message as needed
-            # For this example, we'll just pass the message body through
+            # Parse the JSON body to extract objectId
+            message_body = json.loads(message["Body"])
+
+            # Create a formatted message with a link to the Synapse entity
+            formatted_message = f"Entity {message_body['objectId']} has been created and can be viewed at https://www.synapse.org/Synapse:{message_body['objectId']}"
+
             processed_message = {
                 "id": message["MessageId"],
-                "body": message["Body"],
+                "body": formatted_message,
             }
 
             # Add any message attributes if they exist
@@ -149,10 +154,8 @@ def sqs_polling_synapse_notification_dag():
 
         # Construct message body from the processed messages
         message_body = "The following messages were received from the SQS queue:\n\n"
-        for i, msg in enumerate(processed_messages, 1):
-            message_body += f"Message {i}:\n"
-            message_body += f"ID: {msg['id']}\n"
-            message_body += f"Body: {msg['body']}\n\n"
+        for _, msg in enumerate(processed_messages, 1):
+            message_body += f"{msg['body']}\n\n"
 
         # Send notification to Synapse users
         hook = SynapseHook(context["params"]["synapse_conn_id"])
