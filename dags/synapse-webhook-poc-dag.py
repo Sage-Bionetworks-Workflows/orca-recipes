@@ -73,11 +73,10 @@ def sqs_polling_synapse_notification_dag():
     DAG that polls an SQS queue and sends notifications to Synapse users about received messages.
     """
 
-    @task.sensor(poke_interval=60, timeout=300, mode="poke")
+    @task
     def poll_sqs_queue(**context) -> List[Dict[str, Any]]:
         """
         Poll the SQS queue for messages.
-        This task will return only when messages are found or when it times out.
         """
         sqs_hook = SqsHook(
             aws_conn_id=context["params"]["aws_conn_id"],
@@ -130,10 +129,6 @@ def sqs_polling_synapse_notification_dag():
                 "id": message["MessageId"],
                 "body": formatted_message,
             }
-
-            # Add any message attributes if they exist
-            if "MessageAttributes" in message:
-                processed_message["attributes"] = message["MessageAttributes"]
 
             processed_messages.append(processed_message)
 
