@@ -95,19 +95,7 @@ def sqs_polling_synapse_notification_dag():
             MessageAttributeNames=["All"],
         )
 
-        if "Messages" in response and len(response["Messages"]) > 0:
-            # Delete messages from the queue
-            entries = [
-                {"Id": msg["MessageId"], "ReceiptHandle": msg["ReceiptHandle"]}
-                for msg in response["Messages"]
-            ]
-
-            sqs_hook.get_conn().delete_message_batch(
-                QueueUrl=queue_url, Entries=entries
-            )
-
-            return response["Messages"]
-        return []
+        return response.get("Messages", [])
 
     @task.branch()
     def check_for_messages(messages: List[Dict[str, Any]]) -> str:
@@ -136,10 +124,7 @@ def sqs_polling_synapse_notification_dag():
 
         processed_messages = []
         for message in messages:
-            # Parse the JSON body to extract objectId
             message_body = json.loads(message["Body"])
-
-            # Create a formatted message with a link to the Synapse entity
             formatted_message = f"Entity {message_body['objectId']} has been created and can be viewed at https://www.synapse.org/Synapse:{message_body['objectId']}"
 
             processed_message = {
@@ -179,15 +164,38 @@ def sqs_polling_synapse_notification_dag():
 
         return len(processed_messages)
 
+    @task
+    def delete_sqs_messages(
+        messages: List[Dict[str, Any]],
+        **context,
+    ) -> None:
+        """
+        Delete messages from the SQS queue after they have been successfully processed and notifications sent.
+        """
+        sqs_hook = SqsHook(
+            aws_conn_id=context["params"]["aws_conn_id"],
+            region_name=context["params"]["region_name"],
+        )
+        queue_url = context["params"]["sqs_queue_url"]
+
+        # Delete messages from the queue
+        entries = [
+            {"Id": msg["MessageId"], "ReceiptHandle": msg["ReceiptHandle"]}
+            for msg in messages
+        ]
+
+        sqs_hook.get_conn().delete_message_batch(QueueUrl=queue_url, Entries=entries)
+
     # Define task dependencies
     messages = poll_sqs_queue()
     branch = check_for_messages(messages)
     processed_msgs = process_messages(messages)
     send_notification = send_synapse_notification(processed_msgs)
+    delete_messages = delete_sqs_messages(messages, processed_msgs)
 
     # Set up the branch task dependencies
     branch >> [processed_msgs, stop_dag()]
-    processed_msgs >> send_notification
+    processed_msgs >> send_notification >> delete_messages
 
 
 # Instantiate the DAG
