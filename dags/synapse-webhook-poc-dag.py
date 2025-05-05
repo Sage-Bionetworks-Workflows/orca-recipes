@@ -191,7 +191,7 @@ def sqs_polling_synapse_notification_dag():
     branch = check_for_messages(messages)
     processed_msgs = process_messages(messages)
     send_notification = send_synapse_notification(processed_msgs)
-    delete_messages = delete_sqs_messages(messages, processed_msgs)
+    delete_messages = delete_sqs_messages(messages)
 
     # Set up the branch task dependencies
     branch >> [processed_msgs, stop_dag()]
