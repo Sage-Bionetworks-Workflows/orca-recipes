@@ -1,8 +1,9 @@
 """
 This DAG demonstrates polling an SQS queue and sending notifications to Synapse users.
-1. Set up a sensor to poll an SQS queue
-2. Process the messages from the queue
+1. Poll an SQS queue
+2. Process the messages from the queue (Consume messages by deleting them)
 3. Send notifications to Synapse users about the received messages
+If there are no new messages, the DAG will stop and send no messages.
 """
 
 import json
@@ -59,8 +60,7 @@ dag_params = {
 
 
 @dag(
-    # Disabled schedule for testing
-    # schedule_interval="*/15 * * * *",  # Run every 15 minutes
+    schedule_interval="*/15 * * * *",  # Run every 15 minutes
     start_date=datetime(2023, 1, 1),
     catchup=False,
     default_args={
@@ -186,7 +186,8 @@ def sqs_polling_synapse_notification_dag():
     send_notification = send_synapse_notification(processed_msgs)
 
     # Set up the branch task dependencies
-    branch >> [processed_msgs, stop_dag()] >> send_notification
+    branch >> [processed_msgs, stop_dag()]
+    processed_msgs >> send_notification
 
 
 # Instantiate the DAG
