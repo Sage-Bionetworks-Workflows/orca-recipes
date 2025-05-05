@@ -109,6 +109,22 @@ def sqs_polling_synapse_notification_dag():
             return response["Messages"]
         return []
 
+    @task.branch()
+    def check_for_messages(messages: List[Dict[str, Any]]) -> str:
+        """
+        Branch task that checks if there are messages to process.
+        """
+        if messages:
+            return "process_messages"
+        return "stop_dag"
+
+    @task()
+    def stop_dag():
+        """
+        Task that does nothing but serves as an end point when no messages are found.
+        """
+        pass
+
     @task
     def process_messages(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """
@@ -165,8 +181,12 @@ def sqs_polling_synapse_notification_dag():
 
     # Define task dependencies
     messages = poll_sqs_queue()
+    branch = check_for_messages(messages)
     processed_msgs = process_messages(messages)
-    send_synapse_notification(processed_msgs)
+    send_notification = send_synapse_notification(processed_msgs)
+
+    # Set up the branch task dependencies
+    branch >> [processed_msgs, stop_dag()] >> send_notification
 
 
 # Instantiate the DAG
