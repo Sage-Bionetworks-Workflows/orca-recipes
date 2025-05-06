@@ -20,7 +20,7 @@ pegs:
 olfactory-2025:
   synapse_conn_id: "SYNAPSE_ORCA_SERVICE_ACCOUNT_CONN"
   aws_conn_id: "AWS_TOWER_PROD_S3_CONN"
-  revision: "652436f5f68a90341150df9c928f390b2469cde1"
+  revision: "210d5b36de3ce3f63f0a8e24db7954553a0ed006"
   challenge_profile: "olfactory25_challenge_validate"
   tower_conn_id: "OLFACTORY_CHALLENGE_PROJECT_TOWER_CONN"
   tower_view_id: "syn66279193"
