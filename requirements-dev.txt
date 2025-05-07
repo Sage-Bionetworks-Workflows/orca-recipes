@@ -1,5 +1,6 @@
-synapseclient >=4.7,<5.0
+synapseclient >=4.8,<5.0
 fs-synapse >=2.0,<3.0
 s3fs ~=2023.5
 metaflow ~=2.9
 boto3 >=1.7.0,<2.0
+jsonata-python ~=0.5.3
