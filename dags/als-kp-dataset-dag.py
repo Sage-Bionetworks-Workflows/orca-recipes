@@ -77,8 +77,8 @@ def fetch_cpath_data():
 
 def main():
     # URLs for JSONata mapping and JSON Schema
-    MAPPING_URL = "https://raw.githubusercontent.com/amp-als/data-model/refs/heads/add-cpath-mapping/mapping/cpath.jsonata"
-    SCHEMA_URL = "https://raw.githubusercontent.com/amp-als/data-model/refs/heads/add-cpath-mapping/json-schemas/Dataset.json"
+    MAPPING_URL = "https://raw.githubusercontent.com/amp-als/data-model/refs/heads/main/mapping/cpath.jsonata"
+    SCHEMA_URL = "https://raw.githubusercontent.com/amp-als/data-model/refs/heads/main/json-schemas/Dataset.json"
 
     # Fetch data from C-Path API
     data = fetch_cpath_data()
@@ -105,24 +105,24 @@ def main():
     syn = Synapse()
     syn.login()
 
-    PROJECT_ID = "syn41746002"
+    PROJECT_ID = "syn64892175"
 
     # Define columns based on the jsonata mapping
     columns = [
         Column(name="id", column_type=ColumnType.ENTITYID),
-        Column(name="Title", column_type=ColumnType.STRING, maximum_size=200),
-        Column(name="Creator", column_type=ColumnType.STRING, maximum_size=100),
-        Column(name="Keywords", column_type=ColumnType.STRING, maximum_size=250),
-        Column(name="Subject", column_type=ColumnType.STRING, maximum_size=100),
-        Column(name="Collection", column_type=ColumnType.STRING, maximum_size=100),
-        Column(name="Publisher", column_type=ColumnType.STRING, maximum_size=100),
-        Column(name="Species", column_type=ColumnType.STRING, maximum_size=100),
-        Column(name="SameAs", column_type=ColumnType.STRING, maximum_size=100),
+        Column(name="title", column_type=ColumnType.STRING, maximum_size=200),
+        Column(name="creator", column_type=ColumnType.STRING, maximum_size=100),
+        Column(name="keywords", column_type=ColumnType.STRING, maximum_size=250),
+        Column(name="subject", column_type=ColumnType.STRING, maximum_size=100),
+        Column(name="collection", column_type=ColumnType.STRING, maximum_size=100),
+        Column(name="publisher", column_type=ColumnType.STRING, maximum_size=100),
+        Column(name="species", column_type=ColumnType.STRING, maximum_size=100),
+        Column(name="sameAs", column_type=ColumnType.STRING, maximum_size=100),
     ]
 
     dataset_collection = DatasetCollection(
-        name="ALS-KP Dataset Collection",
-        description="A collection of ALS-KP datasets",
+        name="Dataset collection (Production)",
+        description="A collection of datasets curated for the ALS Knowledge Portal",
         parent_id=PROJECT_ID,
         include_default_columns=True,
         columns=columns,
@@ -152,14 +152,14 @@ def main():
     annotation_data = pd.DataFrame(
         {
             "id": dataset_ids,
-            "Title": [item["title"] for item in transformed_items],
-            "Creator": [", ".join(item["creator"]) for item in transformed_items],
-            "Keywords": [", ".join(item["keywords"]) for item in transformed_items],
-            "Subject": [", ".join(item["subject"]) for item in transformed_items],
-            "Collection": [", ".join(item["collection"]) for item in transformed_items],
-            "Publisher": [item["publisher"] for item in transformed_items],
-            "Species": ["".join(item["species"]) for item in transformed_items],
-            "SameAs": [item["sameAs"] for item in transformed_items],
+            "title": [item["title"] for item in transformed_items],
+            "creator": [", ".join(item["creator"]) for item in transformed_items],
+            "keywords": [", ".join(item["keywords"]) for item in transformed_items],
+            "subject": [", ".join(item["subject"]) for item in transformed_items],
+            "collection": [", ".join(item["collection"]) for item in transformed_items],
+            "publisher": [item["publisher"] for item in transformed_items],
+            "species": ["".join(item["species"]) for item in transformed_items],
+            "sameAs": [item["sameAs"] for item in transformed_items],
         }
     )
 
