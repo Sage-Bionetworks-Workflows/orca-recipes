@@ -180,7 +180,10 @@ def als_kp_dataset_dag():
         dataset_ids = [item.id for item in dataset_collection.items]
 
         # Get current data before update
-        current_data = dataset_collection.query(synapse_client=synapse_client)
+        current_data = dataset_collection.query(
+            query=f"SELECT * from {dataset_collection.id}",
+            synapse_client=synapse_client,
+        )
         current_df = pd.DataFrame(current_data)
 
         # Prepare and apply new data
@@ -219,7 +222,10 @@ def als_kp_dataset_dag():
         )
 
         # Get data after update
-        updated_data = dataset_collection.query(synapse_client=synapse_client)
+        updated_data = dataset_collection.query(
+            query=f"SELECT * from {dataset_collection.id}",
+            synapse_client=synapse_client,
+        )
         updated_df = pd.DataFrame(updated_data)
 
         # Compare data before and after update
