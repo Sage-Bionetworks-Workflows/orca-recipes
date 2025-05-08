@@ -29,7 +29,7 @@ from airflow.models import Variable, Param
 
 
 dag_params = {
-    "project_id": Param("syn41746002", type="string"),
+    "project_id": Param("syn64892175", type="string"),
     "mapping_url": Param(
         "https://raw.githubusercontent.com/amp-als/data-model/refs/heads/main/mapping/cpath.jsonata",
         type="string",
