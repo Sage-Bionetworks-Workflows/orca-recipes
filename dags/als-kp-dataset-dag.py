@@ -118,7 +118,7 @@ def als_kp_dataset_dag():
         )
 
         if validation_errors:
-            print(f"Found {len(validation_errors)} validation errors.")
+            raise ValueError(f"Found {len(validation_errors)} validation errors.")
 
         return transformed_items
 
