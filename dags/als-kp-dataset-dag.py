@@ -73,7 +73,7 @@ def load_mapping_from_url(url: str) -> str:
         requests.exceptions.RequestException: If the request fails or returns a non-200 status code.
         requests.exceptions.Timeout: If the request times out.
     """
-    response = requests.get(url, timeout=30)  # 30 second timeout
+    response = requests.get(url, timeout=30)
     response.raise_for_status()
     return response.text
 
@@ -92,7 +92,7 @@ def load_schema_from_url(url: str) -> Dict[str, Any]:
         requests.exceptions.Timeout: If the request times out.
         json.JSONDecodeError: If the response is not valid JSON.
     """
-    response = requests.get(url, timeout=30)  # 30 second timeout
+    response = requests.get(url, timeout=30)
     response.raise_for_status()
     return response.json()
 
