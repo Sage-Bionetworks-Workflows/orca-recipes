@@ -31,11 +31,11 @@ from airflow.models import Variable, Param
 dag_params = {
     "project_id": Param("syn64892175", type="string"),
     "mapping_url": Param(
-        "https://raw.githubusercontent.com/amp-als/data-model/refs/heads/main/mapping/cpath.jsonata",
+        "https://raw.githubusercontent.com/amp-als/data-model/dd0e476c3659c9b98977d567d0ddce01d5057639/mapping/cpath.jsonata",
         type="string",
     ),
     "schema_url": Param(
-        "https://raw.githubusercontent.com/amp-als/data-model/refs/heads/main/json-schemas/Dataset.json",
+        "https://raw.githubusercontent.com/amp-als/data-model/dd0e476c3659c9b98977d567d0ddce01d5057639/json-schemas/Dataset.json",
         type="string",
     ),
     "cpath_api_url": Param(
