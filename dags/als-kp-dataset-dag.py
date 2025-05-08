@@ -29,7 +29,7 @@ from airflow.models import Variable, Param
 
 
 dag_params = {
-    "project_id": Param("syn64892175", type="string"),
+    "project_id": Param("syn41746002", type="string"),
     "mapping_url": Param(
         "https://raw.githubusercontent.com/amp-als/data-model/refs/heads/main/mapping/cpath.jsonata",
         type="string",
@@ -343,6 +343,7 @@ def als_kp_dataset_dag():
             values=annotation_data,
             primary_keys=["id"],
             dry_run=False,
+            wait_for_eventually_consistent_view=True,
             synapse_client=synapse_client,
         )
 
