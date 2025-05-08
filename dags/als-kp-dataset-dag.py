@@ -1,3 +1,18 @@
+"""ALS Knowledge Portal Dataset Collection DAG
+
+This DAG automates the process of creating and maintaining a Synapse Dataset Collection
+for the ALS Knowledge Portal. The DAG follows these steps:
+
+1. Fetch data from the C-Path API using an authentication token stored in Airflow Variables
+2. Transform the raw data using a JSONata mapping expression and validate against a JSON Schema
+3. Create or update Synapse Datasets for each item in the transformed data
+4. Create or update a Dataset Collection containing all the datasets
+5. Create or update annotations for each dataset in the collection
+6. Create a new snapshot of the collection if any changes were detected
+
+The DAG runs monthly and uses Airflow Variables for configuration.
+"""
+
 from datetime import datetime
 import requests
 from typing import Dict, List, Tuple, Any, Optional
@@ -97,8 +112,18 @@ def transform_with_jsonata(
 @dag(**dag_config)
 def als_kp_dataset_dag():
     @task
-    def fetch_cpath_data(**context):
-        """Fetch data from C-Path API using auth token from environment variable"""
+    def fetch_cpath_data(**context) -> Dict[str, Any]:
+        """Fetch data from C-Path API using auth token from Airflow Variables.
+
+        Args:
+            **context: Airflow task context containing DAG parameters
+
+        Returns:
+            Dict[str, Any]: JSON response from the C-Path API containing dataset items
+
+        Raises:
+            requests.exceptions.RequestException: If the API request fails
+        """
         headers = {
             "accept": "application/json",
             "Authorization": f"Bearer {Variable.get('CPATH_API_TOKEN')}",
@@ -110,7 +135,26 @@ def als_kp_dataset_dag():
 
     @task
     def transform_data(data: Dict[str, Any], **context) -> List[Dict[str, Any]]:
-        """Transform the data using JSONata mapping and validate against schema"""
+        """Transform the data using JSONata mapping and validate against schema.
+
+        This task:
+        1. Loads the JSONata mapping expression from the specified URL
+        2. Loads the JSON Schema from the specified URL
+        3. Applies the mapping to each item in the input data
+        4. Validates each transformed item against the schema
+        5. Returns only the valid transformed items
+
+        Args:
+            data: Raw data from the C-Path API
+            **context: Airflow task context containing DAG parameters
+
+        Returns:
+            List[Dict[str, Any]]: List of transformed and validated items
+
+        Raises:
+            ValueError: If any validation errors are found
+            requests.exceptions.RequestException: If loading mapping or schema fails
+        """
         mapping_expr = load_mapping_from_url(context["params"]["mapping_url"])
         schema = load_schema_from_url(context["params"]["schema_url"])
 
@@ -127,7 +171,22 @@ def als_kp_dataset_dag():
     def create_datasets(
         transformed_items: List[Dict[str, Any]], **context
     ) -> DatasetCollection:
-        """Create Synapse datasets and collection"""
+        """Create Synapse datasets and collection.
+
+        This task:
+        1. Creates a new Dataset Collection with predefined columns
+        2. For each transformed item:
+           - Creates a new Dataset with the item's title and description
+           - Adds the Dataset to the collection
+        3. Stores the collection in Synapse
+
+        Args:
+            transformed_items: List of transformed and validated items
+            **context: Airflow task context containing DAG parameters
+
+        Returns:
+            DatasetCollection: The created and stored dataset collection
+        """
         syn_hook = SynapseHook(context["params"]["synapse_conn_id"])
         synapse_client = syn_hook.client
 
@@ -173,7 +232,24 @@ def als_kp_dataset_dag():
         transformed_items: List[Dict[str, Any]],
         **context,
     ) -> None:
-        """Update dataset annotations and create snapshot if changes are detected"""
+        """Update dataset annotations and create snapshot if changes are detected.
+
+        This task:
+        1. Queries the current state of the dataset collection
+        2. Prepares new annotation data from the transformed items
+        3. Updates the collection with the new annotations
+        4. Queries the updated state
+        5. Compares the before and after states
+        6. If changes are detected:
+           - Creates a summary of which columns were modified
+           - Creates a new snapshot with a descriptive comment
+           - The comment includes timestamp, changed columns, and dataset count
+
+        Args:
+            dataset_collection: The dataset collection to update
+            transformed_items: List of transformed items containing new annotations
+            **context: Airflow task context containing DAG parameters
+        """
         syn_hook = SynapseHook(context["params"]["synapse_conn_id"])
         synapse_client = syn_hook.client
 
