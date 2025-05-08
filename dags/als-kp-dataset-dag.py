@@ -49,7 +49,7 @@ dag_params = {
 }
 
 dag_config = {
-    "schedule_interval": "0 0 1 * *",
+    "schedule_interval": "0 0 1 * *",  # Run on the first day of the month at midnight
     "start_date": datetime(2025, 5, 1),
     "catchup": False,
     "default_args": {
