@@ -61,15 +61,38 @@ dag_config = {
 
 
 def load_mapping_from_url(url: str) -> str:
-    """Load the JSONata mapping expression from a URL"""
-    response = requests.get(url)
+    """Load the JSONata mapping expression from a URL.
+
+    Arguments:
+        url (str): The URL to fetch the JSONata mapping expression from.
+
+    Returns:
+        str: The JSONata mapping expression as a string.
+
+    Raises:
+        requests.exceptions.RequestException: If the request fails or returns a non-200 status code.
+        requests.exceptions.Timeout: If the request times out.
+    """
+    response = requests.get(url, timeout=30)  # 30 second timeout
     response.raise_for_status()
     return response.text
 
 
 def load_schema_from_url(url: str) -> Dict[str, Any]:
-    """Load the JSON Schema from a URL"""
-    response = requests.get(url)
+    """Load the JSON Schema from a URL.
+
+    Arguments:
+        url (str): The URL to fetch the JSON Schema from.
+
+    Returns:
+        Dict[str, Any]: The parsed JSON Schema as a dictionary.
+
+    Raises:
+        requests.exceptions.RequestException: If the request fails or returns a non-200 status code.
+        requests.exceptions.Timeout: If the request times out.
+        json.JSONDecodeError: If the response is not valid JSON.
+    """
+    response = requests.get(url, timeout=30)  # 30 second timeout
     response.raise_for_status()
     return response.json()
 
@@ -77,7 +100,17 @@ def load_schema_from_url(url: str) -> Dict[str, Any]:
 def validate_item(
     item: Dict[str, Any], schema: Dict[str, Any]
 ) -> Tuple[bool, Optional[str]]:
-    """Validate an item against a JSON Schema"""
+    """Validate an item against a JSON Schema.
+
+    Arguments:
+        item (Dict[str, Any]): The item to validate.
+        schema (Dict[str, Any]): The JSON Schema to validate against.
+
+    Returns:
+        Tuple[bool, Optional[str]]: A tuple containing:
+            - bool: True if the item is valid, False otherwise.
+            - Optional[str]: Error message if validation fails, None if validation succeeds.
+    """
     try:
         validate(instance=item, schema=schema)
         return True, None
@@ -90,7 +123,25 @@ def transform_with_jsonata(
     mapping_expr: str,
     schema: Optional[Dict[str, Any]] = None,
 ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
-    """Transform a list of items using a JSONata expression and validate against schema"""
+    """Transform a list of items using a JSONata expression and validate against schema.
+
+    Arguments:
+        source_items (List[Dict[str, Any]]): List of source items to transform.
+        mapping_expr (str): The JSONata mapping expression to apply.
+        schema (Optional[Dict[str, Any]], optional): JSON Schema to validate transformed items against.
+            If None, no validation is performed. Defaults to None.
+
+    Returns:
+        Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]: A tuple containing:
+            - List[Dict[str, Any]]: List of successfully transformed and validated items.
+            - List[Dict[str, Any]]: List of validation errors, each containing:
+                - item_index (int): Index of the item that failed validation
+                - error (str): Validation error message
+                - transformed_item (Dict[str, Any]): The transformed item that failed validation
+
+    Raises:
+        jsonata.JsonataError: If the JSONata expression is invalid.
+    """
     expr = jsonata.Jsonata(mapping_expr)
     transformed_items: List[Dict[str, Any]] = []
     validation_errors: List[Dict[str, Any]] = []
@@ -115,7 +166,7 @@ def als_kp_dataset_dag():
     def fetch_cpath_data(**context) -> Dict[str, Any]:
         """Fetch data from C-Path API using auth token from Airflow Variables.
 
-        Args:
+        Arguments:
             **context: Airflow task context containing DAG parameters
 
         Returns:
@@ -144,7 +195,7 @@ def als_kp_dataset_dag():
         4. Validates each transformed item against the schema
         5. Returns only the valid transformed items
 
-        Args:
+        Arguments:
             data: Raw data from the C-Path API
             **context: Airflow task context containing DAG parameters
 
@@ -180,7 +231,7 @@ def als_kp_dataset_dag():
            - Adds the Dataset to the collection
         3. Stores the collection in Synapse
 
-        Args:
+        Arguments:
             transformed_items: List of transformed and validated items
             **context: Airflow task context containing DAG parameters
 
@@ -245,7 +296,7 @@ def als_kp_dataset_dag():
            - Creates a new snapshot with a descriptive comment
            - The comment includes timestamp, changed columns, and dataset count
 
-        Args:
+        Arguments:
             dataset_collection: The dataset collection to update
             transformed_items: List of transformed items containing new annotations
             **context: Airflow task context containing DAG parameters
@@ -260,8 +311,6 @@ def als_kp_dataset_dag():
             query=f"SELECT * from {dataset_collection.id}",
             synapse_client=synapse_client,
         )
-        current_df = pd.DataFrame(current_data)
-
         # Prepare and apply new data
         annotation_data = pd.DataFrame(
             {
@@ -302,14 +351,13 @@ def als_kp_dataset_dag():
             query=f"SELECT * from {dataset_collection.id}",
             synapse_client=synapse_client,
         )
-        updated_df = pd.DataFrame(updated_data)
 
         # Compare data before and after update
-        if not current_df.equals(updated_df):
+        if not current_data.equals(updated_data):
             # Generate change summary
             changed_columns = []
-            for col in current_df.columns:
-                if not current_df[col].equals(updated_df[col]):
+            for col in current_data.columns:
+                if not current_data[col].equals(updated_data[col]):
                     changed_columns.append(col)
 
             # Create snapshot comment with timestamp and change summary
