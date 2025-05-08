@@ -100,7 +100,7 @@ def als_kp_dataset_dag():
         """Fetch data from C-Path API using auth token from environment variable"""
         headers = {
             "accept": "application/json",
-            "Authorization": f"Bearer {Variable.get('CPATH_AUTH_TOKEN')}",
+            "Authorization": f"Bearer {Variable.get('CPATH_API_TOKEN')}",
         }
 
         response = requests.get(context["params"]["cpath_api_url"], headers=headers)
