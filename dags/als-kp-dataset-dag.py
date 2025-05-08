@@ -6,15 +6,15 @@ import pandas as pd
 from jsonata import jsonata
 from jsonschema import validate, ValidationError
 
-from synapseclient import Synapse
 from synapseclient.models import Dataset, DatasetCollection, Column, ColumnType
+from orca.services.synapse import SynapseHook
 
 from airflow.decorators import task, dag
 from airflow.models import Variable, Param
 
 
 dag_params = {
-    "project_id": Param("syn64892175", type="string"),
+    "project_id": Param("syn41746002", type="string"),
     "mapping_url": Param(
         "https://raw.githubusercontent.com/amp-als/data-model/refs/heads/main/mapping/cpath.jsonata",
         type="string",
@@ -30,6 +30,7 @@ dag_params = {
     "collection_description": Param(
         "A collection of datasets curated for the ALS Knowledge Portal", type="string"
     ),
+    "synapse_conn_id": Param("SYNAPSE_ORCA_SERVICE_ACCOUNT_CONN", type="string"),
 }
 
 dag_config = {
@@ -127,8 +128,8 @@ def als_kp_dataset_dag():
         transformed_items: List[Dict[str, Any]], **context
     ) -> DatasetCollection:
         """Create Synapse datasets and collection"""
-        syn = Synapse()
-        syn.login()
+        syn_hook = SynapseHook(context["params"]["synapse_conn_id"])
+        synapse_client = syn_hook.client
 
         columns = [
             Column(name="id", column_type=ColumnType.ENTITYID),
@@ -160,10 +161,10 @@ def als_kp_dataset_dag():
                 name=item["title"],
                 description=dataset_description,
                 parent_id=context["params"]["project_id"],
-            ).store()
+            ).store(synapse_client=synapse_client)
             dataset_collection.add_item(dataset)
 
-        dataset_collection = dataset_collection.store()
+        dataset_collection = dataset_collection.store(synapse_client=synapse_client)
         return dataset_collection
 
     @task
@@ -173,10 +174,13 @@ def als_kp_dataset_dag():
         **context,
     ) -> None:
         """Update dataset annotations and create snapshot if changes are detected"""
+        syn_hook = SynapseHook(context["params"]["synapse_conn_id"])
+        synapse_client = syn_hook.client
+
         dataset_ids = [item.id for item in dataset_collection.items]
 
         # Get current data before update
-        current_data = dataset_collection.query()
+        current_data = dataset_collection.query(synapse_client=synapse_client)
         current_df = pd.DataFrame(current_data)
 
         # Prepare and apply new data
@@ -208,11 +212,14 @@ def als_kp_dataset_dag():
 
         # Update the rows
         dataset_collection.update_rows(
-            values=annotation_data, primary_keys=["id"], dry_run=False
+            values=annotation_data,
+            primary_keys=["id"],
+            dry_run=False,
+            synapse_client=synapse_client,
         )
 
         # Get data after update
-        updated_data = dataset_collection.query()
+        updated_data = dataset_collection.query(synapse_client=synapse_client)
         updated_df = pd.DataFrame(updated_data)
 
         # Compare data before and after update
@@ -231,9 +238,11 @@ def als_kp_dataset_dag():
                 f"Total datasets: {len(dataset_ids)}"
             )
 
-            print(f"Changes detected in dataset collection, creating new snapshot...")
+            print("Changes detected in dataset collection, creating new snapshot...")
             print(f"Snapshot comment: {snapshot_comment}")
-            dataset_collection.snapshot(comment=snapshot_comment)
+            dataset_collection.snapshot(
+                comment=snapshot_comment, synapse_client=synapse_client
+            )
         else:
             print("No changes detected in dataset collection, skipping snapshot.")
 
