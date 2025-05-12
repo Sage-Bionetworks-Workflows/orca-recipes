@@ -7,6 +7,3 @@ RUN pip install apache-airflow[amazon,celery,snowflake]==2.10.5 --constraint "ht
 
 COPY requirements-airflow.txt /tmp/requirements-airflow.txt
 RUN pip install --no-cache-dir -r /tmp/requirements-airflow.txt
-
-COPY requirements-dev.txt /tmp/requirements-dev.txt
-RUN pip install --no-cache-dir -r /tmp/requirements-dev.txt
