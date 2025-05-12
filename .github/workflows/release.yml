@@ -1,9 +1,6 @@
 name: Release
 
 on:
-  push:
-    branches:
-      - DPE-1312-adds-release-pipeline
   release:
     types: [published]
   workflow_dispatch:
