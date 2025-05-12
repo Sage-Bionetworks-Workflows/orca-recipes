@@ -63,17 +63,23 @@ source venv/bin/activate
 ```
 This will create a virtual environment with Python version 3.10 and all needed dependencies and activate it. Before running, be sure to have Python 3.10 or `pyenv` installed on your machine.
 
-## Building a new docker image
+## Releases
 
-At the moment this is a manual process to build and push a new `orca-recipes` container
-to GHCR. In order to accomplish this task:
+To release a new version of the `orca-recipes` container to GHCR:
 
-1. Create a new github codespaces environment detailed above.
-2. Build the new image with the specific version you want: `docker build -t ghcr.io/sage-bionetworks-workflows/orca-recipes:0.0.0 .`
-3. Ensure you are logged into the GHCR: `echo $GITHUB_TOKEN | docker login ghcr.io -u USERNAME --password-stdin`
-   1. Replace `$GITHUB_TOKEN` and `USERNAME` with the correct values
-4. Push the image to GHCR for your version: `docker push ghcr.io/sage-bionetworks-workflows/orca-recipes:0.0.0`
+1. Create a new GitHub Release in the repository
+   - Go to the repository's "Releases" page
+   - Click "Create a new release"
+   - Create a new tag with the version number (e.g., `1.0.0`)
+   - Add release notes
+   - Click "Publish release"
 
+The GitHub Actions workflow will automatically:
+- Build the Docker image
+- Tag it with the release version
+- Push it to GHCR
+
+The `latest` tag will automatically be updated to point to the latest release.
 
 ## Contributing a Challenge DAG
 
