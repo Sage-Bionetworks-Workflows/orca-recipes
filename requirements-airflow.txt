@@ -6,3 +6,4 @@ py-orca[all] == 1.5.2
 pandas <3.0.0
 slack-sdk >=3.27
 pendulum~=3.0.0
+jsonata-python ~=0.5.3
