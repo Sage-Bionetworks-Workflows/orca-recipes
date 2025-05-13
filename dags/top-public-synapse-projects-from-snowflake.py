@@ -38,7 +38,7 @@ dag_params = {
     # Example: '[{"file_view_id": "123456", "group_name": "Group A"},
     #           {"file_view_id": "789012", "group_name": "Group B"}]'
     "fileview_groups": Param(
-        '[{"file_view_id": "20446927", "group_name": "HTAN1"},{"file_view_id": "58907798", "group_name": "HTAN_CENTER_MAIN"},{"file_view_id": "58907819", "group_name": "HTAN_CENTER_MISC"}]', type="string"),
+        '[{"file_view_id": "20446927", "group_name": "HTAN1"}]', type="string"),
 }
 
 dag_config = {
@@ -150,11 +150,16 @@ def top_public_synapse_projects_from_snowflake() -> None:
         backfill_date = context["params"]["backfill_date"]
         hours_time_delta = context["params"]["hours_time_delta"]
 
-        query_date = f"'{backfill_date}'" if context["params"]["backfill"] else None
-
         metrics = []
 
-        # Get download stats for public projects
+        is_backfill = context["params"]["backfill"]
+        hours_delta = -int(hours_time_delta)
+
+        # Different query templates for backfill vs current date
+        # For backfill we parameterize the date, for current we use CURRENT_DATE SQL keyword
+        date_clause = "DATEADD(HOUR, %(hours_delta)s, %(backfill_date)s)" if is_backfill else "DATEADD(HOUR, %(hours_delta)s, CURRENT_DATE)"
+
+        # Get download stats for public projects - with parameterization
         public_query = f"""
             WITH PUBLIC_PROJECTS AS (
                 SELECT
@@ -165,7 +170,7 @@ def top_public_synapse_projects_from_snowflake() -> None:
                 WHERE
                     node_latest.is_public AND
                     node_latest.node_type = 'project' AND
-                    node_latest.project_id != {SYNAPSE_HOMEPAGE_PROJECT_ID}
+                    node_latest.project_id != %(homepage_id)s
             ),
             DEDUP_FILEHANDLE AS (
                 SELECT DISTINCT
@@ -186,7 +191,7 @@ def top_public_synapse_projects_from_snowflake() -> None:
                 ON
                     filedownload.file_handle_id = file_latest.id
                 WHERE
-                    filedownload.record_date = DATEADD(HOUR, -{hours_time_delta}, {query_date or "CURRENT_DATE"})
+                    filedownload.record_date = {date_clause}
             ),
 
             DOWNLOAD_STAT AS (
@@ -215,7 +220,13 @@ def top_public_synapse_projects_from_snowflake() -> None:
         """
 
         try:
-            cs.execute(public_query)
+            # Execute query with parameters - handling CURRENT_DATE specially in the query string
+            query_params = {
+                'hours_delta': hours_delta,
+                'backfill_date': backfill_date,
+                'homepage_id': SYNAPSE_HOMEPAGE_PROJECT_ID
+            }
+            cs.execute(public_query, query_params)
             public_df = cs.fetch_pandas_all()
 
             # Create metrics for public projects
@@ -273,7 +284,12 @@ def top_public_synapse_projects_from_snowflake() -> None:
         backfill_date = context["params"]["backfill_date"]
         hours_time_delta = context["params"]["hours_time_delta"]
 
-        query_date = f"'{backfill_date}'" if context["params"]["backfill"] else None
+        # Prepare query parameters
+        is_backfill = context["params"]["backfill"]
+        hours_delta = -int(hours_time_delta)  # Negative for lookback
+
+        # Create date clause based on whether this is a backfill or not
+        date_clause = "DATEADD(HOUR, %(hours_delta)s, %(backfill_date)s)" if is_backfill else "DATEADD(HOUR, %(hours_delta)s, CURRENT_DATE)"
 
         file_view_mappings = []
         for group in groups:
@@ -361,9 +377,7 @@ def top_public_synapse_projects_from_snowflake() -> None:
                 INNER JOIN synapse_data_warehouse.synapse.file_latest
                 ON filedownload.file_handle_id = file_latest.id
                 WHERE
-                    filedownload.record_date = DATEADD(HOUR, 
-                                                      -{hours_time_delta}, 
-                                                      {query_date or "CURRENT_DATE"})
+                    filedownload.record_date = {date_clause}
             ),
             
             DOWNLOAD_STAT AS (
@@ -399,11 +413,17 @@ def top_public_synapse_projects_from_snowflake() -> None:
 
         # Create a parameters dictionary for bind variables
         query_params = {}
+
         for i, (file_view_id, group_name) in enumerate(file_view_mappings):
             query_params[f"file_view_id_{i}"] = file_view_id
             query_params[f"group_name_{i}"] = group_name
 
+        query_params["hours_delta"] = hours_delta
+        query_params["backfill_date"] = backfill_date
+
         try:
+            # Execute the query with parameters
+            # Date references are handled through string formatting in the SQL query
             cs.execute(fileview_query, query_params)
             result_df = cs.fetch_pandas_all()
 
