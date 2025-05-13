@@ -626,8 +626,6 @@ def top_public_synapse_projects_from_snowflake() -> None:
                     yesterday,
                     metric.number_of_unique_users_downloaded,
                     metric.data_download_size,
-                    metric.projects_with_downloads,
-                    metric.total_projects
                 ]
             )
 
