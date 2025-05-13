@@ -563,14 +563,11 @@ def top_public_synapse_projects_from_snowflake() -> None:
         Returns:
             bool: True if message was successfully posted, False otherwise
         """
-        # TODO: Uncomment the following lines to post to slack
-        if True:
-            print(f"NOT oosting to slack message: {message}")
-            return
-        # client = WebClient(token=Variable.get("SLACK_DPE_TEAM_BOT_TOKEN"))
-        # result = client.chat_postMessage(channel="topcharts", text=message)
-        # print(f"Result of posting to slack: [{result}]")
-        # return result is not None
+
+        client = WebClient(token=Variable.get("SLACK_DPE_TEAM_BOT_TOKEN"))
+        result = client.chat_postMessage(channel="topcharts", text=message)
+        print(f"Result of posting to slack: [{result}]")
+        return result is not None
 
     @task
     def push_results_to_synapse_table(
@@ -633,10 +630,6 @@ def top_public_synapse_projects_from_snowflake() -> None:
                     metric.total_projects
                 ]
             )
-        if True:
-            # TODO: Remove this line to enable the push to Synapse table
-            print(f"Pushing results to Synapse table is disabled: {data}")
-            return
 
         syn_hook = SynapseHook(context["params"]["synapse_conn_id"])
         syn_hook.client.store(
