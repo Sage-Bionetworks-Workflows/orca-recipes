@@ -31,10 +31,26 @@ Testing should be done via the Dev Containers setup online using GitHub Codespac
 
 ## Secrets
 
-Airflow secrets (_e.g._ connections and variables) are stored in the `dpe-prod` AWS account.
+Airflow secrets (_e.g._ connections and variables) are stored in Secrets Manager within the `dpe-prod` AWS account. This repository uses an IAM User `airflow-secrets-backend` to access the secrets. Access keys for the IAM account are stored in this repository as codespace secrets, enabling Airflow deployments in our configured codespaces environment to retrieve connection URIs and secret variables from `dpe-prod`. The credentials used in the repository's codespace secrets must be rotated manually within the AWS console, and updated every 90 days.
 
-The credentials for the `dpe-prod` AWS service account are stored in the `orca-recipes` repository, enabling the AWS Secrets Manager backend to retrieve values from `dpe-prod`.
+### Creating a new secret
 
-New secrets only need to be created in the `dpe-prod` account. For connection URIs, the secret name should have the prefix `airflow/connections`. Variables should have the prefix `airflow/variables`.
+New secrets must be created in AWS Secrets Manager in the `dpe-prod` account. For connection URIs, the secret name should have the prefix `airflow/connections/` 
+(i.e. `airflow/connections/MY_SECRET_CONNECTION_STRING`). Variables should have the prefix `airflow/variables/` (i.e. `airflow/variables/MY_SECRET_VARIABLE`).
+
+Within a DAG, you can then use your connection when instantiating a `Hook` [object](https://airflow.apache.org/docs/apache-airflow/stable/authoring-and-scheduling/connections.html#hooks), like:
+
+```python
+from orca.services.synapse import SynapseHook
+
+syn_hook = SynapseHook("MY_SECRET_CONNECTION_STRING")
+```
+
+or your secret variable, like:
+
+```python
+my_secret_variable = Variable.get("MY_SECRET_VARIABLE")
+```
+
 
 During DAG development and testing, you can create a secret containing the connection URI (or secret variable) for development resources (such as Nextflow Tower Dev). Once you are ready to run the DAG in production, you can update the secret value with a connection URI for production resources (such as Nextflow Tower Prod).
