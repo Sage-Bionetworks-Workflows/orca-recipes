@@ -268,7 +268,7 @@ def top_public_synapse_projects_from_snowflake() -> None:
         Returns:
             List[DownloadMetric]: A list of download metrics for fileview groups
         """
-        groups = context["params"]["fileview_groups"]
+        groups = json.loads(context["params"]["fileview_groups"])
 
         if not groups:
             return []
