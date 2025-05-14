@@ -17,16 +17,35 @@ pegs:
     tags:
       - "nextflow_tower"
 
-olfactory-2025:
+olfactory-2025-task1:
   synapse_conn_id: "SYNAPSE_ORCA_SERVICE_ACCOUNT_CONN"
   aws_conn_id: "AWS_TOWER_PROD_S3_CONN"
-  revision: "19830aa9229106a4f162c823d6f10af83c5e6edb"
-  challenge_profile: "olfactory25_challenge_validate"
+  revision: "6c218e0b1e0b3007e2524ecdbeee50883d752a7b"
+  challenge_profile: "olfactory25_challenge_task1"
   tower_conn_id: "OLFACTORY_CHALLENGE_PROJECT_TOWER_CONN"
   tower_view_id: "syn66279193"
   tower_compute_env_type: "spot"
   bucket_name: "olfactory-challenge-project-tower-scratch"
-  key: "10days/olfactory_challenge"
+  key: "10days/olfactory_challenge_task1"
+  dag_config:
+    schedule_interval: "*/1 * * * *"
+    start_date: "2024-04-09T00:00:00"
+    catchup: false
+    default_args:
+      retries: 2
+    tags:
+      - "nextflow_tower"
+
+olfactory-2025-task2:
+  synapse_conn_id: "SYNAPSE_ORCA_SERVICE_ACCOUNT_CONN"
+  aws_conn_id: "AWS_TOWER_PROD_S3_CONN"
+  revision: "6c218e0b1e0b3007e2524ecdbeee50883d752a7b"
+  challenge_profile: "olfactory25_challenge_task2"
+  tower_conn_id: "OLFACTORY_CHALLENGE_PROJECT_TOWER_CONN"
+  tower_view_id: "syn66484079"
+  tower_compute_env_type: "spot"
+  bucket_name: "olfactory-challenge-project-tower-scratch"
+  key: "10days/olfactory_challenge_task2"
   dag_config:
     schedule_interval: "*/1 * * * *"
     start_date: "2024-04-09T00:00:00"
