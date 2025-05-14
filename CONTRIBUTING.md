@@ -31,10 +31,10 @@ Testing should be done via the Dev Containers setup online using GitHub Codespac
 
 ## Secrets
 
-Airflow secrets (_e.g._ connections and variables) are stored in the `dpe-prod` AWS account.
+Airflow secrets (_e.g._ connections and variables) are stored in Secrets Manager within the `dpe-prod` AWS account. This repository accesses the secrets through an IAM account `airflow-secrets-backend`. The credentials used in the repository must be rotated every 90 days. Access keys for the IAM account are stored in this repository as codespace secrets, enabling Airflow deployments in our configured codespaces environment to retrieve connection URIs and secret variables from `dpe-prod`.
 
-The credentials for the `dpe-prod` AWS service account are stored in the `orca-recipes` repository, enabling the AWS Secrets Manager backend to retrieve values from `dpe-prod`.
+### Creating a new secret
 
-New secrets only need to be created in the `dpe-prod` account. For connection URIs, the secret name should have the prefix `airflow/connections`. Variables should have the prefix `airflow/variables`.
+New secrets need to be created in the `dpe-prod` account Secrets Manager. For connection URIs, the secret name should have the prefix `airflow/connections`. Variables should have the prefix `airflow/variables`.
 
 During DAG development and testing, you can create a secret containing the connection URI (or secret variable) for development resources (such as Nextflow Tower Dev). Once you are ready to run the DAG in production, you can update the secret value with a connection URI for production resources (such as Nextflow Tower Prod).
