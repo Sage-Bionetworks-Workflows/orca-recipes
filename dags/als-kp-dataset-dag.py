@@ -219,9 +219,7 @@ def als_kp_dataset_dag():
         return transformed_items
 
     @task
-    def create_datasets(
-        transformed_items: List[Dict[str, Any]], **context
-    ) -> str:
+    def create_datasets(transformed_items: List[Dict[str, Any]], **context) -> str:
         """Create Synapse datasets and collection.
 
         This task:
@@ -304,7 +302,9 @@ def als_kp_dataset_dag():
         syn_hook = SynapseHook(context["params"]["synapse_conn_id"])
         synapse_client = syn_hook.client
 
-        dataset_collection = DatasetCollection(id=dataset_collection_id).get()
+        dataset_collection = DatasetCollection(id=dataset_collection_id).get(
+            synapse_client=synapse_client
+        )
 
         dataset_ids = [item.id for item in dataset_collection.items]
 
