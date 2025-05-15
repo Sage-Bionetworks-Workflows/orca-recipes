@@ -236,7 +236,7 @@ def als_kp_dataset_dag():
             **context: Airflow task context containing DAG parameters
 
         Returns:
-            stt: The Synapse ID of the created and stored dataset collection
+            str: The Synapse ID of the created and stored dataset collection
         """
         syn_hook = SynapseHook(context["params"]["synapse_conn_id"])
         synapse_client = syn_hook.client
@@ -297,7 +297,7 @@ def als_kp_dataset_dag():
            - The comment includes timestamp, changed columns, and dataset count
 
         Arguments:
-            dataset_collection: The dataset collection to update
+            dataset_collection_id: The ID of the dataset collection to update
             transformed_items: List of transformed items containing new annotations
             **context: Airflow task context containing DAG parameters
         """
