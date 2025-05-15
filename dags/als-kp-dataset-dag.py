@@ -161,7 +161,7 @@ def transform_with_jsonata(
 
 
 @dag(**dag_config)
-def als_kp_dataset_dag_test():
+def als_kp_dataset_dag():
     @task
     def fetch_cpath_data(**context) -> Dict[str, Any]:
         """Fetch data from C-Path API using auth token from Airflow Variables.
@@ -386,4 +386,4 @@ def als_kp_dataset_dag_test():
     update_annotations(dataset_collection_id, transformed_items)
 
 
-als_kp_dataset_dag_test()
+als_kp_dataset_dag()
