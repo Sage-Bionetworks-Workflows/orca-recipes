@@ -221,7 +221,7 @@ def als_kp_dataset_dag():
     @task
     def create_datasets(
         transformed_items: List[Dict[str, Any]], **context
-    ) -> DatasetCollection:
+    ) -> str:
         """Create Synapse datasets and collection.
 
         This task:
@@ -236,7 +236,7 @@ def als_kp_dataset_dag():
             **context: Airflow task context containing DAG parameters
 
         Returns:
-            DatasetCollection: The created and stored dataset collection
+            stt: The Synapse ID of the created and stored dataset collection
         """
         syn_hook = SynapseHook(context["params"]["synapse_conn_id"])
         synapse_client = syn_hook.client
@@ -275,11 +275,11 @@ def als_kp_dataset_dag():
             dataset_collection.add_item(dataset)
 
         dataset_collection = dataset_collection.store(synapse_client=synapse_client)
-        return dataset_collection
+        return dataset_collection.id
 
     @task
     def update_annotations(
-        dataset_collection: DatasetCollection,
+        dataset_collection_id: str,
         transformed_items: List[Dict[str, Any]],
         **context,
     ) -> None:
@@ -303,6 +303,8 @@ def als_kp_dataset_dag():
         """
         syn_hook = SynapseHook(context["params"]["synapse_conn_id"])
         synapse_client = syn_hook.client
+
+        dataset_collection = DatasetCollection(id=dataset_collection_id).get()
 
         dataset_ids = [item.id for item in dataset_collection.items]
 
@@ -380,8 +382,8 @@ def als_kp_dataset_dag():
     # Define task dependencies
     data = fetch_cpath_data()
     transformed_items = transform_data(data)
-    dataset_collection = create_datasets(transformed_items)
-    update_annotations(dataset_collection, transformed_items)
+    dataset_collection_id = create_datasets(transformed_items)
+    update_annotations(dataset_collection_id, transformed_items)
 
 
 als_kp_dataset_dag()
