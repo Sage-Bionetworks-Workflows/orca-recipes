@@ -28,7 +28,7 @@ olfactory-2025-task1:
   bucket_name: "olfactory-challenge-project-tower-scratch"
   key: "10days/olfactory_challenge_task1"
   dag_config:
-    schedule_interval: "*/1 * * * *"
+    schedule_interval: "*/3 * * * *"
     start_date: "2024-04-09T00:00:00"
     catchup: false
     default_args:
@@ -47,7 +47,7 @@ olfactory-2025-task2:
   bucket_name: "olfactory-challenge-project-tower-scratch"
   key: "10days/olfactory_challenge_task2"
   dag_config:
-    schedule_interval: "*/1 * * * *"
+    schedule_interval: "*/3 * * * *"
     start_date: "2024-04-09T00:00:00"
     catchup: false
     default_args:
