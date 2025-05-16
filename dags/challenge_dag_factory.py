@@ -50,7 +50,7 @@ def resolve_dag_config(challenge_name: str, dag_params: dict, config: dict) -> d
     
     # Start with default configuration
     dag_config = {
-        "schedule_interval": "*/3 * * * *",
+        "schedule_interval": "*/1 * * * *",
         "start_date": datetime(2024, 4, 9),
         "catchup": False,
         "default_args": {"retries": 2},
