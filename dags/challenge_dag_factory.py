@@ -208,8 +208,8 @@ def create_challenge_dag(challenge_name: str, config: dict):
         tower_run_id = launch_workflow(manifest_path, run_uuid)
         monitor = monitor_workflow(tower_run_id)
 
-        # Fail fast if ``bucket_name`` is invalid
-        verify >> submissions >> submissions_updated >> [stop, manifest_path]
+        # Fail fast if ``bucket_name`` is invalid, after getting submissions
+        submissions >> submissions_updated >> verify >> [stop, manifest_path]
         manifest_path >> tower_run_id >> monitor
 
     return challenge_dag()
