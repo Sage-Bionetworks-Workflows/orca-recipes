@@ -77,7 +77,7 @@ def resolve_dag_config(challenge_name: str, dag_params: dict, config: dict) -> d
 
     return dag_config
 
-def get_processed_submission_ids(dag_id: str, n_runs: int = 5) -> set:
+def get_processed_submission_ids(dag_id: str, n_runs: int = 6) -> set:
     """
     Queries the last `n_runs` of successful or running DagRuns for `dag_id`,
     and pulls their XComs for `get_new_submissions`, returning a set of all submission IDs seen.
