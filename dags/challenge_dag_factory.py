@@ -7,8 +7,10 @@ import yaml
 import pandas as pd
 
 from airflow.decorators import dag, task
-from airflow.models import Param
+from airflow.models import Param, DagRun
 from airflow.providers.amazon.aws.hooks.s3 import S3Hook
+from airflow.utils.session import create_session
+from airflow.utils.state import State
 
 from orca.services.nextflowtower import NextflowTowerHook
 from orca.services.nextflowtower.models import LaunchInfo
@@ -75,6 +77,55 @@ def resolve_dag_config(challenge_name: str, dag_params: dict, config: dict) -> d
 
     return dag_config
 
+def get_processed_submission_ids(dag_id: str, n_runs: int = 5) -> set:
+    """
+    Queries the last `n_runs` of successful or running DagRuns for `dag_id`,
+    and pulls their XComs for `get_new_submissions`, returning a set of all submission IDs seen.
+
+    Tip:
+        When the same submission ID needs to be evaluated for testing purposes,
+        set `n_runs` to 0.
+
+    Arguments:
+        dag_id: The ID of the DAG to query.
+        n_runs: The number of DagRuns to query.
+
+    Returns:
+        set: A set of all submission IDs seen.
+
+    """
+
+    processed_submissions = set()
+
+    with create_session() as session:
+
+        # Retrieve the last `n_runs` of successful or running DagRuns
+        previous_runs = (
+            session.query(DagRun).filter(
+                DagRun.dag_id == dag_id,
+                DagRun.state.in_([State.SUCCESS, State.RUNNING])
+            ).order_by(DagRun.start_date.desc()).limit(n_runs).all()
+        )
+
+        # Retrieve the task runs for the task of interest
+        task_id = "get_new_submissions"
+        task_runs = [run.get_task_instance(task_id) for run in previous_runs]
+
+        # Now retrieve the submission IDs for each run of `get_new_submissions` task
+        for task_run in task_runs:
+
+            # Query the metadata DB (``xcom_pull``) to retrieve the submission IDs...
+            # By default, pulling the XComs for `get_new_submissions`
+            # will return the submission IDs, since they are the return values
+            prev_subs = task_run.xcom_pull()
+
+            print(f"Previous submission IDs: {prev_subs}")
+
+            if prev_subs:
+                processed_submissions.update(prev_subs)
+
+    return processed_submissions
+
 def create_challenge_dag(challenge_name: str, config: dict):
 
     # Define parameters for the DAG, including new per-challenge settings.
@@ -120,7 +171,14 @@ def create_challenge_dag(challenge_name: str, config: dict):
             submissions = hook.ops.get_submissions_with_status(
                 context["params"]["tower_view_id"], "RECEIVED"
             )
-            return submissions
+
+            dag_id = context["dag_run"].dag_id
+            processed = get_processed_submission_ids(dag_id=dag_id)
+
+            # Filter out previously-retrieved submissions
+            new_submissions = [s for s in submissions if s not in processed]
+
+            return new_submissions
 
         @task.branch()
         def update_submission_statuses(submissions, **context):
@@ -208,8 +266,8 @@ def create_challenge_dag(challenge_name: str, config: dict):
         tower_run_id = launch_workflow(manifest_path, run_uuid)
         monitor = monitor_workflow(tower_run_id)
 
-        # Fail fast if ``bucket_name`` is invalid, after getting submissions
-        submissions >> submissions_updated >> verify >> [stop, manifest_path]
+        # Fail fast if ``bucket_name`` is invalid
+        verify >> submissions >> submissions_updated >> [stop, manifest_path]
         manifest_path >> tower_run_id >> monitor
 
     return challenge_dag()
