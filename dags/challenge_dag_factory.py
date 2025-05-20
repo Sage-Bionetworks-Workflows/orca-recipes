@@ -116,8 +116,8 @@ def get_processed_submission_ids(dag_id: str, n_runs: int = 5) -> set:
 
             # Query the metadata DB (``xcom_pull``) to retrieve the submission IDs...
             # By default, pulling the XComs for `get_new_submissions`
-            # will return the submission IDs, since they are the return values
-            prev_subs = task_run.xcom_pull()
+            # will return the submission ID list, since that is the return value
+            prev_subs = task_run.xcom_pull(task_ids=task_id)
 
             print(f"Previous submission IDs: {prev_subs}")
 
