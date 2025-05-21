@@ -20,7 +20,7 @@ pegs:
 olfactory-2025-task1:
   synapse_conn_id: "SYNAPSE_ORCA_SERVICE_ACCOUNT_CONN"
   aws_conn_id: "AWS_TOWER_PROD_S3_CONN"
-  revision: "e5e74e09971bc19df48fc4e5bb2f6bea3ba31eb5"
+  revision: "9309c7d67e33fdd144dd8282c71b495be7695001"
   challenge_profile: "olfactory25_challenge_task1"
   tower_conn_id: "OLFACTORY_CHALLENGE_PROJECT_TOWER_CONN"
   tower_view_id: "syn66279193"
@@ -39,7 +39,7 @@ olfactory-2025-task1:
 olfactory-2025-task2:
   synapse_conn_id: "SYNAPSE_ORCA_SERVICE_ACCOUNT_CONN"
   aws_conn_id: "AWS_TOWER_PROD_S3_CONN"
-  revision: "e5e74e09971bc19df48fc4e5bb2f6bea3ba31eb5"
+  revision: "9309c7d67e33fdd144dd8282c71b495be7695001"
   challenge_profile: "olfactory25_challenge_task2"
   tower_conn_id: "OLFACTORY_CHALLENGE_PROJECT_TOWER_CONN"
   tower_view_id: "syn66484079"
