@@ -2,7 +2,14 @@
 
 This repository contains recipes (DAGs) for data processing and engineering at Sage Bionetworks.
 
-## Airflow
+## Key Features
+
+- **Challenge Automation**: Dynamic DAG factory for Synapse-hosted challenges using configurable YAML profiles
+- **Data Analytics**: DAGs for Synapse project analytics, trending data, and metrics collection
+- **Dataset Management**: Automated dataset creation, annotation, and metadata processing
+- **Integration Workflows**: Data pipelines connecting Synapse, Snowflake, and other platforms
+
+## Airflow Development
 
 ### Quick Start
 
@@ -16,22 +23,22 @@ docker compose up --build --detach
 
 If you encounter the `nginx bad gateway` errors when navigating to the forwarded port, just wait and refresh a couple of times. Airflow takes a few minutes to become available.
 
-Any edits to your DAG should get picked up by Airflow automatically. If you're not seeing that happen, you can try restarting the containers as follows.
+Any edits to your DAG should get picked up by Airflow automatically. If you're not seeing that happen, you can try restarting the containers:
 
 ```console
 docker compose restart
 ```
 
-If you edit `Dockerfile`, `docker-compose.yaml`, `Pipfile`/`Pipfile.lock`, `airflow.cfg`, or `.env`, you'll need to rebuild the containers as follows.
+If you edit `Dockerfile`, `docker-compose.yaml`, `requirements-*.txt`, or configuration files, rebuild the containers:
 
 ```console
-# For example, you can update the dependencies in Pipfile.lock using:
-# pipenv lock --dev
 docker compose down
 docker compose up --build --detach
 ```
 
-If you want to run commands in the "Airflow context" (_i.e._ within the custom containers), you can use the included `airflow.sh as follows.
+### Running Commands in Airflow Context
+
+Use the included `airflow.sh` script to run commands within the Airflow containers:
 
 ```console
 # Start a shell inside one of the containers
@@ -44,7 +51,7 @@ If you want to run commands in the "Airflow context" (_i.e._ within the custom c
 ./airflow.sh info
 ```
 
-### Logging in
+### Authentication
 
 When deploying airflow locally on dev containers, the username and password will be "airflow".
 
@@ -54,14 +61,25 @@ When deploying airflow locally on dev containers, the username and password will
 
 This repository also contains recipes for specific projects that either don't need to be deployed to Airflow or are not ready to be deployed to Airflow. These recipes can be run locally from the `local` directory. Each sub-directory contains recipes specific to a project and those project folders have their own documentation for running the recipes.
 
-### Dependencies
+For local development outside of Docker, you can set up a Python virtual environment:
 
-Dependencies for `local` recipes are defined in the requirements files at the root of this repository. To get started, you can install all of the dependencies that you might need by running:
 ```console
 bash dev_setup.sh
 source venv/bin/activate
 ```
-This will create a virtual environment with Python version 3.10 and all needed dependencies and activate it. Before running, be sure to have Python 3.10 or `pyenv` installed on your machine.
+
+This creates a virtual environment with Python 3.10, installs Apache Airflow 2.10.5, and all required dependencies.
+
+## Contributing
+
+For detailed contribution guidelines, including DAG development best practices and how to contribute challenge DAGs, see [CONTRIBUTING.md](CONTRIBUTING.md).
+
+## Repository Structure
+
+- `dags/` - Production Airflow DAGs and challenge configurations
+- `config/` - Airflow configuration files
+- `local/` - Project-specific scripts and utilities
+- `requirements-*.txt` - Python dependencies for different environments
 
 ## Releases
 
