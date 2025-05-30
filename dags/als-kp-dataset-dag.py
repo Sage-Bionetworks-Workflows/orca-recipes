@@ -306,13 +306,12 @@ def als_kp_dataset_dag():
             synapse_client=synapse_client
         )
 
-        dataset_ids = [item.id for item in dataset_collection.items]
-
         # Get current data before update
         current_data = dataset_collection.query(
-            query=f"SELECT * from {dataset_collection.id}",
+            query=f"SELECT * from {dataset_collection.id} where source='Critical Path Institute'",
             synapse_client=synapse_client,
         )
+        dataset_ids = list(current_data["id"])
         # Prepare and apply new data
         annotation_data = pd.DataFrame(
             {
@@ -351,7 +350,7 @@ def als_kp_dataset_dag():
 
         # Get data after update
         updated_data = dataset_collection.query(
-            query=f"SELECT * from {dataset_collection.id}",
+            query=f"SELECT * from {dataset_collection.id} where source='Critical Path Institute'",
             synapse_client=synapse_client,
         )
 
