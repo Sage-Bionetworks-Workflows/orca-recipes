@@ -38,7 +38,7 @@ dag_params = {
     # Example: '[{"file_view_id": "123456", "group_name": "Group A"},
     #           {"file_view_id": "789012", "group_name": "Group B"}]'
     "fileview_groups": Param(
-        '[{"file_view_id": "20446927", "group_name": "HTAN1"}]', type="string"),
+        '[{"file_view_id": "20446927", "group_name": "HTAN1"},{"file_view_id": "51489960", "group_name": "ELITE"},{"file_view_id": "16858331", "group_name": "NF-OSI"},{"file_view_id": "27210848", "group_name": "MC2"},{"file_view_id": "52794526", "group_name": "GENIE"}]', type="string"),
 }
 
 dag_config = {
