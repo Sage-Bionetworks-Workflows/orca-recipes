@@ -31,11 +31,11 @@ from airflow.models import Variable, Param
 dag_params = {
     "project_id": Param("syn64892175", type="string"),
     "mapping_url": Param(
-        "https://raw.githubusercontent.com/amp-als/data-model/dd0e476c3659c9b98977d567d0ddce01d5057639/mapping/cpath.jsonata",
+        "https://raw.githubusercontent.com/amp-als/data-model/410a429540a81a63846921ee77d6cf8e33ab6407/mapping/cpath.jsonata",
         type="string",
     ),
     "schema_url": Param(
-        "https://raw.githubusercontent.com/amp-als/data-model/dd0e476c3659c9b98977d567d0ddce01d5057639/json-schemas/Dataset.json",
+        "https://raw.githubusercontent.com/amp-als/data-model/410a429540a81a63846921ee77d6cf8e33ab6407/json-schemas/Dataset.json",
         type="string",
     ),
     "cpath_api_url": Param(
@@ -249,6 +249,8 @@ def als_kp_dataset_dag():
             Column(name="publisher", column_type=ColumnType.STRING, maximum_size=100),
             Column(name="species", column_type=ColumnType.STRING, maximum_size=100),
             Column(name="sameAs", column_type=ColumnType.STRING, maximum_size=100),
+            Column(name="source", column_type=ColumnType.STRING, maximum_size=100),
+            Column(name="url", column_type=ColumnType.STRING, maximum_size=100),
         ]
 
         dataset_collection = DatasetCollection(
@@ -334,6 +336,8 @@ def als_kp_dataset_dag():
                         "publisher",
                         "species",
                         "sameAs",
+                        "source",
+                        "url"
                     ]
                 },
             }
