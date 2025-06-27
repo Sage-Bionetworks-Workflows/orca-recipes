@@ -58,20 +58,24 @@ def preprocessing(
     features_df_synid: str,
     cli_to_cbio_mapping: pd.DataFrame,
     cli_to_oncotree_mapping_synid: str,
-) -> pd.DataFrame:
-    """_summary_
+    datahub_tools_path: str,
+) -> dict:
+    """Preprocesses the data, runs the individual steps
 
     Args:
-        input_df_synid (str): _description_
-        features_df_synid (str): _description_
-        cli_to_cbio_mapping (pd.DataFrame): _description_
-        cli_to_oncotree_mapping_synid (str): _description_
+        input_df_synid (str): Synapse id of input iatlas clinical dataset
+        features_df_synid (str): Synapse id of the features dataset
+        cli_to_cbio_mapping (pd.DataFrame): Clinical to cbioportal attirbutes mapping
+        cli_to_oncotree_mapping_synid (str): Oncotree mapping for clinical dataset
+        datahub_tools_path (str): Path to the datahub tools repo
 
     Returns:
-        pd.DataFrame: _description_
+        dict: preprocessed dataset
     """
-    input_df = pd.read_csv(syn.get(input_df_synid), sep="\t")
-    features_df = pd.read_csv(syn.get(features_df_synid), sep="\t", low_memory=True)
+    input_df = pd.read_csv(syn.get(input_df_synid).path, sep="\t")
+    features_df = pd.read_csv(
+        syn.get(features_df_synid).path, sep="\t", low_memory=True
+    )
     input_df = input_df.merge(features_df, how="left", on="sample_name")
 
     cli_to_oncotree_mapping = pd.read_csv(
@@ -94,42 +98,66 @@ def preprocessing(
     cli_remapped.rename(
         columns={"sample_name": "SAMPLE_ID", "patient_name": "PATIENT_ID"}, inplace=True
     )
-    cli_remapped.to_csv(
-        "../datahub-study-curation-tools/add-clinical-header/cli_remapped.csv"
-    )
-    cli_w_cancer_types = convert_oncotree_codes()
 
-    extra_cols = set(list(cli_w_cancer_types.columns)) - set(set(cli_to_cbio_mapping))
-    cli_w_cancer_types = cli_w_cancer_types.drop(columns=list(extra_cols))
-    return cli_remapped
+    cli_remapped.to_csv(
+        f"{datahub_tools_path}/add-clinical-header/cli_remapped.csv",
+        index=False,
+        sep="\t",
+    )
+    cli_w_cancer_types = convert_oncotree_codes(datahub_tools_path)
+    cli_attr_full = get_updated_cli_attributes(cli_to_cbio_mapping, datahub_tools_path)
+
+    patient_cols = ["PATIENT_ID"] + list(
+        cli_to_cbio_mapping[
+            cli_to_cbio_mapping.ATTRIBUTE_TYPE == "PATIENT"
+        ].NORMALIZED_HEADER.unique()
+    )
+    sample_cols = [
+        "SAMPLE_ID",
+        "PATIENT_ID",
+        "CANCER_TYPE",
+        "CANCER_TYPE_DETAILED",
+    ] + list(
+        cli_to_cbio_mapping[
+            cli_to_cbio_mapping.ATTRIBUTE_TYPE == "SAMPLE"
+        ].NORMALIZED_HEADER.unique()
+    )
+    return {
+        "merged": cli_w_cancer_types,
+        "patient": cli_w_cancer_types[patient_cols + EXTRA_COLS],
+        "sample": cli_w_cancer_types[sample_cols + EXTRA_COLS],
+    }
 
 
 def get_cli_to_cbio_mapping(cli_to_cbio_mapping_synid: str) -> pd.DataFrame:
-    """_summary_
+    """Gets the mapping of the iatlas clinical attributes to cbioportal
+        attributes
 
     Args:
-        cli_to_cbio_mapping_synid (str): _description_
+        cli_to_cbio_mapping_synid (str): synapse id of the clinical
+        attributes to cbioportal attributes
 
     Returns:
-        pd.DataFrame: _description_
+        pd.DataFrame: mapping
     """
     cli_to_cbio_mapping = pd.read_csv(syn.get(cli_to_cbio_mapping_synid).path, sep="\t")
     return cli_to_cbio_mapping
 
 
-def get_updated_cli_attributes(cli_to_cbio_mapping: pd.DataFrame):
-    """_summary_
+def get_updated_cli_attributes(
+    cli_to_cbio_mapping: pd.DataFrame, datahub_tools_path: str
+):
+    """Updates the cbioportal clinical_attributes_metadata attributes used in
+        creating the cbioportal clinical headers
 
     Args:
-        cli_to_cbio_mapping_synid (str): _description_
-        cli_attr_synid (str): _description_
+        cli_to_cbio_mapping_synid (str): synapse id of the clinical
+            to cbioportal attributes mapping
     """
-    cli_to_cbio_mapping = pd.read_csv(syn.get(cli_to_cbio_mapping).path, sep="\t")
     cli_attr = pd.read_csv(
-        ".../datahub-study-curation-tools/add-clinical-header/clinical_attributes_metadata.txt".path,
+        f"{datahub_tools_path}/add-clinical-header/clinical_attributes_metadata.txt",
         sep="\t",
     )
-
     cli_to_cbio_mapping_to_append = cli_to_cbio_mapping.rename(
         columns={
             "NORMALIZED_HEADER": "NORMALIZED_COLUMN_HEADER",
@@ -145,75 +173,95 @@ def get_updated_cli_attributes(cli_to_cbio_mapping: pd.DataFrame):
         subset="NORMALIZED_COLUMN_HEADER", keep="last"
     )
     cli_attr_full.to_csv(
-        "../datahub-study-curation-tools/add-clinical-header/clinical_attributes_metadata.txt",
+        f"{datahub_tools_path}/add-clinical-header/clinical_attributes_metadata.txt",
         sep="\t",
     )
+    return cli_attr_full
 
 
-def convert_oncotree_codes() -> pd.DataFrame:
+def convert_oncotree_codes(datahub_tools_path: str) -> pd.DataFrame:
     """Converts the oncotree codes to CANCER_TYPE and CANCER_TYPE_DESCRIPTION
+
+    Args:
+        datahub_tools_path (str): Path to the datahub tools repo
 
     Returns:
         pd.DataFrame: returns the converted clinical data with the new columns
     """
 
     cmd = f"""
-    cd .../datahub-study-curation-tools/add-clinical-header/
-    python3 ../datahub-study-curation-tools/oncotree-code-converter/oncotree_code_converter.py \
-        --clinical-file cli_remapped.csv \''
+        python3 {datahub_tools_path}/oncotree-code-converter/oncotree_code_converter.py \
+            --clinical-file {datahub_tools_path}/add-clinical-header/cli_remapped.csv
     """
     # Run in shell to allow sourcing
     subprocess.run(cmd, shell=True, executable="/bin/bash")
     cli_w_cancer_types = pd.read_csv(
-        "../datahub-study-curation-tools/add-clinical-header/cli_remapped.csv", sep="\t"
+        f"{datahub_tools_path}/add-clinical-header/cli_remapped.csv", sep="\t"
     )
     return cli_w_cancer_types
 
 
-def add_clinical_header(input_df: pd.DataFrame, dataset_name: str) -> None:
+def add_clinical_header(
+    input_dfs: pd.DataFrame,
+    dataset_name: str,
+    datahub_tools_path: str,
+) -> None:
     """Adds the clinical headers by calling cbioportal repo
     Args:
         cli_df (pd.DataFrame) - input clinical dataframe with all mappings
         dataset_name (str) - name of dataset to add clinical headers to
-
     """
-    cli_df_subset = input_df[input_df["Dataset"] == dataset_name]
 
     dataset_dir = os.path.join(
-        "/Users/rxu/datahub-study-curation-tools/add-clinical-header/", dataset_name
+        f"{datahub_tools_path}/add-clinical-header/", dataset_name
     )
     if not os.path.exists(dataset_dir):
         os.makedirs(dataset_dir)
 
-    cli_df_subset.drop(columns=list(EXTRA_COLS)).to_csv(
-        f"{dataset_dir}/data_clinical.txt", sep="\t", index=False
+    patient_df_subset = input_dfs["patient"][
+        input_dfs["patient"]["Dataset"] == dataset_name
+    ]
+    patient_df_subset.drop(columns=list(EXTRA_COLS)).to_csv(
+        f"{dataset_dir}/data_clinical_patient.txt", sep="\t", index=False
+    )
+    sample_df_subset = input_dfs["sample"][
+        input_dfs["sample"]["Dataset"] == dataset_name
+    ]
+    sample_df_subset.drop(columns=list(EXTRA_COLS)).to_csv(
+        f"{dataset_dir}/data_clinical_sample.txt", sep="\t", index=False
     )
     cmd = f"""
-    cd .../datahub-study-curation-tools/add-clinical-header/
-    python3 ../datahub-study-curation-tools/add-clinical-header/insert_clinical_metadata.py \
-        -d {dataset_dir} \
-        -n data_clinical_{dataset_name}.txt
+    cd {datahub_tools_path}/add-clinical-header/
+    python3 {datahub_tools_path}/add-clinical-header/insert_clinical_metadata.py \
+        -d {dataset_dir}    
     """
-
     # Run in shell to allow sourcing
     subprocess.run(cmd, shell=True, executable="/bin/bash")
+    
+    # saved merged for case lists
+    merged_df_subset = input_dfs["merged"][
+        input_dfs["merged"]["Dataset"] == dataset_name
+    ]
+    merged_df_subset.drop(columns=list(EXTRA_COLS)).to_csv(
+        f"{dataset_dir}/data_clinical_merged.txt", sep="\t", index=False
+    )
 
 
-def generate_meta_files(dataset_name: str) -> None:
+def generate_meta_files(dataset_name: str, datahub_tools_path: str) -> None:
     """Generates the meta* files for the given dataset
 
     Args:
         dataset_name (str): name of the iatlas dataset
     """
     dataset_dir = os.path.join(
-        "/Users/rxu/datahub-study-curation-tools/add-clinical-header/", dataset_name
+        f"{datahub_tools_path}/add-clinical-header/", dataset_name
     )
 
     cmd = f"""
-    python3 ../datahub-study-curation-tools/generate-meta-files/generate_meta_files.py \
+    python3 {datahub_tools_path}/generate-meta-files/generate_meta_files.py \
         -d {dataset_dir} \
         -s iatlas_{dataset_name} \
-        -m ../datahub-study-curation-tools/generate-meta-files/datatypes.txt
+        -m {datahub_tools_path}/generate-meta-files/datatypes.txt
     """
     # Run in shell to allow sourcing
     subprocess.run(cmd, shell=True, executable="/bin/bash")
@@ -345,8 +393,8 @@ def create_case_lists(clinical_file_name, output_directory, study_id):
     write_case_list_all(clin_samples, output_directory, study_id)
 
 
-def save_to_synapse(dataset_name: str) -> None:
-    """Saves the dataset's clinical file, case lists 
+def save_to_synapse(dataset_name: str, datahub_tools_path: str) -> None:
+    """Saves the dataset's clinical file, case lists
         and meta files to its synapse respective folders
 
     Args:
@@ -356,7 +404,7 @@ def save_to_synapse(dataset_name: str) -> None:
     # TODO: Make into argument
     iatlas_folder_synid = "syn64136279"
     dataset_dir = os.path.join(
-        "../datahub-study-curation-tools/add-clinical-header/", dataset_name
+        datahub_tools_path, "add-clinical-header", dataset_name
     )
     # see if dataset_folder exists
     dataset_folder_exists = False
@@ -368,29 +416,43 @@ def save_to_synapse(dataset_name: str) -> None:
         if dataset_name == dataset_folder[0]:
             dataset_folder_exists = True
             dataset_folder_id = dataset_folder[1]
+            break
 
     if not dataset_folder_exists:
         new_dataset_folder = synapseclient.Folder(
             dataset_name, parent=iatlas_folder_synid
         )
         dataset_folder_id = syn.store(new_dataset_folder).id
-
-    # store clinical file
+    # store clinical patient file
     syn.store(
         synapseclient.File(
-            f"{dataset_dir}/data_clinical_{dataset_name}.txt",
-            name="data_clinical.txt",
+            f"{dataset_dir}/data_clinical_patient.txt",
+            name="data_clinical_patient.txt",
+            parent=dataset_folder_id,
+        )
+    )
+    # store clinical sample file
+    syn.store(
+        synapseclient.File(
+            f"{dataset_dir}/data_clinical_sample.txt",
+            name="data_clinical_sample.txt",
             parent=dataset_folder_id,
         )
     )
     # store meta* files
     syn.store(
-        synapseclient.File(f"{dataset_dir}/meta_clinical.txt", parent=dataset_folder_id)
+        synapseclient.File(
+            f"{dataset_dir}/meta_clinical_patient.txt", parent=dataset_folder_id
+        )
+    )
+    syn.store(
+        synapseclient.File(
+            f"{dataset_dir}/meta_clinical_sample.txt", parent=dataset_folder_id
+        )
     )
     syn.store(
         synapseclient.File(f"{dataset_dir}/meta_study.txt", parent=dataset_folder_id)
     )
-
     case_list_files = os.listdir(os.path.join(dataset_dir, "case_lists"))
     case_list_folder = synapseclient.Folder("case_lists", parent=dataset_folder_id)
     try:
@@ -405,7 +467,9 @@ def save_to_synapse(dataset_name: str) -> None:
         )
 
 
-def validate_export_files(input_df: pd.DataFrame, dataset_name: str) -> None:
+def validate_export_files(
+    input_df: pd.DataFrame, dataset_name: str, datahub_tools_path: str
+) -> None:
     """Does simple validation of the sample and patient count
         for the input and output clincial files
 
@@ -415,7 +479,7 @@ def validate_export_files(input_df: pd.DataFrame, dataset_name: str) -> None:
     """
     cli_df_subset = input_df[input_df["Dataset"] == dataset_name]
     dataset_dir = os.path.join(
-        "../datahub-study-curation-tools/add-clinical-header/", dataset_name
+        f"{datahub_tools_path}/add-clinical-header/", dataset_name
     )
 
     output_df = pd.read_csv(
@@ -448,44 +512,60 @@ def validate_export_files(input_df: pd.DataFrame, dataset_name: str) -> None:
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "input_df_synid",
+        "--input_df_synid",
         type=str,
         help="Synapse id for the input clinical file containing all the iatlas datasets",
     )
     parser.add_argument(
-        "features_df_synid",
+        "--features_df_synid",
         type=str,
         help="Synapse id for the features data for all the iatlas datasets",
     )
     parser.add_argument(
-        "cli_to_cbio_mapping_synid",
+        "--cli_to_cbio_mapping_synid",
         type=str,
         help="Synapse id for the clinical to cbioportal mapping file",
     )
     parser.add_argument(
-        "cli_to_oncotree_mapping_synid",
+        "--cli_to_oncotree_mapping_synid",
         type=str,
         help="Synapse id for the clinical to oncotree mapping file",
     )
-    
+    parser.add_argument(
+        "--datahub_tools_path",
+        type=str,
+        help="Path to datahub-study-curation-tools repo",
+    )
+
     args = parser.parse_args()
-    
-    input_df = pd.read_csv(syn.get(args.input_df_synid), sep="\t")
     cli_to_cbio_mapping = get_cli_to_cbio_mapping(
         cli_to_cbio_mapping_synid=args.cli_to_cbio_mapping_synid
     )
-    cli_w_cancer_types = preprocessing(
-        input_df_synid=input_df,
+    cli_dfs = preprocessing(
+        input_df_synid=args.input_df_synid,
         features_df_synid=args.features_df_synid,
         cli_to_cbio_mapping=cli_to_cbio_mapping,
         cli_to_oncotree_mapping_synid=args.cli_to_oncotree_mapping_synid,
+        datahub_tools_path=args.datahub_tools_path,
     )
-    for dataset in IATLAS_DATASETS:
-        add_clinical_header(input_df=cli_w_cancer_types, dataset_name=dataset)
+
+    for dataset in ["Riaz_Nivolumab_2017"]:  # IATLAS_DATASETS:
+        add_clinical_header(
+            input_dfs=cli_dfs,
+            dataset_name=dataset,
+            datahub_tools_path=args.datahub_tools_path,
+        )
         create_case_lists(
-            clinical_file_name=f"../datahub-study-curation-tools/add-clinical-header/{dataset}/data_clinical.txt",
-            output_directory=f"../datahub-study-curation-tools/add-clinical-header/{dataset}/case_lists/",
+            clinical_file_name=f"{args.datahub_tools_path}/add-clinical-header/{dataset}/data_clinical_merged.txt",
+            output_directory=f"{args.datahub_tools_path}/add-clinical-header/{dataset}/case_lists/",
             study_id=f"iatlas_{dataset}",
         )
-        generate_meta_files(dataset_name=dataset)
-        save_to_synapse(dataset_name=dataset)
+        generate_meta_files(
+            dataset_name=dataset, datahub_tools_path=args.datahub_tools_path
+        )
+        save_to_synapse(
+            dataset_name=dataset, datahub_tools_path=args.datahub_tools_path
+        )
+
+
+main()
