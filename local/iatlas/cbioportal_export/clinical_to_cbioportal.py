@@ -237,7 +237,7 @@ def add_clinical_header(
     """
     # Run in shell to allow sourcing
     subprocess.run(cmd, shell=True, executable="/bin/bash")
-    
+
     # saved merged for case lists
     merged_df_subset = input_dfs["merged"][
         input_dfs["merged"]["Dataset"] == dataset_name
@@ -403,9 +403,7 @@ def save_to_synapse(dataset_name: str, datahub_tools_path: str) -> None:
     """
     # TODO: Make into argument
     iatlas_folder_synid = "syn64136279"
-    dataset_dir = os.path.join(
-        datahub_tools_path, "add-clinical-header", dataset_name
-    )
+    dataset_dir = os.path.join(datahub_tools_path, "add-clinical-header", dataset_name)
     # see if dataset_folder exists
     dataset_folder_exists = False
     for _, directory_names, _ in synapseutils.walk(syn=syn, synId=iatlas_folder_synid):
@@ -509,6 +507,24 @@ def validate_export_files(
     print("\n\n")
 
 
+def run_cbioportal_validator(
+    dataset_name: str, cbioportal_path: str, datahub_tools_path: str
+) -> None:
+    """Runs the cbioportal validation script to check the 
+        input clinical, metadata files
+
+    Args:
+        cbioportal_path (str): Path to cbioportal repo containing validator script
+        datahub_tools_path (str): path to the datahub tools repo containing 
+            the locally saved clinical files
+    """
+    cmd = f"""
+    python3 {cbioportal_path}/core/src/main/scripts/importer/validateData.py \
+        -s "{datahub_tools_path}/add-clinical-header/{dataset_name}" -n
+    """
+    subprocess.run(cmd, shell=True, executable="/bin/bash")
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -536,6 +552,11 @@ def main():
         type=str,
         help="Path to datahub-study-curation-tools repo",
     )
+    parser.add_argument(
+        "--cbioportal_path",
+        type=str,
+        help="Path to cbioportal repo",
+    )
 
     args = parser.parse_args()
     cli_to_cbio_mapping = get_cli_to_cbio_mapping(
@@ -562,6 +583,11 @@ def main():
         )
         generate_meta_files(
             dataset_name=dataset, datahub_tools_path=args.datahub_tools_path
+        )
+        run_cbioportal_validator(
+            dataset_name=dataset,
+            cbioportal_path=args.cbioportal_path,
+            datahub_tools_path=args.datahub_tools_path,
         )
         save_to_synapse(
             dataset_name=dataset, datahub_tools_path=args.datahub_tools_path
