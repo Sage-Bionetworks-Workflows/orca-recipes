@@ -105,7 +105,7 @@ def preprocessing(
         sep="\t",
     )
     cli_w_cancer_types = convert_oncotree_codes(datahub_tools_path)
-    cli_attr_full = get_updated_cli_attributes(cli_to_cbio_mapping, datahub_tools_path)
+    get_updated_cli_attributes(cli_to_cbio_mapping, datahub_tools_path)
 
     patient_cols = ["PATIENT_ID"] + list(
         cli_to_cbio_mapping[
@@ -124,7 +124,7 @@ def preprocessing(
     )
     return {
         "merged": cli_w_cancer_types,
-        "patient": cli_w_cancer_types[patient_cols + EXTRA_COLS],
+        "patient": cli_w_cancer_types[patient_cols + EXTRA_COLS].drop_duplicates(),
         "sample": cli_w_cancer_types[sample_cols + EXTRA_COLS],
     }
 
@@ -153,6 +153,7 @@ def get_updated_cli_attributes(
     Args:
         cli_to_cbio_mapping_synid (str): synapse id of the clinical
             to cbioportal attributes mapping
+        datahub_tools_path (str): Path to the datahub tools repo
     """
     cli_attr = pd.read_csv(
         f"{datahub_tools_path}/add-clinical-header/clinical_attributes_metadata.txt",
@@ -210,6 +211,7 @@ def add_clinical_header(
     Args:
         cli_df (pd.DataFrame) - input clinical dataframe with all mappings
         dataset_name (str) - name of dataset to add clinical headers to
+        datahub_tools_path (str): Path to the datahub tools repo
     """
 
     dataset_dir = os.path.join(
@@ -252,6 +254,7 @@ def generate_meta_files(dataset_name: str, datahub_tools_path: str) -> None:
 
     Args:
         dataset_name (str): name of the iatlas dataset
+        datahub_tools_path (str): Path to the datahub tools repo
     """
     dataset_dir = os.path.join(
         f"{datahub_tools_path}/add-clinical-header/", dataset_name
@@ -267,7 +270,7 @@ def generate_meta_files(dataset_name: str, datahub_tools_path: str) -> None:
     subprocess.run(cmd, shell=True, executable="/bin/bash")
 
 
-def create_case_lists_map(clinical_file_name):
+def create_case_lists_map(clinical_file_name: str):
     """
     Creates the case list dictionary
 
@@ -291,7 +294,9 @@ def create_case_lists_map(clinical_file_name):
     return clinical_file_map, clin_samples
 
 
-def write_single_oncotree_case_list(cancer_type, ids, study_id, output_directory):
+def write_single_oncotree_case_list(
+    cancer_type: str, ids: list, study_id: str, output_directory: str
+) -> str:
     """
     Writes one oncotree case list. Python verisons below
     3.6 will sort the dictionary keys which causes tests to fail
@@ -327,7 +332,7 @@ def write_single_oncotree_case_list(cancer_type, ids, study_id, output_directory
     return case_list_path
 
 
-def write_case_list_all(clinical_samples, output_directory, study_id):
+def write_case_list_all(clinical_samples: list, output_directory: str, study_id: str):
     """
     Writes the genie all samples.
 
@@ -354,7 +359,9 @@ def write_case_list_all(clinical_samples, output_directory, study_id):
     return caselist_files
 
 
-def write_case_list_files(clinical_file_map, output_directory, study_id):
+def write_case_list_files(
+    clinical_file_map: dict, output_directory: str, study_id: str
+):
     """
     Writes the cancer_type case list file to case_lists directory
 
@@ -376,7 +383,7 @@ def write_case_list_files(clinical_file_map, output_directory, study_id):
     return case_list_files
 
 
-def create_case_lists(clinical_file_name, output_directory, study_id):
+def create_case_lists(clinical_file_name: str, output_directory: str, study_id: str):
     """Gets clinical file and gene matrix file and processes it
     to obtain case list files
 
@@ -400,6 +407,7 @@ def save_to_synapse(dataset_name: str, datahub_tools_path: str) -> None:
     Args:
         dataset_name (str): name of the iatlas dataset to save to
             synapse
+        datahub_tools_path (str): Path to the datahub tools repo
     """
     # TODO: Make into argument
     iatlas_folder_synid = "syn64136279"
@@ -474,6 +482,7 @@ def validate_export_files(
     Args:
         input_df (pd.DataFrame): input clinical file
         dataset_name (str): name of the iatlas dataset to validate
+        datahub_tools_path (str): Path to the datahub tools repo
     """
     cli_df_subset = input_df[input_df["Dataset"] == dataset_name]
     dataset_dir = os.path.join(
@@ -510,12 +519,13 @@ def validate_export_files(
 def run_cbioportal_validator(
     dataset_name: str, cbioportal_path: str, datahub_tools_path: str
 ) -> None:
-    """Runs the cbioportal validation script to check the 
+    """Runs the cbioportal validation script to check the
         input clinical, metadata files
 
     Args:
+        dataset_name (str): name of the dataset
         cbioportal_path (str): Path to cbioportal repo containing validator script
-        datahub_tools_path (str): path to the datahub tools repo containing 
+        datahub_tools_path (str): path to the datahub tools repo containing
             the locally saved clinical files
     """
     cmd = f"""
