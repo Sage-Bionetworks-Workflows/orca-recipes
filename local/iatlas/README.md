@@ -86,8 +86,16 @@ Steps to run LENS workflow:
 python3 local/iatlas/lens.py run --dataset_id <yaml-dataset-synapse-id> --s3_prefix s3://<your-s3-bucket>/<your-s3-subdirectory>
 ```
 
-## iAtlas to cbiportal
-This script will process/transform the iatlas clinical data to be cbioportal format friendly so it can be ingested by cbioportal team for visualization
+## cbioportal_export
+This script will process/transform the iatlas clinical data to be cbioportal format friendly so it can be ingested by cbioportal team for visualization.
+
+The script does the following:
+
+1. Preprocesses the data and adds [required mappings like ONCOTREE](https://github.com/cBioPortal/datahub-study-curation-tools/tree/master/oncotree-code-converter)
+2. [Adds clinical headers](https://github.com/cBioPortal/datahub-study-curation-tools/tree/master/add-clinical-header)
+3. [Creates the required meta_* data](https://github.com/cBioPortal/datahub-study-curation-tools/tree/master/generate-meta-files)
+4. [Creates the required caselists](https://github.com/cBioPortal/datahub-study-curation-tools/tree/master/generate-case-lists)
+
 
 ## Setup
 - `pandas`
