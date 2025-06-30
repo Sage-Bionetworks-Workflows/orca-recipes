@@ -173,6 +173,8 @@ def get_updated_cli_attributes(
     cli_attr_full = cli_attr_full.drop_duplicates(
         subset="NORMALIZED_COLUMN_HEADER", keep="last"
     )
+    # resolve pandas int to float conversion issue
+    cli_attr_full.loc[cli_attr_full.PRIORITY == 1.0, 'PRIORITY'] = '1'
     cli_attr_full.to_csv(
         f"{datahub_tools_path}/add-clinical-header/clinical_attributes_metadata.txt",
         sep="\t",
@@ -584,7 +586,6 @@ def main():
         cli_to_oncotree_mapping_synid=args.cli_to_oncotree_mapping_synid,
         datahub_tools_path=args.datahub_tools_path,
     )
-
     for dataset in IATLAS_DATASETS:
         add_clinical_header(
             input_dfs=cli_dfs,
