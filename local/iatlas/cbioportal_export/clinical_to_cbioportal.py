@@ -474,35 +474,42 @@ def save_to_synapse(dataset_name: str, datahub_tools_path: str) -> None:
 
 
 def validate_export_files(
-    input_df: pd.DataFrame, dataset_name: str, datahub_tools_path: str
+    input_df_synid: str, dataset_name: str, datahub_tools_path: str
 ) -> None:
     """Does simple validation of the sample and patient count
         for the input and output clincial files
 
     Args:
-        input_df (pd.DataFrame): input clinical file
+        input_df_synid (str): input clinical file synapse id
         dataset_name (str): name of the iatlas dataset to validate
         datahub_tools_path (str): Path to the datahub tools repo
     """
+    input_df = pd.read_csv(syn.get(input_df_synid).path, sep="\t")
     cli_df_subset = input_df[input_df["Dataset"] == dataset_name]
     dataset_dir = os.path.join(
         f"{datahub_tools_path}/add-clinical-header/", dataset_name
     )
 
-    output_df = pd.read_csv(
-        os.path.join(dataset_dir, f"data_clinical_{dataset_name}.txt"),
+    output_patient_df = pd.read_csv(
+        os.path.join(dataset_dir, f"data_clinical_patient.txt"),
         sep="\t",
-        skiprows=5,
+        skiprows=4,
     )
 
+    output_samples_df = pd.read_csv(
+        os.path.join(dataset_dir, f"data_clinical_sample.txt"),
+        sep="\t",
+        skiprows=4,
+    )
     n_samples_start = len(cli_df_subset.sample_name.unique())
     n_patients_start = len(cli_df_subset.patient_name.unique())
-    n_samples_end = len(output_df.SAMPLE_ID.unique())
-    n_patients_end = len(output_df.PATIENT_ID.unique())
+    n_samples_end = len(output_samples_df.SAMPLE_ID.unique())
+    n_patients_end = len(output_patient_df.PATIENT_ID.unique())
 
-    print(dataset_name)
-    if len(cli_df_subset) != len(output_df):
-        print(f"Input is {len(cli_df_subset)} rows, output is {len(output_df)} rows")
+    if len(cli_df_subset) != len(output_samples_df):
+        print(
+            f"Input is {len(cli_df_subset)} rows, output is {len(output_samples_df)} rows"
+        )
     if n_samples_start != n_samples_end:
         print(
             f"There are {n_samples_start} samples start, there are {n_samples_end} samples end"
@@ -511,8 +518,6 @@ def validate_export_files(
         print(
             f"There are {n_patients_start} patients start, there are {n_patients_end} patients end"
         )
-    if len(output_df[output_df.duplicated()]) != 0:
-        print("There are duplicates")
     print("\n\n")
 
 
@@ -580,7 +585,7 @@ def main():
         datahub_tools_path=args.datahub_tools_path,
     )
 
-    for dataset in ["Riaz_Nivolumab_2017"]:  # IATLAS_DATASETS:
+    for dataset in IATLAS_DATASETS:
         add_clinical_header(
             input_dfs=cli_dfs,
             dataset_name=dataset,
@@ -594,14 +599,19 @@ def main():
         generate_meta_files(
             dataset_name=dataset, datahub_tools_path=args.datahub_tools_path
         )
+        validate_export_files(
+            input_df_synid=args.input_df_synid,
+            dataset_name=dataset,
+            datahub_tools_path=args.datahub_tools_path,
+        )
         run_cbioportal_validator(
             dataset_name=dataset,
             cbioportal_path=args.cbioportal_path,
             datahub_tools_path=args.datahub_tools_path,
         )
         save_to_synapse(
-            dataset_name=dataset, datahub_tools_path=args.datahub_tools_path
+           dataset_name=dataset, datahub_tools_path=args.datahub_tools_path
         )
 
-
-main()
+if __name__ == "__main__":
+    main()
