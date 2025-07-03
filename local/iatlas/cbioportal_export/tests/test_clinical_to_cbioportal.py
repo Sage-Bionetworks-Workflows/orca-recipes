@@ -10,6 +10,48 @@ import pytest
 import clinical_to_cbioportal as cli_to_cbio
 
 
+@pytest.mark.parametrize(
+    "input, expected",
+    [
+        (pd.DataFrame(
+            {
+                "PRIORITY":[1.0, None, float('nan')]
+            }
+        ),
+        pd.DataFrame(
+            {
+                "PRIORITY":["1", None, float('nan')]
+            }
+        )),
+        (pd.DataFrame(
+            {
+                "PRIORITY":[1, 1, 1]
+            }
+        ),
+        pd.DataFrame(
+            {
+                "PRIORITY":["1", "1", "1"]
+            }
+        )),
+        (pd.DataFrame(
+            {
+                "PRIORITY":[None, None, None]
+            }
+        ),
+        pd.DataFrame(
+            {
+                "PRIORITY":[None, None, None]
+            }
+        ))
+    ],
+    ids = ["mixed_dtype", "all_integers", "no_floats"]
+)
+def test_that_convert_floats_in_priority_column_converts_correctly(input, expected):
+    output = cli_to_cbio.convert_floats_in_priority_column(input)
+    pd.testing.assert_frame_equal(
+            output.reset_index(drop=True), expected.reset_index(drop=True)
+    )
+
 def test_that_get_updated_cli_attributes_updates_correctly():
     # Define input mappings (like the Synapse mapping file)
     mapping_df = pd.DataFrame(

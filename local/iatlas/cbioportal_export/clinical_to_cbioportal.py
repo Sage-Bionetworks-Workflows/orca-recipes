@@ -6,6 +6,7 @@ import subprocess
 import sys
 from typing import Dict
 
+import numpy as np
 import pandas as pd
 import synapseclient
 import synapseutils
@@ -152,6 +153,27 @@ def get_cli_to_cbio_mapping(cli_to_cbio_mapping_synid: str) -> pd.DataFrame:
     return cli_to_cbio_mapping
 
 
+def convert_floats_in_priority_column(input_df : pd.DataFrame) -> pd.DataFrame:
+    """Converts the floating point 1.0 in PRIORITY column to 1s.
+        This is due to pandas behavior of converting integers to floats
+        in a mixed dtype column with NAs
+
+    Args:
+        input_df (pd.DataFrame): input data with PRIORITY column
+
+    Returns:
+        pd.DataFrame: input_df with PRIORITY column converted to "1" instead of 1.0
+    """
+    converted_df = input_df.copy()
+    # Coerce PRIORITY to numeric, setting errors='coerce' turns non-numeric values into NaN
+    converted_df['PRIORITY_NUM'] = pd.to_numeric(converted_df['PRIORITY'], errors='coerce')
+
+    # Now apply isclose safely
+    converted_df.loc[np.isclose(converted_df['PRIORITY_NUM'], 1.0), 'PRIORITY'] = '1'
+    converted_df.drop(columns='PRIORITY_NUM', inplace=True)
+    return(converted_df)
+    
+
 def get_updated_cli_attributes(
     cli_to_cbio_mapping: pd.DataFrame, datahub_tools_path: str
 ):
@@ -182,7 +204,7 @@ def get_updated_cli_attributes(
         subset="NORMALIZED_COLUMN_HEADER", keep="last"
     )
     # resolve pandas int to float conversion issue
-    cli_attr_full.loc[cli_attr_full.PRIORITY == 1.0, 'PRIORITY'] = '1'
+    cli_attr_full = convert_floats_in_priority_column(input_df = cli_attr_full)
     cli_attr_full.to_csv(
         f"{datahub_tools_path}/add-clinical-header/clinical_attributes_metadata.txt",
         sep="\t",
