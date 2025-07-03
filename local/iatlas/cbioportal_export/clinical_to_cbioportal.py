@@ -80,8 +80,10 @@ def preprocessing(
         datahub_tools_path (str): Path to the datahub tools repo
 
     Returns:
-        Dict[pd.DataFrame, pd.DataFrame, pd.DataFrame]: merged clinical,
-            patient dataset and sample dataset
+        Dict[str, pd.DataFrame]: A dictionary with the following keys:
+            "merged" : the clinical merged file before split
+            "patient" : patient dataset
+            "sample" : sample dataset
     """
     input_df = pd.read_csv(syn.get(input_df_synid).path, sep="\t")
     features_df = pd.read_csv(
@@ -611,6 +613,12 @@ def main():
         type=str,
         help="Path to cbioportal repo",
     )
+    parser.add_argument(
+        "--dry_run",
+        action="store_true",
+        default=False,
+        help="Whether to run without saving to Synapse"
+    )
 
     args = parser.parse_args()
     cli_to_cbio_mapping = get_cli_to_cbio_mapping(
@@ -647,11 +655,12 @@ def main():
             cbioportal_path=args.cbioportal_path,
             datahub_tools_path=args.datahub_tools_path,
         )
-        save_to_synapse(
-           dataset_name=dataset, 
-           datahub_tools_path=args.datahub_tools_path, 
-           output_folder_synid=args.output_folder_synid
-        )
+        if not args.dry_run:
+            save_to_synapse(
+               dataset_name=dataset, 
+               datahub_tools_path=args.datahub_tools_path, 
+               output_folder_synid=args.output_folder_synid
+            )
 
 if __name__ == "__main__":
     main()

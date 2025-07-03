@@ -115,7 +115,9 @@ python3 clinical_to_cbioportal.py
     --cbioportal_path <path_to_cbioportal_repo>
 ```
 
-Example:
+**Example:**
+Doing a dry run on all of the datasets:
+
 ```
 python3 clinical_to_cbioportal.py 
     --input_df_synid syn66314245 \
@@ -125,4 +127,5 @@ python3 clinical_to_cbioportal.py
     --output_folder_synid syn64136279 \
     --datahub_tools_path /some_path/datahub-study-curation-tools \
     --cbioportal_path /<some_path>/cbioportal
+    --dry-run
 ```
