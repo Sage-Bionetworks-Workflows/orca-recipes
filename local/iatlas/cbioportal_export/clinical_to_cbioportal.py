@@ -646,7 +646,9 @@ def main():
             datahub_tools_path=args.datahub_tools_path,
         )
         save_to_synapse(
-           dataset_name=dataset, datahub_tools_path=args.datahub_tools_path
+           dataset_name=dataset, 
+           datahub_tools_path=args.datahub_tools_path, 
+           output_folder_synid=args.output_folder_synid
         )
 
 if __name__ == "__main__":
