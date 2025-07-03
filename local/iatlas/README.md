@@ -110,6 +110,7 @@ python3 clinical_to_cbioportal.py
     --features_df_synid <synapse_id_of_features_data> \
     --cli_to_cbio_mapping_synid <synapse_id_of_iatlas_to_cbioportal_clinical_attributes_mapping> \
     --cli_to_oncotree_mapping_synid <synapse_id_of_clinical_to_oncotree_mapping> \
+    --output_folder_synid <synapse_id_of_output_folder> \
     --datahub_tools_path <path_to_cbioportal_datahub_tools_repo_on_system> \
     --cbioportal_path <path_to_cbioportal_repo>
 ```
@@ -121,6 +122,7 @@ python3 clinical_to_cbioportal.py
     --features_df_synid syn68525850 \
     --cli_to_cbio_mapping_synid syn66276162 
     --cli_to_oncotree_mapping_synid syn66313842 \
+    --output_folder_synid syn64136279 \
     --datahub_tools_path /some_path/datahub-study-curation-tools \
     --cbioportal_path /<some_path>/cbioportal
 ```

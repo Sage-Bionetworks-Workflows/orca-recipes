@@ -4,6 +4,7 @@ import csv
 import os
 import subprocess
 import sys
+from typing import Dict
 
 import pandas as pd
 import synapseclient
@@ -59,8 +60,14 @@ def preprocessing(
     cli_to_cbio_mapping: pd.DataFrame,
     cli_to_oncotree_mapping_synid: str,
     datahub_tools_path: str,
-) -> dict:
-    """Preprocesses the data, runs the individual steps
+) -> Dict[str, pd.DataFrame]:
+    """Preprocesses the data, runs the individual steps:
+        1. Gets the input clinical data
+        2. Gets the feature data and merged it in
+        3. Merges in the oncotree mappings
+        4. Remaps the columns to be cbioportal headers
+        5. Converts the oncotree codes to have the CANCER_TYPE and CANCER_TYPE_DETAILED columns
+        6. Splits the merged clinical data into patient and sample data
 
     Args:
         input_df_synid (str): Synapse id of input iatlas clinical dataset
@@ -70,7 +77,8 @@ def preprocessing(
         datahub_tools_path (str): Path to the datahub tools repo
 
     Returns:
-        dict: preprocessed dataset
+        Dict[pd.DataFrame, pd.DataFrame, pd.DataFrame]: merged clinical,
+            patient dataset and sample dataset
     """
     input_df = pd.read_csv(syn.get(input_df_synid).path, sep="\t")
     features_df = pd.read_csv(
@@ -402,7 +410,7 @@ def create_case_lists(clinical_file_name: str, output_directory: str, study_id: 
     write_case_list_all(clin_samples, output_directory, study_id)
 
 
-def save_to_synapse(dataset_name: str, datahub_tools_path: str) -> None:
+def save_to_synapse(dataset_name: str, datahub_tools_path: str, output_folder_synid : str) -> None:
     """Saves the dataset's clinical file, case lists
         and meta files to its synapse respective folders
 
@@ -410,13 +418,13 @@ def save_to_synapse(dataset_name: str, datahub_tools_path: str) -> None:
         dataset_name (str): name of the iatlas dataset to save to
             synapse
         datahub_tools_path (str): Path to the datahub tools repo
+        output_folder_synid (str): Synapse id of the output folder
     """
     # TODO: Make into argument
-    iatlas_folder_synid = "syn64136279"
     dataset_dir = os.path.join(datahub_tools_path, "add-clinical-header", dataset_name)
     # see if dataset_folder exists
     dataset_folder_exists = False
-    for _, directory_names, _ in synapseutils.walk(syn=syn, synId=iatlas_folder_synid):
+    for _, directory_names, _ in synapseutils.walk(syn=syn, synId=output_folder_synid):
         directories = directory_names  # top level directories
         break
 
@@ -428,7 +436,7 @@ def save_to_synapse(dataset_name: str, datahub_tools_path: str) -> None:
 
     if not dataset_folder_exists:
         new_dataset_folder = synapseclient.Folder(
-            dataset_name, parent=iatlas_folder_synid
+            dataset_name, parent=output_folder_synid
         )
         dataset_folder_id = syn.store(new_dataset_folder).id
     # store clinical patient file
@@ -563,6 +571,11 @@ def main():
         "--cli_to_oncotree_mapping_synid",
         type=str,
         help="Synapse id for the clinical to oncotree mapping file",
+    )
+    parser.add_argument(
+        "--output_folder_synid",
+        type=str,
+        help="Synapse id for output folder to store the export files"
     )
     parser.add_argument(
         "--datahub_tools_path",
