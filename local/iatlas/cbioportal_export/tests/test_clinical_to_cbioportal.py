@@ -2,7 +2,7 @@
 import csv
 import os
 import tempfile
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 import pandas as pd
 import pytest
@@ -10,6 +10,29 @@ import pytest
 import clinical_to_cbioportal as cli_to_cbio
 
 
+@pytest.fixture
+def test_input_clinical_data():
+    input_data = pd.DataFrame({
+        "PATIENT_ID": ["P1", "P2"],
+        "SAMPLE_ID": ["S1", "S2"],
+        "CANCER_TYPE": ["TypeA", "TypeB"],
+        "CANCER_TYPE_DETAILED": ["SubtypeA", "SubtypeB"],
+        "AGE": [55, 60],
+        "STAGE": ["II", "III"],
+        "TREATMENT": ["Chemo", "Radiation"],
+        "Dataset":["SAGE-1", "SAGE-2"]
+    })
+    return input_data
+
+
+@pytest.fixture
+def test_cli_to_cbio_mapping():
+    cli_to_cbio_mapping = pd.DataFrame({
+        "ATTRIBUTE_TYPE": ["PATIENT", "SAMPLE", "SAMPLE"],
+        "NORMALIZED_HEADER": ["AGE", "STAGE", "TREATMENT"]
+    })
+    return cli_to_cbio_mapping
+    
 @pytest.mark.parametrize(
     "input, expected",
     [
@@ -51,6 +74,53 @@ def test_that_convert_floats_in_priority_column_converts_correctly(input, expect
     pd.testing.assert_frame_equal(
             output.reset_index(drop=True), expected.reset_index(drop=True)
     )
+class TestSplitPatientAndSampleData:
+    def test_split_structure(self, test_input_clinical_data, test_cli_to_cbio_mapping):
+        result = cli_to_cbio.split_into_patient_and_sample_data(test_input_clinical_data, test_cli_to_cbio_mapping)
+        assert isinstance(result, dict)
+        assert set(result.keys()) == {"merged", "patient", "sample"}
+
+
+    def test_patient_columns(self, test_input_clinical_data, test_cli_to_cbio_mapping):
+        result = cli_to_cbio.split_into_patient_and_sample_data(test_input_clinical_data, test_cli_to_cbio_mapping)
+        patient_df = result["patient"]
+        expected_cols = {"PATIENT_ID", "AGE", "Dataset"}
+        assert expected_cols.issubset(set(patient_df.columns))
+
+
+    def test_sample_columns(self, test_input_clinical_data, test_cli_to_cbio_mapping):
+        result = cli_to_cbio.split_into_patient_and_sample_data(test_input_clinical_data, test_cli_to_cbio_mapping)
+        sample_df = result["sample"]
+        expected_cols = {
+            "SAMPLE_ID", "PATIENT_ID", "CANCER_TYPE", "CANCER_TYPE_DETAILED",
+            "STAGE", "TREATMENT", "Dataset"
+        }
+        assert expected_cols.issubset(set(sample_df.columns))
+
+
+    def test_patient_deduplication(self, test_input_clinical_data, test_cli_to_cbio_mapping):
+        # Add a duplicate row
+        duplicated = pd.concat([test_input_clinical_data,test_input_clinical_data.iloc[[0]]], ignore_index=True)
+        result = cli_to_cbio.split_into_patient_and_sample_data(duplicated, test_cli_to_cbio_mapping)
+        patient_df = result["patient"]
+        assert len(patient_df) == 2  # Should drop duplicate
+
+
+    def test_empty_mapping(self):
+        input_data = pd.DataFrame({
+            "PATIENT_ID": ["P1"],
+            "SAMPLE_ID": ["S1"],
+            "CANCER_TYPE": ["TypeA"],
+            "CANCER_TYPE_DETAILED": ["SubtypeA"],
+            "Dataset":["SAGE-1"]
+        })
+
+        empty_mapping = pd.DataFrame(columns=["ATTRIBUTE_TYPE", "NORMALIZED_HEADER"])
+
+        result = cli_to_cbio.split_into_patient_and_sample_data(input_data, empty_mapping)
+        assert "AGE" not in result["patient"].columns
+        assert result["sample"].shape[1] == 5  # basic required + EXTRA_COLS
+
 
 def test_that_get_updated_cli_attributes_updates_correctly():
     # Define input mappings (like the Synapse mapping file)

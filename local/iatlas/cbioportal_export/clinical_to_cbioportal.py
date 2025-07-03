@@ -13,7 +13,7 @@ import synapseutils
 
 
 my_agent = "iatlas-cbioportal/0.0.0"
-syn = synapseclient.Synapse(user_agent=my_agent)
+syn = synapseclient.Synapse(user_agent=my_agent).login()
 
 EXTRA_COLS = ["Dataset"]
 
@@ -63,7 +63,7 @@ def preprocessing(
     cli_to_cbio_mapping: pd.DataFrame,
     cli_to_oncotree_mapping_synid: str,
     datahub_tools_path: str,
-) -> Dict[str, pd.DataFrame]:
+) -> pd.DataFrame:
     """Preprocesses the data, runs the individual steps:
         1. Gets the input clinical data
         2. Gets the feature data and merged it in
@@ -80,10 +80,7 @@ def preprocessing(
         datahub_tools_path (str): Path to the datahub tools repo
 
     Returns:
-        Dict[str, pd.DataFrame]: A dictionary with the following keys:
-            "merged" : the clinical merged file before split
-            "patient" : patient dataset
-            "sample" : sample dataset
+        pd.DataFrame: preprocessed clinical merged dataset
     """
     input_df = pd.read_csv(syn.get(input_df_synid).path, sep="\t")
     features_df = pd.read_csv(
@@ -120,6 +117,26 @@ def preprocessing(
     cli_w_cancer_types = convert_oncotree_codes(datahub_tools_path)
     get_updated_cli_attributes(cli_to_cbio_mapping, datahub_tools_path)
 
+    return cli_w_cancer_types
+    
+    
+def split_into_patient_and_sample_data(
+    input_data: pd.DataFrame, 
+    cli_to_cbio_mapping : pd.DataFrame
+    )-> Dict[str, pd.DataFrame]:
+    """ This splits the preprocessed clinical dataset (prior to adding clinical headers)
+    into patient and sample datasets
+    
+    Args:
+        input_df (pd.DataFrame): Input iatlas merged preprocessed clinical dataset
+        cli_to_cbio_mapping (pd.DataFrame): Clinical to cbioportal attirbutes mapping
+
+    Returns:
+        Dict[str, pd.DataFrame]: A dictionary with the following keys:
+            "merged" : the clinical merged file before split
+            "patient" : patient dataset
+            "sample" : sample dataset
+    """
     patient_cols = ["PATIENT_ID"] + list(
         cli_to_cbio_mapping[
             cli_to_cbio_mapping.ATTRIBUTE_TYPE == "PATIENT"
@@ -136,9 +153,9 @@ def preprocessing(
         ].NORMALIZED_HEADER.unique()
     )
     return {
-        "merged": cli_w_cancer_types,
-        "patient": cli_w_cancer_types[patient_cols + EXTRA_COLS].drop_duplicates(),
-        "sample": cli_w_cancer_types[sample_cols + EXTRA_COLS],
+        "merged": input_data,
+        "patient": input_data[patient_cols + EXTRA_COLS].drop_duplicates(),
+        "sample": input_data[sample_cols + EXTRA_COLS],
     }
 
 
@@ -320,7 +337,7 @@ def create_case_lists_map(clinical_file_name: str):
               value = list of sample ids
         list: Clinical samples
     """
-    with open(clinical_file_name, "rU") as clinical_file:
+    with open(clinical_file_name, "r", newline=None) as clinical_file:
         clinical_file_map = defaultdict(list)
         clin_samples = []
         reader = csv.DictReader(clinical_file, dialect="excel-tab")
@@ -634,12 +651,16 @@ def main():
     cli_to_cbio_mapping = get_cli_to_cbio_mapping(
         cli_to_cbio_mapping_synid=args.cli_to_cbio_mapping_synid
     )
-    cli_dfs = preprocessing(
+    cli_df = preprocessing(
         input_df_synid=args.input_df_synid,
         features_df_synid=args.features_df_synid,
         cli_to_cbio_mapping=cli_to_cbio_mapping,
         cli_to_oncotree_mapping_synid=args.cli_to_oncotree_mapping_synid,
         datahub_tools_path=args.datahub_tools_path,
+    )
+    cli_dfs = split_into_patient_and_sample_data(
+        input_data=cli_df, 
+        cli_to_cbio_mapping=cli_to_cbio_mapping
     )
     for dataset in IATLAS_DATASETS:
         add_clinical_header(
