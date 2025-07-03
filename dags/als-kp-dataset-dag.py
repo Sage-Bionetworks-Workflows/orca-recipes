@@ -26,10 +26,11 @@ from orca.services.synapse import SynapseHook
 
 from airflow.decorators import task, dag
 from airflow.models import Variable, Param
+import time
 
 
 dag_params = {
-    "project_id": Param("syn64892175", type="string"),
+    "project_id": Param("syn68155335", type="string"),
     "mapping_url": Param(
         "https://raw.githubusercontent.com/amp-als/data-model/410a429540a81a63846921ee77d6cf8e33ab6407/mapping/cpath.jsonata",
         type="string",
@@ -41,9 +42,9 @@ dag_params = {
     "cpath_api_url": Param(
         "https://fair.dap.c-path.org/api/collections/als-kp/datasets", type="string"
     ),
-    "collection_name": Param("Dataset collection (Production)", type="string"),
+    "collection_name": Param("test-collection", type="string"),
     "collection_description": Param(
-        "A collection of datasets curated for the ALS Knowledge Portal", type="string"
+        "A test collection of datasets curated for the ALS Knowledge Portal", type="string"
     ),
     "synapse_conn_id": Param("SYNAPSE_ORCA_SERVICE_ACCOUNT_CONN", type="string"),
 }
@@ -261,7 +262,7 @@ def als_kp_dataset_dag():
             columns=columns,
         )
 
-        for item in transformed_items:
+        for item in transformed_items[1:]:
             dataset_description = (
                 item["description"][:1000]
                 if len(item["description"]) > 1000
@@ -272,6 +273,13 @@ def als_kp_dataset_dag():
                 description=dataset_description,
                 parent_id=context["params"]["project_id"],
             ).store(synapse_client=synapse_client)
+
+            if not dataset.annotations.get("source") and item.get("source"):
+                dataset.annotations["source"] = item["source"]
+            
+            dataset.store(synapse_client=synapse_client)
+            # wait for the job to be completed
+            time.sleep(3)
             dataset_collection.add_item(dataset)
 
         dataset_collection = dataset_collection.store(synapse_client=synapse_client)
@@ -309,12 +317,19 @@ def als_kp_dataset_dag():
         )
 
         # Get current data before update
+        # This approach assumes that source will never be None or empty for all the existing upload
         current_data = dataset_collection.query(
+            query=f"SELECT * from {dataset_collection.id} where publisher='Critical Path Institute'",
+            synapse_client=synapse_client,
+        )
+
+        # Update annotations for cpath the data
+        all_cpath_data = dataset_collection.query(
             query=f"SELECT * from {dataset_collection.id} where source='Critical Path Institute'",
             synapse_client=synapse_client,
         )
-        dataset_ids = list(current_data["id"])
-        # Prepare and apply new data
+        dataset_ids = list(all_cpath_data["id"])
+
         annotation_data = pd.DataFrame(
             {
                 "id": dataset_ids,
@@ -325,7 +340,7 @@ def als_kp_dataset_dag():
                             if isinstance(item[key], list)
                             else item[key]
                         )
-                        for item in transformed_items
+                        for item in transformed_items[1:]
                     ]
                     for key in [
                         "title",
@@ -333,7 +348,7 @@ def als_kp_dataset_dag():
                         "keywords",
                         "subject",
                         "collection",
-                        "publisher",
+                        "publisher", 
                         "species",
                         "sameAs",
                         "source",
@@ -354,9 +369,11 @@ def als_kp_dataset_dag():
 
         # Get data after update
         updated_data = dataset_collection.query(
-            query=f"SELECT * from {dataset_collection.id} where source='Critical Path Institute'",
+            query=f"SELECT * from {dataset_collection.id} where publisher='Critical Path Institute'",
             synapse_client=synapse_client,
         )
+        num_rows = len(updated_data.index)
+        print('num rows after update', num_rows)
 
         # Compare data before and after update
         if not current_data.equals(updated_data):
@@ -373,11 +390,13 @@ def als_kp_dataset_dag():
                 f"Updated columns: {', '.join(changed_columns)}. "
                 f"Total datasets: {len(dataset_ids)}"
             )
+            print('snaoshot_comments', snapshot_comment)
 
             print("Changes detected in dataset collection, creating new snapshot...")
             print(f"Snapshot comment: {snapshot_comment}")
+
             dataset_collection.snapshot(
-                comment=snapshot_comment, synapse_client=synapse_client
+                comment="test comment", synapse_client=synapse_client
             )
         else:
             print("No changes detected in dataset collection, skipping snapshot.")
