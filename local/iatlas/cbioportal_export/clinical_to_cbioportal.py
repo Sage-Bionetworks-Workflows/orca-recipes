@@ -12,7 +12,9 @@ import synapseclient
 import synapseutils
 
 
-syn = synapseclient.login()
+my_agent = "iatlas-cbioportal/0.0.0"
+syn = synapseclient.Synapse(user_agent=my_agent)
+
 EXTRA_COLS = ["Dataset"]
 
 IATLAS_DATASETS = [
