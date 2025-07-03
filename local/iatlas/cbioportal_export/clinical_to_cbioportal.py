@@ -561,7 +561,7 @@ def run_cbioportal_validator(
     dataset_name: str, cbioportal_path: str, datahub_tools_path: str
 ) -> None:
     """Runs the cbioportal validation script to check the
-        input clinical, metadata files
+        input clinical, metadata files and saves the output
 
     Args:
         dataset_name (str): name of the dataset
@@ -573,7 +573,17 @@ def run_cbioportal_validator(
     python3 {cbioportal_path}/core/src/main/scripts/importer/validateData.py \
         -s "{datahub_tools_path}/add-clinical-header/{dataset_name}" -n
     """
-    subprocess.run(cmd, shell=True, executable="/bin/bash")
+    validated = f"{datahub_tools_path}/add-clinical-header/{dataset_name}/cbioportal_validator_output.txt"
+    with open(f"{validated}", "w") as outfile:
+        subprocess.run(
+            cmd, 
+            shell=True, 
+            executable="/bin/bash",
+            stdout=outfile, 
+            stderr=subprocess.STDOUT
+        )
+    print(f"cbioportal validator results saved to: {validated}")
+    
 
 
 def main():
