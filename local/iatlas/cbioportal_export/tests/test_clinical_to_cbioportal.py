@@ -255,16 +255,16 @@ def test_that_write_case_list_files_writes_correctly():
                 "OS_STATUS": [0, 1],
                 "PFS_STATUS": [1, 0]
             }),
-            ["LIVING", "DECEASED"],
-            ["DECEASED", "LIVING"]
+            ["0:LIVING", "1:DECEASED"],
+            ["1:DECEASED", "0:LIVING"]
         ),
         (
             pd.DataFrame({
                 "OS_STATUS": [0, 2, None],
                 "PFS_STATUS": [1, 1, None]
             }),
-            ["LIVING", 2.0, float('nan')],
-            ["DECEASED", "DECEASED", float('nan')]
+            ["0:LIVING", 2.0, float('nan')],
+            ["1:DECEASED", "1:DECEASED", float('nan')]
         ),
         (
             pd.DataFrame({
@@ -272,8 +272,8 @@ def test_that_write_case_list_files_writes_correctly():
                 "PFS_STATUS": [0, 1],
                 "OTHER_COL": ["note1", "note2"]
             }),
-            ["LIVING", "DECEASED"],
-            ["LIVING", "DECEASED"]
+            ["0:LIVING", "1:DECEASED"],
+            ["0:LIVING", "1:DECEASED"]
         ),
     ],
     ids = ["all_values_mapped", "partially_unmapped", "no_remapping"]

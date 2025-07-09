@@ -174,7 +174,7 @@ def remap_column_values(input_df: pd.DataFrame) -> pd.DataFrame:
         pd.DataFrame: output data with columns remapped
     """
     remapped_df = input_df.copy()
-    mapping = {0: "LIVING", 1: "DECEASED"}
+    mapping = {0: "0:LIVING", 1: "1:DECEASED"}
     cols_to_remap = ["OS_STATUS", "PFS_STATUS"]
 
     remapped_df[cols_to_remap] = remapped_df[cols_to_remap].replace(mapping)
