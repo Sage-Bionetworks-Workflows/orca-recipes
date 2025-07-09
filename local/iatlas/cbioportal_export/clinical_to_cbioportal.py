@@ -2,6 +2,7 @@ import argparse
 from collections import defaultdict
 import csv
 import os
+import shutil
 import subprocess
 import sys
 from typing import Dict
@@ -108,7 +109,7 @@ def preprocessing(
     cli_remapped.rename(
         columns={"sample_name": "SAMPLE_ID", "patient_name": "PATIENT_ID"}, inplace=True
     )
-
+    cli_remapped = remap_column_values(input_df=cli_remapped)
     cli_remapped.to_csv(
         f"{datahub_tools_path}/add-clinical-header/cli_remapped.csv",
         index=False,
@@ -118,15 +119,14 @@ def preprocessing(
     get_updated_cli_attributes(cli_to_cbio_mapping, datahub_tools_path)
 
     return cli_w_cancer_types
-    
-    
+
+
 def split_into_patient_and_sample_data(
-    input_data: pd.DataFrame, 
-    cli_to_cbio_mapping : pd.DataFrame
-    )-> Dict[str, pd.DataFrame]:
-    """ This splits the preprocessed clinical dataset (prior to adding clinical headers)
+    input_data: pd.DataFrame, cli_to_cbio_mapping: pd.DataFrame
+) -> Dict[str, pd.DataFrame]:
+    """This splits the preprocessed clinical dataset (prior to adding clinical headers)
     into patient and sample datasets
-    
+
     Args:
         input_df (pd.DataFrame): Input iatlas merged preprocessed clinical dataset
         cli_to_cbio_mapping (pd.DataFrame): Clinical to cbioportal attirbutes mapping
@@ -159,6 +159,28 @@ def split_into_patient_and_sample_data(
     }
 
 
+def remap_column_values(input_df: pd.DataFrame) -> pd.DataFrame:
+    """Remaps the column values into the accepted cbioportal
+        values.
+        Current columns that get remapped:
+            - OS_STATUS
+            - PFS_STATUS
+        Checks that the columns have been remapped otherwise
+        throws an error
+    Args:
+        input_df (pd.DataFrame): input data to be remapped
+
+    Returns:
+        pd.DataFrame: output data with columns remapped
+    """
+    remapped_df = input_df.copy()
+    mapping = {0: "LIVING", 1: "DECEASED"}
+    cols_to_remap = ["OS_STATUS", "PFS_STATUS"]
+
+    remapped_df[cols_to_remap] = remapped_df[cols_to_remap].replace(mapping)
+    return remapped_df
+
+
 def get_cli_to_cbio_mapping(cli_to_cbio_mapping_synid: str) -> pd.DataFrame:
     """Gets the mapping of the iatlas clinical attributes to cbioportal
         attributes
@@ -174,7 +196,7 @@ def get_cli_to_cbio_mapping(cli_to_cbio_mapping_synid: str) -> pd.DataFrame:
     return cli_to_cbio_mapping
 
 
-def convert_floats_in_priority_column(input_df : pd.DataFrame) -> pd.DataFrame:
+def convert_floats_in_priority_column(input_df: pd.DataFrame) -> pd.DataFrame:
     """Converts the floating point 1.0 in PRIORITY column to 1s.
         This is due to pandas behavior of converting integers to floats
         in a mixed dtype column with NAs
@@ -187,13 +209,15 @@ def convert_floats_in_priority_column(input_df : pd.DataFrame) -> pd.DataFrame:
     """
     converted_df = input_df.copy()
     # Coerce PRIORITY to numeric, setting errors='coerce' turns non-numeric values into NaN
-    converted_df['PRIORITY_NUM'] = pd.to_numeric(converted_df['PRIORITY'], errors='coerce')
+    converted_df["PRIORITY_NUM"] = pd.to_numeric(
+        converted_df["PRIORITY"], errors="coerce"
+    )
 
     # Now apply isclose safely
-    converted_df.loc[np.isclose(converted_df['PRIORITY_NUM'], 1.0), 'PRIORITY'] = '1'
-    converted_df.drop(columns='PRIORITY_NUM', inplace=True)
-    return(converted_df)
-    
+    converted_df.loc[np.isclose(converted_df["PRIORITY_NUM"], 1.0), "PRIORITY"] = "1"
+    converted_df.drop(columns="PRIORITY_NUM", inplace=True)
+    return converted_df
+
 
 def get_updated_cli_attributes(
     cli_to_cbio_mapping: pd.DataFrame, datahub_tools_path: str
@@ -225,7 +249,7 @@ def get_updated_cli_attributes(
         subset="NORMALIZED_COLUMN_HEADER", keep="last"
     )
     # resolve pandas int to float conversion issue
-    cli_attr_full = convert_floats_in_priority_column(input_df = cli_attr_full)
+    cli_attr_full = convert_floats_in_priority_column(input_df=cli_attr_full)
     cli_attr_full.to_csv(
         f"{datahub_tools_path}/add-clinical-header/clinical_attributes_metadata.txt",
         sep="\t",
@@ -453,7 +477,12 @@ def create_case_lists(clinical_file_name: str, output_directory: str, study_id: 
     write_case_list_all(clin_samples, output_directory, study_id)
 
 
-def save_to_synapse(dataset_name: str, datahub_tools_path: str, output_folder_synid : str) -> None:
+def save_to_synapse(
+    dataset_name: str,
+    datahub_tools_path: str,
+    output_folder_synid: str,
+    version_comment: str = None,
+) -> None:
     """Saves the dataset's clinical file, case lists
         and meta files to its synapse respective folders
 
@@ -462,6 +491,8 @@ def save_to_synapse(dataset_name: str, datahub_tools_path: str, output_folder_sy
             synapse
         datahub_tools_path (str): Path to the datahub tools repo
         output_folder_synid (str): Synapse id of the output folder
+        version_comment (str): Version comment for this iteration of files on synapse. Optional.
+            Defaults to None.
     """
     # TODO: Make into argument
     dataset_dir = os.path.join(datahub_tools_path, "add-clinical-header", dataset_name)
@@ -482,12 +513,14 @@ def save_to_synapse(dataset_name: str, datahub_tools_path: str, output_folder_sy
             dataset_name, parent=output_folder_synid
         )
         dataset_folder_id = syn.store(new_dataset_folder).id
+        
     # store clinical patient file
     syn.store(
         synapseclient.File(
             f"{dataset_dir}/data_clinical_patient.txt",
             name="data_clinical_patient.txt",
             parent=dataset_folder_id,
+            version_comment=version_comment,
         )
     )
     # store clinical sample file
@@ -496,21 +529,30 @@ def save_to_synapse(dataset_name: str, datahub_tools_path: str, output_folder_sy
             f"{dataset_dir}/data_clinical_sample.txt",
             name="data_clinical_sample.txt",
             parent=dataset_folder_id,
+            version_comment=version_comment,
         )
     )
     # store meta* files
     syn.store(
         synapseclient.File(
-            f"{dataset_dir}/meta_clinical_patient.txt", parent=dataset_folder_id
+            f"{dataset_dir}/meta_clinical_patient.txt",
+            parent=dataset_folder_id,
+            version_comment=version_comment,
         )
     )
     syn.store(
         synapseclient.File(
-            f"{dataset_dir}/meta_clinical_sample.txt", parent=dataset_folder_id
+            f"{dataset_dir}/meta_clinical_sample.txt",
+            parent=dataset_folder_id,
+            version_comment=version_comment,
         )
     )
     syn.store(
-        synapseclient.File(f"{dataset_dir}/meta_study.txt", parent=dataset_folder_id)
+        synapseclient.File(
+            f"{dataset_dir}/meta_study.txt",
+            parent=dataset_folder_id,
+            version_comment=version_comment,
+        )
     )
     case_list_files = os.listdir(os.path.join(dataset_dir, "case_lists"))
     case_list_folder = synapseclient.Folder("case_lists", parent=dataset_folder_id)
@@ -521,7 +563,9 @@ def save_to_synapse(dataset_name: str, datahub_tools_path: str, output_folder_sy
     for file in case_list_files:
         syn.store(
             synapseclient.File(
-                f"{dataset_dir}/case_lists/{file}", parent=case_list_folder_id
+                f"{dataset_dir}/case_lists/{file}",
+                parent=case_list_folder_id,
+                version_comment=version_comment,
             )
         )
 
@@ -593,14 +637,25 @@ def run_cbioportal_validator(
     validated = f"{datahub_tools_path}/add-clinical-header/{dataset_name}/cbioportal_validator_output.txt"
     with open(f"{validated}", "w") as outfile:
         subprocess.run(
-            cmd, 
-            shell=True, 
+            cmd,
+            shell=True,
             executable="/bin/bash",
-            stdout=outfile, 
-            stderr=subprocess.STDOUT
+            stdout=outfile,
+            stderr=subprocess.STDOUT,
         )
     print(f"cbioportal validator results saved to: {validated}")
-    
+
+
+def clear_workspace(dir_path: str) -> None:
+    """Clears all the folders under a directory
+
+    Args:
+        dir_path (str): directory path
+    """
+    for entry in os.listdir(dir_path):
+        entry_path = os.path.join(dir_path, entry)
+        if os.path.isdir(entry_path):
+            shutil.rmtree(entry_path)
 
 
 def main():
@@ -628,7 +683,7 @@ def main():
     parser.add_argument(
         "--output_folder_synid",
         type=str,
-        help="Synapse id for output folder to store the export files"
+        help="Synapse id for output folder to store the export files",
     )
     parser.add_argument(
         "--datahub_tools_path",
@@ -644,10 +699,25 @@ def main():
         "--dry_run",
         action="store_true",
         default=False,
-        help="Whether to run without saving to Synapse"
+        help="Whether to run without saving to Synapse",
+    )
+    parser.add_argument(
+        "--clear_workspace",
+        action="store_true",
+        default=False,
+        help="Whether to clear local directory of files or not",
+    )
+    parser.add_argument(
+        "--version_comment",
+        default=None,
+        type=str,
+        help="Version comment for the files on Synapse. Optional. Defaults to None.",
     )
 
     args = parser.parse_args()
+    if args.clear_workspace:
+        clear_workspace(dir_path=f"{args.datahub_tools_path}/add-clinical-header")
+
     cli_to_cbio_mapping = get_cli_to_cbio_mapping(
         cli_to_cbio_mapping_synid=args.cli_to_cbio_mapping_synid
     )
@@ -659,8 +729,7 @@ def main():
         datahub_tools_path=args.datahub_tools_path,
     )
     cli_dfs = split_into_patient_and_sample_data(
-        input_data=cli_df, 
-        cli_to_cbio_mapping=cli_to_cbio_mapping
+        input_data=cli_df, cli_to_cbio_mapping=cli_to_cbio_mapping
     )
     for dataset in IATLAS_DATASETS:
         add_clinical_header(
@@ -688,10 +757,12 @@ def main():
         )
         if not args.dry_run:
             save_to_synapse(
-               dataset_name=dataset, 
-               datahub_tools_path=args.datahub_tools_path, 
-               output_folder_synid=args.output_folder_synid
+                dataset_name=dataset,
+                datahub_tools_path=args.datahub_tools_path,
+                output_folder_synid=args.output_folder_synid,
+                version_comment=args.version_comment,
             )
+
 
 if __name__ == "__main__":
     main()
