@@ -121,7 +121,6 @@ python3 clinical_to_cbioportal.py
     --output_folder_synid syn64136279 \
     --datahub_tools_path /some_path/datahub-study-curation-tools \
     --cbioportal_path /<some_path>/cbioportal
-<<<<<<< HEAD
     --dry_run
 ```
 
@@ -138,7 +137,4 @@ python3 clinical_to_cbioportal.py
     --datahub_tools_path /some_path/datahub-study-curation-tools \
     --cbioportal_path /<some_path>/cbioportal
     --version_comment "v1"
-=======
-    --dry-run
->>>>>>> main
 ```
