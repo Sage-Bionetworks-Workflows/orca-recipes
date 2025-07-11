@@ -70,7 +70,7 @@ def preprocessing(
         3. Merges in the oncotree mappings
         4. Remaps the columns to be cbioportal headers
         5. Converts the oncotree codes to have the CANCER_TYPE and CANCER_TYPE_DETAILED columns
-        6. Splits the merged clinical data into patient and sample data
+        6. Updates the clinical_attributes_metadata.txt in prep for adding clinical headers
 
     Args:
         input_df_synid (str): Synapse id of input iatlas clinical dataset
@@ -260,10 +260,12 @@ def add_clinical_header(
     dataset_name: str,
     datahub_tools_path: str,
 ) -> None:
-    """Adds the clinical headers by calling cbioportal repo
+    """Adds the clinical headers to the patient and sample data
+        by calling cbioportal repo
+        
     Args:
-        cli_df (pd.DataFrame) - input clinical dataframe with all mappings
-        dataset_name (str) - name of dataset to add clinical headers to
+        cli_df (pd.DataFrame): input clinical dataframe with all mappings
+        dataset_name (str): name of dataset to add clinical headers to
         datahub_tools_path (str): Path to the datahub tools repo
     """
 
