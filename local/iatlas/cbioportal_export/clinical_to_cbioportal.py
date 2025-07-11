@@ -71,7 +71,7 @@ def preprocessing(
         3. Merges in the oncotree mappings
         4. Remaps the columns to be cbioportal headers
         5. Converts the oncotree codes to have the CANCER_TYPE and CANCER_TYPE_DETAILED columns
-        6. Splits the merged clinical data into patient and sample data
+        6. Updates the clinical_attributes_metadata.txt in prep for adding clinical headers
 
     Args:
         input_df_synid (str): Synapse id of input iatlas clinical dataset
@@ -119,14 +119,15 @@ def preprocessing(
     get_updated_cli_attributes(cli_to_cbio_mapping, datahub_tools_path)
 
     return cli_w_cancer_types
-
-
+    
+    
 def split_into_patient_and_sample_data(
-    input_data: pd.DataFrame, cli_to_cbio_mapping: pd.DataFrame
-) -> Dict[str, pd.DataFrame]:
-    """This splits the preprocessed clinical dataset (prior to adding clinical headers)
+    input_data: pd.DataFrame, 
+    cli_to_cbio_mapping : pd.DataFrame
+    )-> Dict[str, pd.DataFrame]:
+    """ This splits the preprocessed clinical dataset (prior to adding clinical headers)
     into patient and sample datasets
-
+    
     Args:
         input_df (pd.DataFrame): Input iatlas merged preprocessed clinical dataset
         cli_to_cbio_mapping (pd.DataFrame): Clinical to cbioportal attirbutes mapping
@@ -196,7 +197,7 @@ def get_cli_to_cbio_mapping(cli_to_cbio_mapping_synid: str) -> pd.DataFrame:
     return cli_to_cbio_mapping
 
 
-def convert_floats_in_priority_column(input_df: pd.DataFrame) -> pd.DataFrame:
+def convert_floats_in_priority_column(input_df : pd.DataFrame) -> pd.DataFrame:
     """Converts the floating point 1.0 in PRIORITY column to 1s.
         This is due to pandas behavior of converting integers to floats
         in a mixed dtype column with NAs
@@ -209,15 +210,13 @@ def convert_floats_in_priority_column(input_df: pd.DataFrame) -> pd.DataFrame:
     """
     converted_df = input_df.copy()
     # Coerce PRIORITY to numeric, setting errors='coerce' turns non-numeric values into NaN
-    converted_df["PRIORITY_NUM"] = pd.to_numeric(
-        converted_df["PRIORITY"], errors="coerce"
-    )
+    converted_df['PRIORITY_NUM'] = pd.to_numeric(converted_df['PRIORITY'], errors='coerce')
 
     # Now apply isclose safely
-    converted_df.loc[np.isclose(converted_df["PRIORITY_NUM"], 1.0), "PRIORITY"] = "1"
-    converted_df.drop(columns="PRIORITY_NUM", inplace=True)
-    return converted_df
-
+    converted_df.loc[np.isclose(converted_df['PRIORITY_NUM'], 1.0), 'PRIORITY'] = '1'
+    converted_df.drop(columns='PRIORITY_NUM', inplace=True)
+    return(converted_df)
+    
 
 def get_updated_cli_attributes(
     cli_to_cbio_mapping: pd.DataFrame, datahub_tools_path: str
@@ -249,7 +248,7 @@ def get_updated_cli_attributes(
         subset="NORMALIZED_COLUMN_HEADER", keep="last"
     )
     # resolve pandas int to float conversion issue
-    cli_attr_full = convert_floats_in_priority_column(input_df=cli_attr_full)
+    cli_attr_full = convert_floats_in_priority_column(input_df = cli_attr_full)
     cli_attr_full.to_csv(
         f"{datahub_tools_path}/add-clinical-header/clinical_attributes_metadata.txt",
         sep="\t",
@@ -284,10 +283,12 @@ def add_clinical_header(
     dataset_name: str,
     datahub_tools_path: str,
 ) -> None:
-    """Adds the clinical headers by calling cbioportal repo
+    """Adds the clinical headers to the patient and sample data
+        by calling cbioportal repo
+        
     Args:
-        cli_df (pd.DataFrame) - input clinical dataframe with all mappings
-        dataset_name (str) - name of dataset to add clinical headers to
+        cli_df (pd.DataFrame): input clinical dataframe with all mappings
+        dataset_name (str): name of dataset to add clinical headers to
         datahub_tools_path (str): Path to the datahub tools repo
     """
 
@@ -729,7 +730,8 @@ def main():
         datahub_tools_path=args.datahub_tools_path,
     )
     cli_dfs = split_into_patient_and_sample_data(
-        input_data=cli_df, cli_to_cbio_mapping=cli_to_cbio_mapping
+        input_data=cli_df, 
+        cli_to_cbio_mapping=cli_to_cbio_mapping
     )
     for dataset in IATLAS_DATASETS:
         add_clinical_header(
