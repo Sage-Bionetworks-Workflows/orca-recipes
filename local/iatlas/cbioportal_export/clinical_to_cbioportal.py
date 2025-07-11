@@ -16,6 +16,7 @@ import synapseutils
 my_agent = "iatlas-cbioportal/0.0.0"
 syn = synapseclient.Synapse(user_agent=my_agent).login()
 
+
 EXTRA_COLS = ["Dataset"]
 
 IATLAS_DATASETS = [
@@ -38,6 +39,10 @@ IATLAS_DATASETS = [
     "Riaz_Nivolumab_2017",
     "VanAllen_antiCTLA4_2015",
     "Zhao_NatMed_2019",
+    "Damrauer_NatComm_2022",
+    "Rose_BrJCancer_2021",
+    "Anders_JITC_2022",
+    "Zappasodi_Nature_2021"
 ]
 
 CBIOPORTAL_METADATA_COLS = [
@@ -60,22 +65,19 @@ CASE_LIST_TEXT_TEMPLATE = (
 
 def preprocessing(
     input_df_synid: str,
-    features_df_synid: str,
     cli_to_cbio_mapping: pd.DataFrame,
     cli_to_oncotree_mapping_synid: str,
     datahub_tools_path: str,
 ) -> pd.DataFrame:
     """Preprocesses the data, runs the individual steps:
         1. Gets the input clinical data
-        2. Gets the feature data and merged it in
-        3. Merges in the oncotree mappings
-        4. Remaps the columns to be cbioportal headers
-        5. Converts the oncotree codes to have the CANCER_TYPE and CANCER_TYPE_DETAILED columns
-        6. Updates the clinical_attributes_metadata.txt in prep for adding clinical headers
+        2. Merges in the oncotree mappings
+        3. Remaps the columns to be cbioportal headers
+        4. Converts the oncotree codes to have the CANCER_TYPE and CANCER_TYPE_DETAILED columns
+        5. Updates the clinical_attributes_metadata.txt in prep for adding clinical headers
 
     Args:
         input_df_synid (str): Synapse id of input iatlas clinical dataset
-        features_df_synid (str): Synapse id of the features dataset
         cli_to_cbio_mapping (pd.DataFrame): Clinical to cbioportal attirbutes mapping
         cli_to_oncotree_mapping_synid (str): Oncotree mapping for clinical dataset
         datahub_tools_path (str): Path to the datahub tools repo
@@ -84,11 +86,6 @@ def preprocessing(
         pd.DataFrame: preprocessed clinical merged dataset
     """
     input_df = pd.read_csv(syn.get(input_df_synid).path, sep="\t")
-    features_df = pd.read_csv(
-        syn.get(features_df_synid).path, sep="\t", low_memory=True
-    )
-    input_df = input_df.merge(features_df, how="left", on="sample_name")
-
     cli_to_oncotree_mapping = pd.read_csv(
         syn.get(cli_to_oncotree_mapping_synid).path, sep="\t"
     )
@@ -662,14 +659,15 @@ def clear_workspace(dir_path: str) -> None:
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument(
+        "--dataset",
+        type=list,
+        default=IATLAS_DATASETS,
+        help="List of dataset names to run for. Optional. Defaults to IATLAS_DATASETS global variable."
+    )
+    parser.add_argument(
         "--input_df_synid",
         type=str,
         help="Synapse id for the input clinical file containing all the iatlas datasets",
-    )
-    parser.add_argument(
-        "--features_df_synid",
-        type=str,
-        help="Synapse id for the features data for all the iatlas datasets",
     )
     parser.add_argument(
         "--cli_to_cbio_mapping_synid",
@@ -724,7 +722,6 @@ def main():
     )
     cli_df = preprocessing(
         input_df_synid=args.input_df_synid,
-        features_df_synid=args.features_df_synid,
         cli_to_cbio_mapping=cli_to_cbio_mapping,
         cli_to_oncotree_mapping_synid=args.cli_to_oncotree_mapping_synid,
         datahub_tools_path=args.datahub_tools_path,
@@ -733,7 +730,7 @@ def main():
         input_data=cli_df, 
         cli_to_cbio_mapping=cli_to_cbio_mapping
     )
-    for dataset in IATLAS_DATASETS:
+    for dataset in args.dataset:
         add_clinical_header(
             input_dfs=cli_dfs,
             dataset_name=dataset,

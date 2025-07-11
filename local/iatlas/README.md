@@ -115,7 +115,6 @@ Doing a dry run on all of the datasets:
 ```
 python3 clinical_to_cbioportal.py 
     --input_df_synid syn66314245 \
-    --features_df_synid syn68525850 \
     --cli_to_cbio_mapping_synid syn66276162 
     --cli_to_oncotree_mapping_synid syn66313842 \
     --output_folder_synid syn64136279 \
@@ -130,7 +129,6 @@ Saving files to synapse with comment
 ```
 python3 clinical_to_cbioportal.py 
     --input_df_synid syn66314245 \
-    --features_df_synid syn68525850 \
     --cli_to_cbio_mapping_synid syn66276162 
     --cli_to_oncotree_mapping_synid syn66313842 \
     --output_folder_synid syn64136279 \
