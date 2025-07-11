@@ -4,6 +4,7 @@ import os
 import tempfile
 from unittest.mock import patch
 
+import numpy as np
 import pandas as pd
 import pytest
 
@@ -243,3 +244,41 @@ def test_that_write_case_list_files_writes_correctly():
             with open(path) as f:
                 contents = f.read()
                 assert study_id in contents
+
+
+@pytest.mark.parametrize(
+    "input_df, expected_os, expected_pfs",
+    [
+        (
+            pd.DataFrame({
+                "PATIENT_ID": ["P1", "P2"],
+                "OS_STATUS": [0, 1],
+                "PFS_STATUS": [1, 0]
+            }),
+            ["0:LIVING", "1:DECEASED"],
+            ["1:DECEASED", "0:LIVING"]
+        ),
+        (
+            pd.DataFrame({
+                "OS_STATUS": [0, 2, None],
+                "PFS_STATUS": [1, 1, None]
+            }),
+            ["0:LIVING", 2.0, float('nan')],
+            ["1:DECEASED", "1:DECEASED", float('nan')]
+        ),
+        (
+            pd.DataFrame({
+                "OS_STATUS": [0, 1],
+                "PFS_STATUS": [0, 1],
+                "OTHER_COL": ["note1", "note2"]
+            }),
+            ["0:LIVING", "1:DECEASED"],
+            ["0:LIVING", "1:DECEASED"]
+        ),
+    ],
+    ids = ["all_values_mapped", "partially_unmapped", "no_remapping"]
+)
+def test_that_remap_column_values_returns_expected(input_df, expected_os, expected_pfs):
+    result = cli_to_cbio.remap_column_values(input_df)
+    np.testing.assert_equal(result["OS_STATUS"].tolist(), expected_os)
+    np.testing.assert_equal(result["PFS_STATUS"].tolist(), expected_pfs)
