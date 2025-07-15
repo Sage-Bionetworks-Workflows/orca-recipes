@@ -5,10 +5,10 @@ for the ALS Knowledge Portal. The DAG follows these steps:
 
 1. Fetch data from the C-Path API using an authentication token stored in Airflow Variables
 2. Transform the raw data using a JSONata mapping expression and validate against a JSON Schema
-3. Create or update Synapse Datasets for each item in the transformed data
-4. Create or update a Dataset Collection containing all the datasets
-5. Create or update annotations for each dataset in the collection
-6. Create a new snapshot of the collection if any changes were detected
+3. Find duplicates in the new C-Path data and send a message to AMP-ALS slack channel if duplicates are found. 
+4. Create or update Synapse Datasets for each item in the transformed data
+5. Create or update a Dataset Collection containing all the datasets
+6. Create or update annotations for each dataset in the collection
 
 The DAG runs monthly and uses Airflow Variables for configuration.
 """
