@@ -106,7 +106,7 @@ def resolve_dag_config(challenge_name: str, dag_params: dict, config: dict) -> d
     if config.get('dag_config'):
         dag_config.update(config['dag_config'])
         
-        # Ensure start_date is a datetime object in UTC
+        # Ensure start_date/end_date is a datetime object in UTC
         enforce_utc_timezone(dag_config)
             
         # Ensure challenge name is in tags
