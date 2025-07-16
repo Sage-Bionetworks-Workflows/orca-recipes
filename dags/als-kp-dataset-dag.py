@@ -305,9 +305,11 @@ def als_kp_dataset_dag():
 
         This task:
         1. Retrieves the existing dataset collection.
-        2. Iterates over each transformed item:
-        - Creates a new Dataset in Synapse using the item's title and description.
-        - Adds the Dataset to the collection if it is not flagged as a duplicate.
+        2. Iterates over each transformed item, and if a dataset is not flagged as a duplicate:
+            - Creates a dataset in Synapse using the item's title and description.
+            - Adds annotation "source" = "Critical Path Institute" to the dataset
+            - Adds the dataset to the collection.
+            - Updates the dataset collection
 
         Arguments:
             transformed_items (List[Dict[str, Any]]):
@@ -327,21 +329,22 @@ def als_kp_dataset_dag():
         ).get()
 
         for item in transformed_items:
-            if item not in duplicates:
-                dataset_description = (
-                    item["description"][:1000]
-                    if len(item["description"]) > 1000
-                    else item["description"]
-                )
-                dataset = Dataset(
-                    name=item["title"],
-                    description=dataset_description,
-                    parent_id=context["params"]["project_id"],
-                )
-                dataset.annotations = {"source": "Critical Path Institute"}
-                dataset.store(synapse_client=synapse_client)
-                time.sleep(2)
-                dataset_collection.add_item(dataset)
+            if item in duplicates: 
+                continue
+            dataset_description = (
+                item["description"][:1000]
+                if len(item["description"]) > 1000
+                else item["description"]
+            )
+            dataset = Dataset(
+                name=item["title"],
+                description=dataset_description,
+                parent_id=context["params"]["project_id"],
+            )
+            dataset.annotations = {"source": "Critical Path Institute"}
+            dataset.store(synapse_client=synapse_client)
+            dataset_collection.add_item(dataset)
+        dataset_collection.store()
         return dataset_collection.id
 
     @task
@@ -351,10 +354,10 @@ def als_kp_dataset_dag():
         transformed_items: List[Dict[str, Any]],
         **context,
     ) -> None:
-        """Update dataset annotations
+        """Update dataset annotations if the dataset is not flagged as a duplicate
 
         This task:
-        1. Queries the current state of the dataset collection
+        1. Queries the current state of the dataset collection to get all the C-Path data
         2. Prepares new annotation data from the transformed items
         3. Updates the collection with the new annotations
 
@@ -376,6 +379,7 @@ def als_kp_dataset_dag():
             synapse_client=synapse_client,
         )
         dataset_ids = list(current_data["id"])
+
         fields = [
             "title",
             "creator",
@@ -400,7 +404,7 @@ def als_kp_dataset_dag():
 
         if len(dataset_ids) != len(annotations["title"]):
             raise ValueError(
-                f" There are {len(dataset_ids)} stored, but there are {len(annotations[title])} datasets to update"
+                f" There are {len(dataset_ids)} stored in dataset collection, but there are {len(annotations['title'])} datasets to update. "
             )
 
         annotation_data = pd.DataFrame({"id": dataset_ids, **annotations})
