@@ -29,8 +29,8 @@ olfactory-2025-task1:
   key: "10days/olfactory_challenge_task1"
   dag_config:
     schedule_interval: "*/3 * * * *"
-    start_date: "2024-04-09T00:00:00"
-    end_date: "2025-07-21T00:00:00"
+    start_date: "2024-04-09T00:00:00+00:00"
+    end_date: "2025-07-21T00:00:00+00:00"
     catchup: false
     default_args:
       retries: 2
@@ -49,8 +49,8 @@ olfactory-2025-task2:
   key: "10days/olfactory_challenge_task2"
   dag_config:
     schedule_interval: "*/3 * * * *"
-    start_date: "2024-04-09T00:00:00"
-    end_date: "2025-07-21T00:00:00"
+    start_date: "2024-04-09T00:00:00+00:00"
+    end_date: "2025-07-21T00:00:00+00:00"
     catchup: false
     default_args:
       retries: 2
@@ -60,7 +60,7 @@ olfactory-2025-task2:
 final-olfactory-2025-task1:
   synapse_conn_id: "SYNAPSE_ORCA_SERVICE_ACCOUNT_CONN"
   aws_conn_id: "AWS_TOWER_PROD_S3_CONN"
-  revision: "TODO"
+  revision: "7ffc708d945f98ab5cfd3a8d8b2cbad4696b4069"
   challenge_profile: "final_olfactory25_challenge_task1"
   tower_conn_id: "OLFACTORY_CHALLENGE_PROJECT_TOWER_CONN"
   tower_view_id: "syn68685416"
@@ -69,8 +69,8 @@ final-olfactory-2025-task1:
   key: "10days/final_olfactory_challenge_task1"
   dag_config:
     schedule_interval: "*/3 * * * *"
-    start_date: "2025-07-21T00:00:00"
-    end_date: "TODO"
+    start_date: "2025-07-21T00:00:00+00:00"
+    end_date: "2025-08-08T23:59:00+00:00"
     catchup: false
     default_args:
       retries: 2
@@ -80,7 +80,7 @@ final-olfactory-2025-task1:
 final-olfactory-2025-task2:
   synapse_conn_id: "SYNAPSE_ORCA_SERVICE_ACCOUNT_CONN"
   aws_conn_id: "AWS_TOWER_PROD_S3_CONN"
-  revision: "TODO"
+  revision: "7ffc708d945f98ab5cfd3a8d8b2cbad4696b4069"
   challenge_profile: "final_olfactory25_challenge_task2"
   tower_conn_id: "OLFACTORY_CHALLENGE_PROJECT_TOWER_CONN"
   tower_view_id: "syn68685447"
@@ -89,8 +89,8 @@ final-olfactory-2025-task2:
   key: "10days/final_olfactory_challenge_task2"
   dag_config:
     schedule_interval: "*/3 * * * *"
-    start_date: "2025-07-21T00:00:00"
-    end_date: "TODO"
+    start_date: "2025-07-21T00:00:00+00:00"
+    end_date: "2025-08-08T23:59:00+00:00"
     catchup: false
     default_args:
       retries: 2
