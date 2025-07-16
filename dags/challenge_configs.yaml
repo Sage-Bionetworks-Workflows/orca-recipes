@@ -50,7 +50,7 @@ final-olfactory-2025-task1:
   key: "10days/final_olfactory_challenge_task1"
   dag_config:
     schedule_interval: "*/3 * * * *"
-    start_date: "2025-07-21T00:00:00+00:00"
+    start_date: "2025-07-16T00:00:00+00:00"
     end_date: "2025-08-08T23:59:00+00:00"
     catchup: false
     default_args:
@@ -70,7 +70,7 @@ final-olfactory-2025-task2:
   key: "10days/final_olfactory_challenge_task2"
   dag_config:
     schedule_interval: "*/3 * * * *"
-    start_date: "2025-07-21T00:00:00+00:00"
+    start_date: "2025-07-16T00:00:00+00:00"
     end_date: "2025-08-08T23:59:00+00:00"
     catchup: false
     default_args:
