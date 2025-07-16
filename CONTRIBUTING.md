@@ -104,7 +104,8 @@ Modify everything in `<>` and remove the `<>` when complete:
   key: "<10days/my_challenge>"
   dag_config:
     schedule_interval: "*/1 * * * *"
-    start_date: "2024-04-09T00:00:00"
+    start_date: "<YYYY>-<MM>-<DD>T<HH>:<MM>:<SS>+00:00" # Will be converted to a UTC datetime object
+    end_date: "<YYYY>-<MM>-<DD>T<HH>:<MM>:<SS>+00:00" # Will be converted to a UTC datetime object
     catchup: false
     default_args:
       retries: 2
@@ -161,7 +162,8 @@ See below for a list of parameters and their descriptions:
 1. `key`: The S3 key prefix (or folder path) under which the submissions manifest file is uploaded for a challenge DAG run. At runtime, a unique run-specific UUID is appended to this key to ensure that files are uniquely identified and organized. Since this folder path lives in a scratch bucket, you can leverage one of the folders that are configured to delete stale objects based on a certain number of days ([see here](https://sagebionetworks.jira.com/wiki/spaces/WF/pages/2191556616/Getting+Started+with+Nextflow+and+Seqera+Platform#Tower-Project-Breakdown) for more details). This will affect what value you put here. For example, **if you would like for your manifest file to live for 10 days, use `10days/my_project_folder`**.  
 1. `dag_config`: A nested dictionary containing additional DAG scheduling and runtime parameters:  
    * `schedule_interval`: A cron expression that determines how frequently the DAG is triggered.  
-   * `start_date`: An ISO-formatted date string that specifies when the DAG should start running. The DAG factory converts this to a Python datetime object.  
+   * `start_date`: An ISO 8601–formatted date-time string (e.g. `2025-07-16T08:00:00+02:00`) that tells the DAG factory when to begin scheduling runs. The trailing ±HH:MM UTC-offset makes the datetime timezone-aware, and the factory converts it into a Python datetime object in UTC.
+   * `end_date`: An ISO 8601–formatted date-time string (e.g. `2025-07-20T00:00:00-05:00`) that indicates when the DAG should stop scheduling new runs. Like start_date, it may include a ±HH:MM UTC-offset and is parsed by the factory into a timezone-aware Python datetime object in UTC.
    * `catchup`: A Boolean flag that indicates whether Airflow should run missed DAG runs (catch up) if the scheduler falls behind.  
    * `default_args`: Standard Airflow arguments for the DAG. For example, you can set the number of retries for tasks.  
    * `tags`: A list of tags for categorizing the DAG in the Airflow UI.
