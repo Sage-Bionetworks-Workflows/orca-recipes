@@ -21,13 +21,12 @@ import pandas as pd
 from jsonata import jsonata
 from jsonschema import validate, ValidationError
 
-from synapseclient.models import Dataset, DatasetCollection, Column, ColumnType
+from synapseclient.models import Dataset, DatasetCollection
 from orca.services.synapse import SynapseHook
 
 from airflow.decorators import task, dag
 from airflow.models import Variable, Param
 from slack_sdk import WebClient
-import time
 
 
 dag_params = {
