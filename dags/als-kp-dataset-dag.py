@@ -286,7 +286,7 @@ def als_kp_dataset_dag():
         return message
 
     @task
-    def post_slack_messages(message: str) -> bool:
+    def post_slack_messages(message: str):
         """Post the duplicated datasets to the slack channel."""
         if not message:
             return
