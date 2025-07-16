@@ -43,8 +43,7 @@ dag_params = {
     "cpath_api_url": Param(
         "https://fair.dap.c-path.org/api/collections/als-kp/datasets", type="string"
     ),
-    "collection_name": Param("test-collection", type="string"),
-    "collection_description": Param("test dataset collection", type="string"),
+    "collection_id": Param("syn66496326", type="string"),
     "synapse_conn_id": Param("SYNAPSE_ORCA_SERVICE_ACCOUNT_CONN", type="string"),
 }
 
@@ -243,9 +242,8 @@ def als_kp_dataset_dag():
 
         # Get current datasets
         dataset_collection = DatasetCollection(
-            name=context["params"]["collection_name"],
-            parent_id=context["params"]["project_id"],
-        ).get()
+            id=context["params"]["collection_id"]
+        ).get(synapse_client=synapse_client)
         current_data = dataset_collection.query(
             query=f"SELECT * from {dataset_collection.id} where publisher='Critical Path Institute'",
             synapse_client=synapse_client,
@@ -324,12 +322,11 @@ def als_kp_dataset_dag():
         synapse_client = syn_hook.client
 
         dataset_collection = DatasetCollection(
-            name=context["params"]["collection_name"],
-            parent_id=context["params"]["project_id"],
-        ).get()
+            id=context["params"]["collection_id"]
+        ).get(synapse_client=synapse_client)
 
         for item in transformed_items:
-            if item in duplicates: 
+            if item in duplicates:
                 continue
             dataset_description = (
                 item["description"][:1000]
