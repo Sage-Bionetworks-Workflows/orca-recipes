@@ -31,7 +31,7 @@ import time
 
 
 dag_params = {
-    "project_id": Param("syn68155335", type="string"),
+    "project_id": Param("syn64892175", type="string"),
     "mapping_url": Param(
         "https://raw.githubusercontent.com/amp-als/data-model/410a429540a81a63846921ee77d6cf8e33ab6407/mapping/cpath.jsonata",
         type="string",
