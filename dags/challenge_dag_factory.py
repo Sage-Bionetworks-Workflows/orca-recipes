@@ -2,7 +2,7 @@ import io
 import os
 import requests
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 import yaml
 import pandas as pd
 
@@ -33,6 +33,48 @@ def load_challenge_configs(url=CONFIG_URL):
 
     return yaml.safe_load(response.text)
 
+def enforce_utc_timezone(dag_config: dict):
+    """
+    Ensures that 'start_date' and 'end_date' in dag_config are timezone-aware datetimes in UTC.
+
+    Arguments:
+        dag_config: The DAG configurations
+
+    Raises:
+        ValueError if a value is naive (no timezone info) or not a valid datetime/string.
+    """
+
+    for param in ['start_date', 'end_date']:
+
+        if param in dag_config:
+
+            value = dag_config[param]
+
+            # Enforce string or datetime only
+            if isinstance(value, str):
+                try:
+                    dt = datetime.fromisoformat(value)
+                except ValueError as e:
+                    raise ValueError(
+                        f"{param} ('{value}') is not a valid ISO 8601 datetime string."
+                    ) from e
+            elif isinstance(value, datetime):
+                dt = value
+            else:
+                raise TypeError(
+                    f"{param} ('{value}') must be a string or datetime object."
+                )
+
+            # Enforce timezone-aware datetime object
+            if dt.tzinfo is None:
+                raise ValueError(
+                    f"{param}: '{value}' must include a timezone offset. If string, please add '+00:00' for UTC."
+                )
+
+            # Enforce UTC timezone
+            dag_config[param] = dt.astimezone(timezone.utc)
+        
+    
 def resolve_dag_config(challenge_name: str, dag_params: dict, config: dict) -> dict:
     """
     Return the DAG configuration for a challenge.
@@ -53,7 +95,7 @@ def resolve_dag_config(challenge_name: str, dag_params: dict, config: dict) -> d
     # Start with default configuration
     dag_config = {
         "schedule_interval": "*/3 * * * *",
-        "start_date": datetime(2024, 4, 9),
+        "start_date": datetime(2024, 4, 9, tzinfo=timezone.utc),
         "catchup": False,
         "default_args": {"retries": 2},
         "tags": ["nextflow_tower"],
@@ -64,9 +106,8 @@ def resolve_dag_config(challenge_name: str, dag_params: dict, config: dict) -> d
     if config.get('dag_config'):
         dag_config.update(config['dag_config'])
         
-        # Ensure start_date is a datetime object if provided
-        if 'start_date' in dag_config and isinstance(dag_config['start_date'], str):
-            dag_config['start_date'] = datetime.fromisoformat(dag_config['start_date'])
+        # Ensure start_date/end_date is a datetime object in UTC
+        enforce_utc_timezone(dag_config)
             
         # Ensure challenge name is in tags
         if 'tags' in dag_config:
@@ -113,6 +154,9 @@ def get_processed_submission_ids(dag_id: str, n_runs: int = 6) -> set:
 
         # Now retrieve the submission IDs for each run of `get_new_submissions` task
         for task_run in task_runs:
+
+            if task_run is None:
+                continue
 
             # Query the metadata DB (``xcom_pull``) to retrieve the submission IDs...
             # By default, pulling the XComs for `get_new_submissions`
