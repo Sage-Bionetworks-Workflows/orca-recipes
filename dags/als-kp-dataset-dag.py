@@ -226,9 +226,10 @@ def als_kp_dataset_dag():
         1. Retrieves the current C-PATH datasets.
         2. Identifies and flags new datasets that are duplicates based on their 'title'.
 
-        Args:
+        Arguments:
             transformed_items (List[Dict[str, Any]]):
                 A list of transformed and validated items from the previous task.
+            **context: Airflow task context containing DAG parameters
 
         Raises:
             ValueError: If any 'sameAs' or 'title' values are missing or empty after transformation.
@@ -240,13 +241,13 @@ def als_kp_dataset_dag():
         synapse_client = syn_hook.client
 
         # Get current datasets
-        dataset_collection = DatasetCollection(
-            id=context["params"]["collection_id"]
-        ).get(synapse_client=synapse_client)
-        current_data = dataset_collection.query(
-            query=f"SELECT * from {dataset_collection.id} where publisher='Critical Path Institute'",
-            synapse_client=synapse_client,
+        collection_id = context["params"]["collection_id"]
+        query_str = (
+            f"SELECT * FROM {collection_id} WHERE publisher='Critical Path Institute'"
         )
+
+        current_data = synapse_client.tableQuery(query_str).asDataFrame()
+
         current_datasets = list(current_data["sameAs"])
 
         # Flag duplicates from new data
@@ -274,8 +275,19 @@ def als_kp_dataset_dag():
         return duplicates
 
     @task
-    def generate_slack_message(duplicates: List[Dict[str, Any]], **context) -> str:
-        """Generate the message to be posted to the slack channel."""
+    def generate_slack_message(duplicates: List[Dict[str, Any]]) -> str:
+        """
+        Generate a Slack message summarizing duplicated datasets.
+
+        This task formats a message that includes information about datasets flagged as duplicates,
+        which will be posted to a Slack channel for review.
+
+        Arguments:
+            duplicates (List[Dict[str, Any]]): A list of datasets identified as duplicates.
+
+        Returns:
+            str: A formatted Slack message string describing the duplicate datasets.
+        """
         if not duplicates:
             return ""
         message = "There are datasets that need to be reviewed: \n\n"
@@ -285,8 +297,19 @@ def als_kp_dataset_dag():
         return message
 
     @task
-    def post_slack_messages(message: str):
-        """Post the duplicated datasets to the slack channel."""
+    def post_slack_messages(message: str) -> None:
+        """
+        Post a message to the designated Slack channel.
+
+        This task sends a formatted message (e.g., about duplicated datasets)
+        to a Slack channel using a pre-configured webhook or Slack API.
+
+        Args:
+            message (str): The message string to be posted.
+
+        Returns:
+            None
+        """
         if not message:
             return
         client = WebClient(token=Variable.get("SLACK_DPE_TEAM_BOT_TOKEN"))
@@ -313,7 +336,7 @@ def als_kp_dataset_dag():
                 The list of transformed and validated dataset items to process.
             duplicates (List[Dict[str, Any]]):
                 The list of items identified as duplicates, used to skip adding them.
-
+            **context: Airflow task context containing DAG parameters
         Returns:
             str: The ID of the updated dataset collection.
         """
@@ -338,7 +361,7 @@ def als_kp_dataset_dag():
                 parent_id=context["params"]["project_id"],
             )
             dataset.annotations = {"source": "Critical Path Institute"}
-            dataset.store(synapse_client=synapse_client)
+            dataset.store()
             dataset_collection.add_item(dataset)
         dataset_collection.store()
         return dataset_collection.id
@@ -365,14 +388,10 @@ def als_kp_dataset_dag():
         """
         syn_hook = SynapseHook(context["params"]["synapse_conn_id"])
         synapse_client = syn_hook.client
-
-        dataset_collection = DatasetCollection(id=dataset_collection_id).get(
-            synapse_client=synapse_client
-        )
+        dataset_collection = DatasetCollection(id=dataset_collection_id).get()
 
         current_data = dataset_collection.query(
-            query=f"SELECT * from {dataset_collection.id} where source='Critical Path Institute'",
-            synapse_client=synapse_client,
+            query=f"SELECT * from {dataset_collection.id} where source='Critical Path Institute'"
         )
         dataset_ids = list(current_data["id"])
 
