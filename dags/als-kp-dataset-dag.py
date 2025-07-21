@@ -271,9 +271,10 @@ def als_kp_dataset_dag():
                 if title not in seen:
                     seen[title] = item
                 else:
-                    # found duplicates, add both the first one and this one
+                    # found duplicates, add both the first one if it does not already exist and this one
+                    if seen[title] not in duplicates: 
+                        duplicates.append(seen[title])
                     duplicates.append(item)
-                    duplicates.append(seen[title])
         print("Found duplicated datasets:", duplicates)
         return duplicates
 
