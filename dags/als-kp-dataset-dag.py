@@ -343,7 +343,7 @@ def als_kp_dataset_dag():
             contents = f.read()
             content_json = json.loads(contents)
             datasets_to_ignore = content_json.get("ignore_cpath_identifier", [])
-        print("dataset identifiers to be ignored after human review: " datasets_to_ignore)
+        print("dataset identifiers to be ignored after human review: " + str(datasets_to_ignore))
         return datasets_to_ignore
 
     @task
