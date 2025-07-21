@@ -6,9 +6,10 @@ for the ALS Knowledge Portal. The DAG follows these steps:
 1. Fetch data from the C-Path API using an authentication token stored in Airflow Variables
 2. Transform the raw data using a JSONata mapping expression and validate against a JSON Schema
 3. Find duplicates in the new C-Path data and send a message to AMP-ALS slack channel if duplicates are found. 
-4. Create or update Synapse Datasets for each item in the transformed data
-5. Create or update a Dataset Collection containing all the datasets
-6. Create or update annotations for each dataset in the collection
+4. Retrieve datasets that need to be ignored after human validation from a JSON file
+5. Create or update Synapse Datasets for each item in the transformed data, excluding duplicates and datasets marked to be ignored after manual review.
+6. Update the Dataset Collection to include all valid datasets, excluding duplicates and manually ignored datasets.
+7. Create or update annotations for each dataset in the collection
 
 The DAG runs monthly and uses Airflow Variables for configuration.
 """
@@ -18,10 +19,11 @@ import requests
 from typing import Dict, List, Tuple, Any, Optional
 
 import pandas as pd
+import json
 from jsonata import jsonata
 from jsonschema import validate, ValidationError
 
-from synapseclient.models import Dataset, DatasetCollection
+from synapseclient.models import Dataset, DatasetCollection, File
 from orca.services.synapse import SynapseHook
 
 from airflow.decorators import task, dag
@@ -42,6 +44,7 @@ dag_params = {
     "cpath_api_url": Param(
         "https://fair.dap.c-path.org/api/collections/als-kp/datasets", type="string"
     ),
+    "ignore_cpath_datasets": Param("syn68737367", type="string"),
     "collection_id": Param("syn66496326", type="string"),
     "synapse_conn_id": Param("SYNAPSE_ORCA_SERVICE_ACCOUNT_CONN", type="string"),
 }
@@ -292,7 +295,7 @@ def als_kp_dataset_dag():
             return ""
         message = "There are datasets that need to be reviewed: \n\n"
         for index, item in enumerate(duplicates):
-            printed_message = f"{index+1}. C-path identifier: {item['sameAs']}, title: {item['title']}, creator: {item['creator']}, keywords: {item['keywords']}, subject: {item['subject']}, collection: {item['collection']}, publisher: {item['publisher']}, species: {item['species']} \n\n"
+            printed_message = f"{index+1}. C-path identifier: {item['sameAs']}, title: {item['title']}, creator: {item['creator']}, keywords: {item['keywords']}, subject: {item['subject']}, collection: {item['collection']}, publisher: {item['publisher']}, species: {item['species']}, url: {item['url']}, description: {item['description']} \n\n"
             message += printed_message
         return message
 
@@ -316,9 +319,38 @@ def als_kp_dataset_dag():
         client.chat_postMessage(channel="amp-als", text=message)
 
     @task
+    def find_ignored_datasets(**context) -> List[str]:
+        """Datasets that need to be ignored after human review and validation
+
+        This task:
+        1. Retrieve json file: ignore_cpath_datasets.json
+        2. Read the file and get a list of C-path datasets that need to be ignored based on the C-Path identifier.
+
+        Arguments:
+            **context: Airflow task context containing DAG parameters
+        Returns:
+            List[str]: A list of C-Path identifiers to be ignored
+        """
+        syn_hook = SynapseHook(context["params"]["synapse_conn_id"])
+        synapse_client = syn_hook.client
+
+        # Find datasets that need to be ignored
+        ignore_cpath_datasets_json = context["params"]["ignore_cpath_datasets"]
+        file = File(id=ignore_cpath_datasets_json, download_file=True).get(
+            synapse_client=synapse_client
+        )
+        with open(file.path, "r") as f:
+            contents = f.read()
+            content_json = json.loads(contents)
+            datasets_to_ignore = content_json.get("ignore_cpath_identifier", [])
+        print("dataset identifiers to be ignored after human review: " datasets_to_ignore)
+        return datasets_to_ignore
+
+    @task
     def create_datasets(
         transformed_items: List[Dict[str, Any]],
         duplicates: List[Dict[str, Any]],
+        ignored_datasets: List[str],
         **context,
     ) -> str:
         """Create Synapse datasets and add them to a dataset collection.
@@ -336,6 +368,7 @@ def als_kp_dataset_dag():
                 The list of transformed and validated dataset items to process.
             duplicates (List[Dict[str, Any]]):
                 The list of items identified as duplicates, used to skip adding them.
+            ignored_datasets: A list of C-Path identifiers that need to be ignored after reviewed by a human
             **context: Airflow task context containing DAG parameters
         Returns:
             str: The ID of the updated dataset collection.
@@ -348,7 +381,7 @@ def als_kp_dataset_dag():
         ).get(synapse_client=synapse_client)
 
         for item in transformed_items:
-            if item in duplicates:
+            if item in duplicates and item["sameAs"] in ignored_datasets:
                 continue
             dataset_description = (
                 item["description"][:1000]
@@ -371,6 +404,7 @@ def als_kp_dataset_dag():
         duplicates: List[Dict[str, Any]],
         dataset_collection_id: str,
         transformed_items: List[Dict[str, Any]],
+        ignored_datasets: List[str],
         **context,
     ) -> None:
         """Update dataset annotations if the dataset is not flagged as a duplicate
@@ -384,6 +418,7 @@ def als_kp_dataset_dag():
             duplicates: The list of items identified as duplicates, used to skip adding them.
             dataset_collection_id: The ID of the dataset collection to update
             transformed_items: List of transformed items containing new annotations
+            ignored_datasets: A list of C-Path identifiers that need to be ignored after reviewed by a human
             **context: Airflow task context containing DAG parameters
         """
         syn_hook = SynapseHook(context["params"]["synapse_conn_id"])
@@ -410,7 +445,7 @@ def als_kp_dataset_dag():
         annotations = {key: [] for key in fields}
 
         for item in transformed_items:
-            if item not in duplicates:
+            if item not in duplicates and item["sameAs"] not in ignored_datasets:
                 for key in fields:
                     value = item[key]
                     if isinstance(value, list):
@@ -438,12 +473,14 @@ def als_kp_dataset_dag():
     transformed_items = transform_data(data)
     duplicates = find_duplicated_datasets(transformed_items)
     message = generate_slack_message(duplicates)
-
-    collection_id = create_datasets(transformed_items, duplicates)
-    updated = update_annotations(duplicates, collection_id, transformed_items)
+    ignored_datasets = find_ignored_datasets()
+    collection_id = create_datasets(transformed_items, duplicates, ignored_datasets)
+    updated = update_annotations(
+        duplicates, collection_id, transformed_items, ignored_datasets
+    )
 
     transformed_items >> duplicates >> message >> post_slack_messages(message)
-    duplicates >> collection_id >> updated
+    duplicates >> ignored_datasets >> collection_id >> updated
 
 
 als_kp_dataset_dag()
