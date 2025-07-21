@@ -381,7 +381,7 @@ def als_kp_dataset_dag():
         ).get(synapse_client=synapse_client)
 
         for item in transformed_items:
-            if item in duplicates and item["sameAs"] in ignored_datasets:
+            if item in duplicates or item["sameAs"] in ignored_datasets:
                 continue
             dataset_description = (
                 item["description"][:1000]
