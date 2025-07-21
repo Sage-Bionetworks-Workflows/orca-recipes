@@ -454,7 +454,7 @@ def als_kp_dataset_dag():
 
         if len(dataset_ids) != len(annotations["title"]):
             raise ValueError(
-                f" There are {len(dataset_ids)} stored in dataset collection, but there are {len(annotations['title'])} datasets to update. "
+                f"There are {len(dataset_ids)} stored in dataset collection, but there are {len(annotations['title'])} datasets to update."
             )
 
         annotation_data = pd.DataFrame({"id": dataset_ids, **annotations})
