@@ -336,9 +336,7 @@ def als_kp_dataset_dag():
 
         # Find datasets that need to be ignored
         ignore_cpath_datasets_json = context["params"]["ignore_cpath_datasets"]
-        file = File(id=ignore_cpath_datasets_json, download_file=True).get(
-            synapse_client=synapse_client
-        )
+        file = File(id=ignore_cpath_datasets_json, download_file=True).get()
         with open(file.path, "r") as f:
             contents = f.read()
             content_json = json.loads(contents)
@@ -378,7 +376,7 @@ def als_kp_dataset_dag():
 
         dataset_collection = DatasetCollection(
             id=context["params"]["collection_id"]
-        ).get(synapse_client=synapse_client)
+        ).get()
 
         for item in transformed_items:
             if item in duplicates or item["sameAs"] in ignored_datasets:
@@ -445,12 +443,13 @@ def als_kp_dataset_dag():
         annotations = {key: [] for key in fields}
 
         for item in transformed_items:
-            if item not in duplicates and item["sameAs"] not in ignored_datasets:
-                for key in fields:
-                    value = item[key]
-                    if isinstance(value, list):
-                        value = ", ".join(value)
-                    annotations[key].append(value)
+            if item in duplicates or item["sameAs"] in ignored_datasets:
+                continue
+            for key in fields:
+                value = item[key]
+                if isinstance(value, list):
+                    value = ", ".join(value)
+                annotations[key].append(value)
 
         if len(dataset_ids) != len(annotations["title"]):
             raise ValueError(
@@ -465,7 +464,6 @@ def als_kp_dataset_dag():
             primary_keys=["id"],
             dry_run=False,
             wait_for_eventually_consistent_view=True,
-            synapse_client=synapse_client,
         )
 
     # Define task dependencies
