@@ -313,7 +313,7 @@ def als_kp_dataset_dag():
         if not message:
             return
         client = WebClient(token=Variable.get("SLACK_DPE_TEAM_BOT_TOKEN"))
-        client.chat_postMessage(channel="test-amp-als-dataset-message", text=message)
+        client.chat_postMessage(channel="amp-als", text=message)
 
     @task
     def create_datasets(
