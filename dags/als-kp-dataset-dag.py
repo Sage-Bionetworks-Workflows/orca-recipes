@@ -6,7 +6,7 @@ for the ALS Knowledge Portal. The DAG follows these steps:
 1. Fetch data from the C-Path API using an authentication token stored in Airflow Variables
 2. Transform the raw data using a JSONata mapping expression and validate against a JSON Schema
 3. Find duplicates in the new C-Path data and send a message to AMP-ALS slack channel if duplicates are found. 
-4. Retrieve datasets that need to be ignored after human validation from a JSON file
+4. Data managers in AMP-ALS update the JSON file. The pipeline then reads this file to retrieve datasets that should be ignored following human validation.
 5. Create or update Synapse Datasets for each item in the transformed data, excluding duplicates and datasets marked to be ignored after manual review.
 6. Update the Dataset Collection to include all valid datasets, excluding duplicates and manually ignored datasets.
 7. Create or update annotations for each dataset in the collection
