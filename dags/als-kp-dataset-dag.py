@@ -5,10 +5,11 @@ for the ALS Knowledge Portal. The DAG follows these steps:
 
 1. Fetch data from the C-Path API using an authentication token stored in Airflow Variables
 2. Transform the raw data using a JSONata mapping expression and validate against a JSON Schema
-3. Create or update Synapse Datasets for each item in the transformed data
-4. Create or update a Dataset Collection containing all the datasets
-5. Create or update annotations for each dataset in the collection
-6. Create a new snapshot of the collection if any changes were detected
+3. Find duplicates in the new C-Path data and send a message to AMP-ALS slack channel if duplicates are found. 
+4. Data managers in AMP-ALS update the JSON file. The pipeline then reads this file to retrieve datasets that should be ignored following human validation.
+5. Create or update Synapse Datasets for each item in the transformed data, excluding duplicates and datasets marked to be ignored after manual review.
+6. Update the Dataset Collection to include all valid datasets, excluding duplicates and manually ignored datasets.
+7. Create or update annotations for each dataset in the collection
 
 The DAG runs monthly and uses Airflow Variables for configuration.
 """
@@ -18,14 +19,16 @@ import requests
 from typing import Dict, List, Tuple, Any, Optional
 
 import pandas as pd
+import json
 from jsonata import jsonata
 from jsonschema import validate, ValidationError
 
-from synapseclient.models import Dataset, DatasetCollection, Column, ColumnType
+from synapseclient.models import Dataset, DatasetCollection, File
 from orca.services.synapse import SynapseHook
 
 from airflow.decorators import task, dag
 from airflow.models import Variable, Param
+from slack_sdk import WebClient
 
 
 dag_params = {
@@ -41,10 +44,8 @@ dag_params = {
     "cpath_api_url": Param(
         "https://fair.dap.c-path.org/api/collections/als-kp/datasets", type="string"
     ),
-    "collection_name": Param("Dataset collection (Production)", type="string"),
-    "collection_description": Param(
-        "A collection of datasets curated for the ALS Knowledge Portal", type="string"
-    ),
+    "ignore_cpath_datasets": Param("syn68737367", type="string"),
+    "collection_id": Param("syn66496326", type="string"),
     "synapse_conn_id": Param("SYNAPSE_ORCA_SERVICE_ACCOUNT_CONN", type="string"),
 }
 
@@ -219,49 +220,171 @@ def als_kp_dataset_dag():
         return transformed_items
 
     @task
-    def create_datasets(transformed_items: List[Dict[str, Any]], **context) -> str:
-        """Create Synapse datasets and collection.
+    def find_duplicated_datasets(
+        transformed_items: List[Dict[str, Any]], **context
+    ) -> List[Dict[str, Any]]:
+        """Flag duplicated new C-PATH datasets.
 
         This task:
-        1. Creates a new Dataset Collection with predefined columns
-        2. For each transformed item:
-           - Creates a new Dataset with the item's title and description
-           - Adds the Dataset to the collection
-        3. Stores the collection in Synapse
+        1. Retrieves the current C-PATH datasets.
+        2. Identifies and flags new datasets that are duplicates based on their 'title'.
 
         Arguments:
-            transformed_items: List of transformed and validated items
+            transformed_items (List[Dict[str, Any]]):
+                A list of transformed and validated items from the previous task.
             **context: Airflow task context containing DAG parameters
 
+        Raises:
+            ValueError: If any 'sameAs' or 'title' values are missing or empty after transformation.
+
         Returns:
-            str: The Synapse ID of the created and stored dataset collection
+            List[Dict[str, Any]]: A list of duplicate dataset items if there are any.
         """
         syn_hook = SynapseHook(context["params"]["synapse_conn_id"])
         synapse_client = syn_hook.client
 
-        columns = [
-            Column(name="id", column_type=ColumnType.ENTITYID),
-            Column(name="title", column_type=ColumnType.STRING, maximum_size=200),
-            Column(name="creator", column_type=ColumnType.STRING, maximum_size=100),
-            Column(name="keywords", column_type=ColumnType.STRING, maximum_size=250),
-            Column(name="subject", column_type=ColumnType.STRING, maximum_size=100),
-            Column(name="collection", column_type=ColumnType.STRING, maximum_size=100),
-            Column(name="publisher", column_type=ColumnType.STRING, maximum_size=100),
-            Column(name="species", column_type=ColumnType.STRING, maximum_size=100),
-            Column(name="sameAs", column_type=ColumnType.STRING, maximum_size=100),
-            Column(name="source", column_type=ColumnType.STRING, maximum_size=100),
-            Column(name="url", column_type=ColumnType.STRING, maximum_size=100),
-        ]
-
-        dataset_collection = DatasetCollection(
-            name=context["params"]["collection_name"],
-            description=context["params"]["collection_description"],
-            parent_id=context["params"]["project_id"],
-            include_default_columns=True,
-            columns=columns,
+        # Get current datasets
+        collection_id = context["params"]["collection_id"]
+        query_str = (
+            f"SELECT * FROM {collection_id} WHERE publisher='Critical Path Institute'"
         )
 
+        current_data = synapse_client.tableQuery(query_str).asDataFrame()
+
+        current_datasets = list(current_data["sameAs"])
+
+        # Flag duplicates from new data
+        # Datasets are considered as "duplicates" if they have the same titles
+        duplicates = []
+        seen = {}
+
         for item in transformed_items:
+            cpath_key = item.get("sameAs")
+            title = item.get("title")
+
+            if not cpath_key:
+                raise ValueError(f"Missing or empty 'sameAs' in item: {item}")
+            if not title:
+                raise ValueError(f"Missing or empty 'title' in item: {item}")
+
+            if cpath_key not in current_datasets:
+                if title not in seen:
+                    seen[title] = item
+                else:
+                    # found duplicates, add both the first one if it does not already exist and this one
+                    if seen[title] not in duplicates:
+                        duplicates.append(seen[title])
+                    duplicates.append(item)
+        print("Found duplicated datasets:", duplicates)
+        return duplicates
+
+    @task
+    def generate_slack_message(duplicates: List[Dict[str, Any]]) -> str:
+        """
+        Generate a Slack message summarizing duplicated datasets.
+
+        This task formats a message that includes information about datasets flagged as duplicates,
+        which will be posted to a Slack channel for review.
+
+        Arguments:
+            duplicates (List[Dict[str, Any]]): A list of datasets identified as duplicates.
+
+        Returns:
+            str: A formatted Slack message string describing the duplicate datasets.
+        """
+        if not duplicates:
+            return ""
+        message = "There are datasets that need to be reviewed: \n\n"
+        for index, item in enumerate(duplicates):
+            printed_message = f"{index+1}. C-path identifier: {item['sameAs']}, title: {item['title']}, creator: {item['creator']}, keywords: {item['keywords']}, subject: {item['subject']}, collection: {item['collection']}, publisher: {item['publisher']}, species: {item['species']}, url: {item['url']}, description: {item['description']} \n\n"
+            message += printed_message
+        return message
+
+    @task
+    def post_slack_messages(message: str) -> None:
+        """
+        Post a message to the designated Slack channel.
+
+        This task sends a formatted message (e.g., about duplicated datasets)
+        to a Slack channel using a pre-configured webhook or Slack API.
+
+        Args:
+            message (str): The message string to be posted.
+
+        Returns:
+            None
+        """
+        if not message:
+            return
+        client = WebClient(token=Variable.get("SLACK_DPE_TEAM_BOT_TOKEN"))
+        client.chat_postMessage(channel="amp-als", text=message)
+
+    @task
+    def find_ignored_datasets(**context) -> List[str]:
+        """Datasets that need to be ignored after human review and validation
+
+        This task:
+        1. Retrieve json file: ignore_cpath_datasets.json
+        2. Read the file and get a list of C-path datasets that need to be ignored based on the C-Path identifier.
+
+        Arguments:
+            **context: Airflow task context containing DAG parameters
+        Returns:
+            List[str]: A list of C-Path identifiers to be ignored
+        """
+        syn_hook = SynapseHook(context["params"]["synapse_conn_id"])
+        synapse_client = syn_hook.client
+
+        # Find datasets that need to be ignored
+        ignore_cpath_datasets_json = context["params"]["ignore_cpath_datasets"]
+        file = File(id=ignore_cpath_datasets_json, download_file=True).get()
+        with open(file.path, "r") as f:
+            contents = f.read()
+            content_json = json.loads(contents)
+            datasets_to_ignore = content_json.get("ignore_cpath_identifier", [])
+        print(
+            "dataset identifiers to be ignored after human review: "
+            + str(datasets_to_ignore)
+        )
+        return datasets_to_ignore
+
+    @task
+    def create_datasets(
+        transformed_items: List[Dict[str, Any]],
+        duplicates: List[Dict[str, Any]],
+        ignored_datasets: List[str],
+        **context,
+    ) -> str:
+        """Create Synapse datasets and add them to a dataset collection.
+
+        This task:
+        1. Retrieves the existing dataset collection.
+        2. Iterates over each transformed item, and if a dataset is not flagged as a duplicate:
+            - Creates a dataset in Synapse using the item's title and description.
+            - Adds annotation "source" = "Critical Path Institute" to the dataset
+            - Adds the dataset to the collection.
+            - Updates the dataset collection
+
+        Arguments:
+            transformed_items (List[Dict[str, Any]]):
+                The list of transformed and validated dataset items to process.
+            duplicates (List[Dict[str, Any]]):
+                The list of items identified as duplicates, used to skip adding them.
+            ignored_datasets: A list of C-Path identifiers that need to be ignored after reviewed by a human
+            **context: Airflow task context containing DAG parameters
+        Returns:
+            str: The ID of the updated dataset collection.
+        """
+        syn_hook = SynapseHook(context["params"]["synapse_conn_id"])
+        synapse_client = syn_hook.client
+
+        dataset_collection = DatasetCollection(
+            id=context["params"]["collection_id"]
+        ).get()
+
+        for item in transformed_items:
+            if item in duplicates or item["sameAs"] in ignored_datasets:
+                continue
             dataset_description = (
                 item["description"][:1000]
                 if len(item["description"]) > 1000
@@ -271,77 +394,73 @@ def als_kp_dataset_dag():
                 name=item["title"],
                 description=dataset_description,
                 parent_id=context["params"]["project_id"],
-            ).store(synapse_client=synapse_client)
+            )
+            dataset.annotations = {"source": "Critical Path Institute"}
+            dataset.store()
             dataset_collection.add_item(dataset)
-
-        dataset_collection = dataset_collection.store(synapse_client=synapse_client)
+        dataset_collection.store()
         return dataset_collection.id
 
     @task
     def update_annotations(
+        duplicates: List[Dict[str, Any]],
         dataset_collection_id: str,
         transformed_items: List[Dict[str, Any]],
+        ignored_datasets: List[str],
         **context,
     ) -> None:
-        """Update dataset annotations and create snapshot if changes are detected.
+        """Update dataset annotations if the dataset is not flagged as a duplicate
 
         This task:
-        1. Queries the current state of the dataset collection
+        1. Queries the current state of the dataset collection to get all the C-Path data
         2. Prepares new annotation data from the transformed items
         3. Updates the collection with the new annotations
-        4. Queries the updated state
-        5. Compares the before and after states
-        6. If changes are detected:
-           - Creates a summary of which columns were modified
-           - Creates a new snapshot with a descriptive comment
-           - The comment includes timestamp, changed columns, and dataset count
 
         Arguments:
+            duplicates: The list of items identified as duplicates, used to skip adding them.
             dataset_collection_id: The ID of the dataset collection to update
             transformed_items: List of transformed items containing new annotations
+            ignored_datasets: A list of C-Path identifiers that need to be ignored after reviewed by a human
             **context: Airflow task context containing DAG parameters
         """
         syn_hook = SynapseHook(context["params"]["synapse_conn_id"])
         synapse_client = syn_hook.client
+        dataset_collection = DatasetCollection(id=dataset_collection_id).get()
 
-        dataset_collection = DatasetCollection(id=dataset_collection_id).get(
-            synapse_client=synapse_client
-        )
-
-        # Get current data before update
         current_data = dataset_collection.query(
-            query=f"SELECT * from {dataset_collection.id} where source='Critical Path Institute'",
-            synapse_client=synapse_client,
+            query=f"SELECT * from {dataset_collection.id} where source='Critical Path Institute'"
         )
         dataset_ids = list(current_data["id"])
-        # Prepare and apply new data
-        annotation_data = pd.DataFrame(
-            {
-                "id": dataset_ids,
-                **{
-                    key: [
-                        (
-                            ", ".join(item[key])
-                            if isinstance(item[key], list)
-                            else item[key]
-                        )
-                        for item in transformed_items
-                    ]
-                    for key in [
-                        "title",
-                        "creator",
-                        "keywords",
-                        "subject",
-                        "collection",
-                        "publisher",
-                        "species",
-                        "sameAs",
-                        "source",
-                        "url"
-                    ]
-                },
-            }
-        )
+
+        fields = [
+            "title",
+            "creator",
+            "keywords",
+            "subject",
+            "collection",
+            "publisher",
+            "species",
+            "sameAs",
+            "source",
+            "url",
+        ]
+        annotations = {key: [] for key in fields}
+
+        for item in transformed_items:
+            if item in duplicates or item["sameAs"] in ignored_datasets:
+                continue
+            for key in fields:
+                value = item[key]
+                if isinstance(value, list):
+                    value = ", ".join(value)
+                annotations[key].append(value)
+
+        if len(dataset_ids) != len(annotations["title"]):
+            raise ValueError(
+                f"There are {len(dataset_ids)} stored in dataset collection, but there are {len(annotations['title'])} datasets to update."
+            )
+
+        annotation_data = pd.DataFrame({"id": dataset_ids, **annotations})
 
         # Update the rows
         dataset_collection.update_rows(
@@ -349,44 +468,21 @@ def als_kp_dataset_dag():
             primary_keys=["id"],
             dry_run=False,
             wait_for_eventually_consistent_view=True,
-            synapse_client=synapse_client,
         )
-
-        # Get data after update
-        updated_data = dataset_collection.query(
-            query=f"SELECT * from {dataset_collection.id} where source='Critical Path Institute'",
-            synapse_client=synapse_client,
-        )
-
-        # Compare data before and after update
-        if not current_data.equals(updated_data):
-            # Generate change summary
-            changed_columns = []
-            for col in current_data.columns:
-                if not current_data[col].equals(updated_data[col]):
-                    changed_columns.append(col)
-
-            # Create snapshot comment with timestamp and change summary
-            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            snapshot_comment = (
-                f"Snapshot created at {timestamp}. "
-                f"Updated columns: {', '.join(changed_columns)}. "
-                f"Total datasets: {len(dataset_ids)}"
-            )
-
-            print("Changes detected in dataset collection, creating new snapshot...")
-            print(f"Snapshot comment: {snapshot_comment}")
-            dataset_collection.snapshot(
-                comment=snapshot_comment, synapse_client=synapse_client
-            )
-        else:
-            print("No changes detected in dataset collection, skipping snapshot.")
 
     # Define task dependencies
     data = fetch_cpath_data()
     transformed_items = transform_data(data)
-    dataset_collection_id = create_datasets(transformed_items)
-    update_annotations(dataset_collection_id, transformed_items)
+    duplicates = find_duplicated_datasets(transformed_items)
+    message = generate_slack_message(duplicates)
+    ignored_datasets = find_ignored_datasets()
+    collection_id = create_datasets(transformed_items, duplicates, ignored_datasets)
+    updated = update_annotations(
+        duplicates, collection_id, transformed_items, ignored_datasets
+    )
+
+    transformed_items >> duplicates >> message >> post_slack_messages(message)
+    duplicates >> ignored_datasets >> collection_id >> updated
 
 
 als_kp_dataset_dag()
