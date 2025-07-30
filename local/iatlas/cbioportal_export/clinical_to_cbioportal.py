@@ -42,8 +42,10 @@ IATLAS_DATASETS = [
     "Damrauer_NatComm_2022",
     "Rose_BrJCancer_2021",
     "Anders_JITC_2022",
-    "Zappasodi_Nature_2021"
+    "Zappasodi_Nature_2021",
 ]
+
+ONCOTREE_MERGE_COLS = ["TCGA_Study", "AMADEUS_Study", "Dataset"]
 
 CBIOPORTAL_METADATA_COLS = [
     "NORMALIZED_COLUMN_HEADER",
@@ -89,12 +91,11 @@ def preprocessing(
     cli_to_oncotree_mapping = pd.read_csv(
         syn.get(cli_to_oncotree_mapping_synid).path, sep="\t"
     )
-    oncotree_merge_cols = ["Cancer_Tissue", "TCGA_Study", "AMADEUS_Study"]
 
     cli_with_oncotree = input_df.merge(
-        cli_to_oncotree_mapping[oncotree_merge_cols + ["ONCOTREE_CODE"]],
+        cli_to_oncotree_mapping[ONCOTREE_MERGE_COLS + ["ONCOTREE_CODE"]],
         how="left",
-        on=oncotree_merge_cols,
+        on=ONCOTREE_MERGE_COLS,
     )
     cli_to_cbio_mapping_dict = dict(
         zip(
@@ -116,15 +117,14 @@ def preprocessing(
     get_updated_cli_attributes(cli_to_cbio_mapping, datahub_tools_path)
 
     return cli_w_cancer_types
-    
-    
+
+
 def split_into_patient_and_sample_data(
-    input_data: pd.DataFrame, 
-    cli_to_cbio_mapping : pd.DataFrame
-    )-> Dict[str, pd.DataFrame]:
-    """ This splits the preprocessed clinical dataset (prior to adding clinical headers)
+    input_data: pd.DataFrame, cli_to_cbio_mapping: pd.DataFrame
+) -> Dict[str, pd.DataFrame]:
+    """This splits the preprocessed clinical dataset (prior to adding clinical headers)
     into patient and sample datasets
-    
+
     Args:
         input_df (pd.DataFrame): Input iatlas merged preprocessed clinical dataset
         cli_to_cbio_mapping (pd.DataFrame): Clinical to cbioportal attirbutes mapping
@@ -194,7 +194,7 @@ def get_cli_to_cbio_mapping(cli_to_cbio_mapping_synid: str) -> pd.DataFrame:
     return cli_to_cbio_mapping
 
 
-def convert_floats_in_priority_column(input_df : pd.DataFrame) -> pd.DataFrame:
+def convert_floats_in_priority_column(input_df: pd.DataFrame) -> pd.DataFrame:
     """Converts the floating point 1.0 in PRIORITY column to 1s.
         This is due to pandas behavior of converting integers to floats
         in a mixed dtype column with NAs
@@ -207,13 +207,15 @@ def convert_floats_in_priority_column(input_df : pd.DataFrame) -> pd.DataFrame:
     """
     converted_df = input_df.copy()
     # Coerce PRIORITY to numeric, setting errors='coerce' turns non-numeric values into NaN
-    converted_df['PRIORITY_NUM'] = pd.to_numeric(converted_df['PRIORITY'], errors='coerce')
+    converted_df["PRIORITY_NUM"] = pd.to_numeric(
+        converted_df["PRIORITY"], errors="coerce"
+    )
 
     # Now apply isclose safely
-    converted_df.loc[np.isclose(converted_df['PRIORITY_NUM'], 1.0), 'PRIORITY'] = '1'
-    converted_df.drop(columns='PRIORITY_NUM', inplace=True)
-    return(converted_df)
-    
+    converted_df.loc[np.isclose(converted_df["PRIORITY_NUM"], 1.0), "PRIORITY"] = "1"
+    converted_df.drop(columns="PRIORITY_NUM", inplace=True)
+    return converted_df
+
 
 def get_updated_cli_attributes(
     cli_to_cbio_mapping: pd.DataFrame, datahub_tools_path: str
@@ -245,7 +247,7 @@ def get_updated_cli_attributes(
         subset="NORMALIZED_COLUMN_HEADER", keep="last"
     )
     # resolve pandas int to float conversion issue
-    cli_attr_full = convert_floats_in_priority_column(input_df = cli_attr_full)
+    cli_attr_full = convert_floats_in_priority_column(input_df=cli_attr_full)
     cli_attr_full.to_csv(
         f"{datahub_tools_path}/add-clinical-header/clinical_attributes_metadata.txt",
         sep="\t",
@@ -282,7 +284,7 @@ def add_clinical_header(
 ) -> None:
     """Adds the clinical headers to the patient and sample data
         by calling cbioportal repo
-        
+
     Args:
         cli_df (pd.DataFrame): input clinical dataframe with all mappings
         dataset_name (str): name of dataset to add clinical headers to
@@ -511,7 +513,7 @@ def save_to_synapse(
             dataset_name, parent=output_folder_synid
         )
         dataset_folder_id = syn.store(new_dataset_folder).id
-        
+
     # store clinical patient file
     syn.store(
         synapseclient.File(
@@ -628,11 +630,13 @@ def run_cbioportal_validator(
         datahub_tools_path (str): path to the datahub tools repo containing
             the locally saved clinical files
     """
+    validated = f"{datahub_tools_path}/add-clinical-header/{dataset_name}/cbioportal_validator_output.txt"
     cmd = f"""
     python3 {cbioportal_path}/core/src/main/scripts/importer/validateData.py \
-        -s "{datahub_tools_path}/add-clinical-header/{dataset_name}" -n
+        -s "{datahub_tools_path}/add-clinical-header/{dataset_name}" \
+            --no_portal_checks \
+            --strict_maf_checks
     """
-    validated = f"{datahub_tools_path}/add-clinical-header/{dataset_name}/cbioportal_validator_output.txt"
     with open(f"{validated}", "w") as outfile:
         subprocess.run(
             cmd,
@@ -662,7 +666,7 @@ def main():
         "--dataset",
         type=list,
         default=IATLAS_DATASETS,
-        help="List of dataset names to run for. Optional. Defaults to IATLAS_DATASETS global variable."
+        help="List of dataset names to run for. Optional. Defaults to IATLAS_DATASETS global variable.",
     )
     parser.add_argument(
         "--input_df_synid",
@@ -727,8 +731,7 @@ def main():
         datahub_tools_path=args.datahub_tools_path,
     )
     cli_dfs = split_into_patient_and_sample_data(
-        input_data=cli_df, 
-        cli_to_cbio_mapping=cli_to_cbio_mapping
+        input_data=cli_df, cli_to_cbio_mapping=cli_to_cbio_mapping
     )
     for dataset in args.dataset:
         add_clinical_header(
