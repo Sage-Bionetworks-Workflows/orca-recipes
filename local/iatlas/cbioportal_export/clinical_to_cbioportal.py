@@ -12,6 +12,7 @@ import pandas as pd
 import synapseclient
 import synapseutils
 
+import utils
 
 my_agent = "iatlas-cbioportal/0.0.0"
 syn = synapseclient.Synapse(user_agent=my_agent).login()
@@ -91,7 +92,6 @@ def preprocessing(
     cli_to_oncotree_mapping = pd.read_csv(
         syn.get(cli_to_oncotree_mapping_synid).path, sep="\t"
     )
-
     cli_with_oncotree = input_df.merge(
         cli_to_oncotree_mapping[ONCOTREE_MERGE_COLS + ["ONCOTREE_CODE"]],
         how="left",
@@ -108,6 +108,7 @@ def preprocessing(
         columns={"sample_name": "SAMPLE_ID", "patient_name": "PATIENT_ID"}, inplace=True
     )
     cli_remapped = remap_column_values(input_df=cli_remapped)
+
     cli_remapped.to_csv(
         f"{datahub_tools_path}/add-clinical-header/cli_remapped.csv",
         index=False,
@@ -300,15 +301,24 @@ def add_clinical_header(
     patient_df_subset = input_dfs["patient"][
         input_dfs["patient"]["Dataset"] == dataset_name
     ]
-    patient_df_subset.drop(columns=list(EXTRA_COLS)).to_csv(
-        f"{dataset_dir}/data_clinical_patient.txt", sep="\t", index=False
+    patient_df_subset_text = utils.remove_pandas_float(
+        df=patient_df_subset.drop(columns=list(EXTRA_COLS))
     )
+    
     sample_df_subset = input_dfs["sample"][
         input_dfs["sample"]["Dataset"] == dataset_name
     ]
-    sample_df_subset.drop(columns=list(EXTRA_COLS)).to_csv(
-        f"{dataset_dir}/data_clinical_sample.txt", sep="\t", index=False
+    sample_df_subset_text = utils.remove_pandas_float(
+        df=sample_df_subset.drop(columns=list(EXTRA_COLS))
     )
+    
+    # saves the patient and sample files without pandas float
+    with open(f"{dataset_dir}/data_clinical_patient.txt", "w") as new_cli_pat_f:
+        new_cli_pat_f.write(patient_df_subset_text)
+
+    with open(f"{dataset_dir}/data_clinical_sample.txt", "w") as new_cli_sam_f:
+        new_cli_sam_f.write(sample_df_subset_text)
+        
     cmd = f"""
     cd {datahub_tools_path}/add-clinical-header/
     python3 {datahub_tools_path}/add-clinical-header/insert_clinical_metadata.py \
@@ -327,7 +337,9 @@ def add_clinical_header(
 
 
 def generate_meta_files(dataset_name: str, datahub_tools_path: str) -> None:
-    """Generates the meta* files for the given dataset
+    """Generates the meta* files for the given dataset:
+        Here we generate meta files for clinical, patient and the
+        study as a whole.
 
     Args:
         dataset_name (str): name of the iatlas dataset
@@ -345,6 +357,19 @@ def generate_meta_files(dataset_name: str, datahub_tools_path: str) -> None:
     """
     # Run in shell to allow sourcing
     subprocess.run(cmd, shell=True, executable="/bin/bash")
+
+    # create meta_study file
+    metadata = [
+        f"cancer_study_identifier: iatlas_{dataset_name}\n",
+        "type_of_cancer: mixed\n",
+        "name: TBD\n",
+        "pmid: 29033130\n",
+        "reference_genome: hg38\n",
+        "citation: Tumor and Microenvironment Evolution during Immunotherapy with Nivolumab. Cell. 2017 Nov 2\n",
+        "description: PLACEHOLDER\n",
+    ]
+    with open(f"{dataset_dir}/meta_study.txt", "w") as meta_file:
+        meta_file.write("".join(metadata))
 
 
 def create_case_lists_map(clinical_file_name: str):
@@ -630,13 +655,13 @@ def run_cbioportal_validator(
         datahub_tools_path (str): path to the datahub tools repo containing
             the locally saved clinical files
     """
-    validated = f"{datahub_tools_path}/add-clinical-header/{dataset_name}/cbioportal_validator_output.txt"
     cmd = f"""
     python3 {cbioportal_path}/core/src/main/scripts/importer/validateData.py \
         -s "{datahub_tools_path}/add-clinical-header/{dataset_name}" \
             --no_portal_checks \
             --strict_maf_checks
     """
+    validated = f"{datahub_tools_path}/add-clinical-header/{dataset_name}/cbioportal_validator_output.txt"
     with open(f"{validated}", "w") as outfile:
         subprocess.run(
             cmd,
@@ -646,18 +671,6 @@ def run_cbioportal_validator(
             stderr=subprocess.STDOUT,
         )
     print(f"cbioportal validator results saved to: {validated}")
-
-
-def clear_workspace(dir_path: str) -> None:
-    """Clears all the folders under a directory
-
-    Args:
-        dir_path (str): directory path
-    """
-    for entry in os.listdir(dir_path):
-        entry_path = os.path.join(dir_path, entry)
-        if os.path.isdir(entry_path):
-            shutil.rmtree(entry_path)
 
 
 def main():
@@ -719,7 +732,7 @@ def main():
 
     args = parser.parse_args()
     if args.clear_workspace:
-        clear_workspace(dir_path=f"{args.datahub_tools_path}/add-clinical-header")
+        utils.clear_workspace(dir_path=f"{args.datahub_tools_path}/add-clinical-header")
 
     cli_to_cbio_mapping = get_cli_to_cbio_mapping(
         cli_to_cbio_mapping_synid=args.cli_to_cbio_mapping_synid
