@@ -4,7 +4,6 @@ from unittest import mock
 
 import pytest
 import pandas as pd
-import synapseclient
 
 import maf_to_cbioportal as maf_to_cbio
 
