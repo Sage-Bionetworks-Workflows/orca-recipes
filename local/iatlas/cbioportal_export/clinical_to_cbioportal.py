@@ -12,12 +12,12 @@ import pandas as pd
 import synapseclient
 import synapseutils
 
+import utils
 
 my_agent = "iatlas-cbioportal/0.0.0"
 syn = synapseclient.Synapse(user_agent=my_agent).login()
 
-
-EXTRA_COLS = ["Dataset"]
+EXTRA_COLS = ["study_sample_name", "study_patient_name"]
 
 IATLAS_DATASETS = [
     "AMADEUS",
@@ -44,7 +44,7 @@ IATLAS_DATASETS = [
     "Anders_JITC_2022",
     "Zappasodi_Nature_2021",
 ]
-
+    
 ONCOTREE_MERGE_COLS = ["TCGA_Study", "AMADEUS_Study", "Dataset"]
 
 CBIOPORTAL_METADATA_COLS = [
@@ -91,7 +91,6 @@ def preprocessing(
     cli_to_oncotree_mapping = pd.read_csv(
         syn.get(cli_to_oncotree_mapping_synid).path, sep="\t"
     )
-
     cli_with_oncotree = input_df.merge(
         cli_to_oncotree_mapping[ONCOTREE_MERGE_COLS + ["ONCOTREE_CODE"]],
         how="left",
@@ -112,6 +111,7 @@ def preprocessing(
         f"{datahub_tools_path}/add-clinical-header/cli_remapped.csv",
         index=False,
         sep="\t",
+        float_format="%.12g",
     )
     cli_w_cancer_types = convert_oncotree_codes(datahub_tools_path)
     get_updated_cli_attributes(cli_to_cbio_mapping, datahub_tools_path)
@@ -152,8 +152,8 @@ def split_into_patient_and_sample_data(
     )
     return {
         "merged": input_data,
-        "patient": input_data[patient_cols + EXTRA_COLS].drop_duplicates(),
-        "sample": input_data[sample_cols + EXTRA_COLS],
+        "patient": input_data[patient_cols + ["Dataset"]].drop_duplicates(),
+        "sample": input_data[sample_cols + ["Dataset"]],
     }
 
 
@@ -194,29 +194,6 @@ def get_cli_to_cbio_mapping(cli_to_cbio_mapping_synid: str) -> pd.DataFrame:
     return cli_to_cbio_mapping
 
 
-def convert_floats_in_priority_column(input_df: pd.DataFrame) -> pd.DataFrame:
-    """Converts the floating point 1.0 in PRIORITY column to 1s.
-        This is due to pandas behavior of converting integers to floats
-        in a mixed dtype column with NAs
-
-    Args:
-        input_df (pd.DataFrame): input data with PRIORITY column
-
-    Returns:
-        pd.DataFrame: input_df with PRIORITY column converted to "1" instead of 1.0
-    """
-    converted_df = input_df.copy()
-    # Coerce PRIORITY to numeric, setting errors='coerce' turns non-numeric values into NaN
-    converted_df["PRIORITY_NUM"] = pd.to_numeric(
-        converted_df["PRIORITY"], errors="coerce"
-    )
-
-    # Now apply isclose safely
-    converted_df.loc[np.isclose(converted_df["PRIORITY_NUM"], 1.0), "PRIORITY"] = "1"
-    converted_df.drop(columns="PRIORITY_NUM", inplace=True)
-    return converted_df
-
-
 def get_updated_cli_attributes(
     cli_to_cbio_mapping: pd.DataFrame, datahub_tools_path: str
 ):
@@ -246,11 +223,10 @@ def get_updated_cli_attributes(
     cli_attr_full = cli_attr_full.drop_duplicates(
         subset="NORMALIZED_COLUMN_HEADER", keep="last"
     )
-    # resolve pandas int to float conversion issue
-    cli_attr_full = convert_floats_in_priority_column(input_df=cli_attr_full)
     cli_attr_full.to_csv(
         f"{datahub_tools_path}/add-clinical-header/clinical_attributes_metadata.txt",
         sep="\t",
+        float_format="%.12g",
     )
     return cli_attr_full
 
@@ -300,15 +276,26 @@ def add_clinical_header(
     patient_df_subset = input_dfs["patient"][
         input_dfs["patient"]["Dataset"] == dataset_name
     ]
-    patient_df_subset.drop(columns=list(EXTRA_COLS)).to_csv(
-        f"{dataset_dir}/data_clinical_patient.txt", sep="\t", index=False
-    )
+
     sample_df_subset = input_dfs["sample"][
         input_dfs["sample"]["Dataset"] == dataset_name
     ]
-    sample_df_subset.drop(columns=list(EXTRA_COLS)).to_csv(
-        f"{dataset_dir}/data_clinical_sample.txt", sep="\t", index=False
+    
+    # saves the patient and sample files without pandas float
+    sample_df_subset.drop(columns=["Dataset"]).to_csv(
+        f"{dataset_dir}/data_clinical_sample.txt",
+        sep="\t",
+        index=False,
+        float_format="%.12g",
     )
+
+    patient_df_subset.drop(columns=["Dataset"]).to_csv(
+        f"{dataset_dir}/data_clinical_patient.txt",
+        sep="\t",
+        index=False,
+        float_format="%.12g",
+    )
+
     cmd = f"""
     cd {datahub_tools_path}/add-clinical-header/
     python3 {datahub_tools_path}/add-clinical-header/insert_clinical_metadata.py \
@@ -321,13 +308,18 @@ def add_clinical_header(
     merged_df_subset = input_dfs["merged"][
         input_dfs["merged"]["Dataset"] == dataset_name
     ]
-    merged_df_subset.drop(columns=list(EXTRA_COLS)).to_csv(
-        f"{dataset_dir}/data_clinical_merged.txt", sep="\t", index=False
+    merged_df_subset.drop(columns=["Dataset"]).to_csv(
+        f"{dataset_dir}/data_clinical_merged.txt",
+        sep="\t",
+        index=False,
+        float_format="%.12g",
     )
 
 
 def generate_meta_files(dataset_name: str, datahub_tools_path: str) -> None:
-    """Generates the meta* files for the given dataset
+    """Generates the meta* files for the given dataset:
+        Here we generate meta files for clinical, patient and the
+        study as a whole.
 
     Args:
         dataset_name (str): name of the iatlas dataset
@@ -345,6 +337,19 @@ def generate_meta_files(dataset_name: str, datahub_tools_path: str) -> None:
     """
     # Run in shell to allow sourcing
     subprocess.run(cmd, shell=True, executable="/bin/bash")
+
+    # create meta_study file
+    metadata = [
+        f"cancer_study_identifier: iatlas_{dataset_name}\n",
+        "type_of_cancer: mixed\n",
+        "name: TBD\n",
+        "pmid: 29033130\n",
+        "reference_genome: hg38\n",
+        "citation: Tumor and Microenvironment Evolution during Immunotherapy with Nivolumab. Cell. 2017 Nov 2\n",
+        "description: PLACEHOLDER\n",
+    ]
+    with open(f"{dataset_dir}/meta_study.txt", "w") as meta_file:
+        meta_file.write("".join(metadata))
 
 
 def create_case_lists_map(clinical_file_name: str):
@@ -630,13 +635,13 @@ def run_cbioportal_validator(
         datahub_tools_path (str): path to the datahub tools repo containing
             the locally saved clinical files
     """
-    validated = f"{datahub_tools_path}/add-clinical-header/{dataset_name}/cbioportal_validator_output.txt"
     cmd = f"""
     python3 {cbioportal_path}/core/src/main/scripts/importer/validateData.py \
         -s "{datahub_tools_path}/add-clinical-header/{dataset_name}" \
             --no_portal_checks \
             --strict_maf_checks
     """
+    validated = f"{datahub_tools_path}/add-clinical-header/{dataset_name}/cbioportal_validator_output.txt"
     with open(f"{validated}", "w") as outfile:
         subprocess.run(
             cmd,
@@ -646,18 +651,6 @@ def run_cbioportal_validator(
             stderr=subprocess.STDOUT,
         )
     print(f"cbioportal validator results saved to: {validated}")
-
-
-def clear_workspace(dir_path: str) -> None:
-    """Clears all the folders under a directory
-
-    Args:
-        dir_path (str): directory path
-    """
-    for entry in os.listdir(dir_path):
-        entry_path = os.path.join(dir_path, entry)
-        if os.path.isdir(entry_path):
-            shutil.rmtree(entry_path)
 
 
 def main():
@@ -719,7 +712,7 @@ def main():
 
     args = parser.parse_args()
     if args.clear_workspace:
-        clear_workspace(dir_path=f"{args.datahub_tools_path}/add-clinical-header")
+        utils.clear_workspace(dir_path=f"{args.datahub_tools_path}/add-clinical-header")
 
     cli_to_cbio_mapping = get_cli_to_cbio_mapping(
         cli_to_cbio_mapping_synid=args.cli_to_cbio_mapping_synid

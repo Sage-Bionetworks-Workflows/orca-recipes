@@ -38,32 +38,6 @@ def test_cli_to_cbio_mapping():
     )
     return cli_to_cbio_mapping
 
-
-@pytest.mark.parametrize(
-    "input, expected",
-    [
-        (
-            pd.DataFrame({"PRIORITY": [1.0, None, float("nan")]}),
-            pd.DataFrame({"PRIORITY": ["1", None, float("nan")]}),
-        ),
-        (
-            pd.DataFrame({"PRIORITY": [1, 1, 1]}),
-            pd.DataFrame({"PRIORITY": ["1", "1", "1"]}),
-        ),
-        (
-            pd.DataFrame({"PRIORITY": [None, None, None]}),
-            pd.DataFrame({"PRIORITY": [None, None, None]}),
-        ),
-    ],
-    ids=["mixed_dtype", "all_integers", "no_floats"],
-)
-def test_that_convert_floats_in_priority_column_converts_correctly(input, expected):
-    output = cli_to_cbio.convert_floats_in_priority_column(input)
-    pd.testing.assert_frame_equal(
-        output.reset_index(drop=True), expected.reset_index(drop=True)
-    )
-
-
 class TestSplitPatientAndSampleData:
     def test_split_structure(self, test_input_clinical_data, test_cli_to_cbio_mapping):
         result = cli_to_cbio.split_into_patient_and_sample_data(
