@@ -17,7 +17,7 @@ import utils
 my_agent = "iatlas-cbioportal/0.0.0"
 syn = synapseclient.Synapse(user_agent=my_agent).login()
 
-EXTRA_COLS = ["Dataset"]
+EXTRA_COLS = ["study_sample_name", "study_patient_name"]
 
 IATLAS_DATASETS = [
     "AMADEUS",
@@ -44,7 +44,7 @@ IATLAS_DATASETS = [
     "Anders_JITC_2022",
     "Zappasodi_Nature_2021",
 ]
-
+    
 ONCOTREE_MERGE_COLS = ["TCGA_Study", "AMADEUS_Study", "Dataset"]
 
 CBIOPORTAL_METADATA_COLS = [
@@ -107,7 +107,6 @@ def preprocessing(
         columns={"sample_name": "SAMPLE_ID", "patient_name": "PATIENT_ID"}, inplace=True
     )
     cli_remapped = remap_column_values(input_df=cli_remapped)
-
     cli_remapped.to_csv(
         f"{datahub_tools_path}/add-clinical-header/cli_remapped.csv",
         index=False,
@@ -153,8 +152,8 @@ def split_into_patient_and_sample_data(
     )
     return {
         "merged": input_data,
-        "patient": input_data[patient_cols + EXTRA_COLS].drop_duplicates(),
-        "sample": input_data[sample_cols + EXTRA_COLS],
+        "patient": input_data[patient_cols + ["Dataset"]].drop_duplicates(),
+        "sample": input_data[sample_cols + ["Dataset"]],
     }
 
 
@@ -195,29 +194,6 @@ def get_cli_to_cbio_mapping(cli_to_cbio_mapping_synid: str) -> pd.DataFrame:
     return cli_to_cbio_mapping
 
 
-def convert_floats_in_priority_column(input_df: pd.DataFrame) -> pd.DataFrame:
-    """Converts the floating point 1.0 in PRIORITY column to 1s.
-        This is due to pandas behavior of converting integers to floats
-        in a mixed dtype column with NAs
-
-    Args:
-        input_df (pd.DataFrame): input data with PRIORITY column
-
-    Returns:
-        pd.DataFrame: input_df with PRIORITY column converted to "1" instead of 1.0
-    """
-    converted_df = input_df.copy()
-    # Coerce PRIORITY to numeric, setting errors='coerce' turns non-numeric values into NaN
-    converted_df["PRIORITY_NUM"] = pd.to_numeric(
-        converted_df["PRIORITY"], errors="coerce"
-    )
-
-    # Now apply isclose safely
-    converted_df.loc[np.isclose(converted_df["PRIORITY_NUM"], 1.0), "PRIORITY"] = "1"
-    converted_df.drop(columns="PRIORITY_NUM", inplace=True)
-    return converted_df
-
-
 def get_updated_cli_attributes(
     cli_to_cbio_mapping: pd.DataFrame, datahub_tools_path: str
 ):
@@ -247,8 +223,6 @@ def get_updated_cli_attributes(
     cli_attr_full = cli_attr_full.drop_duplicates(
         subset="NORMALIZED_COLUMN_HEADER", keep="last"
     )
-    # resolve pandas int to float conversion issue
-    cli_attr_full = convert_floats_in_priority_column(input_df=cli_attr_full)
     cli_attr_full.to_csv(
         f"{datahub_tools_path}/add-clinical-header/clinical_attributes_metadata.txt",
         sep="\t",
@@ -308,14 +282,14 @@ def add_clinical_header(
     ]
     
     # saves the patient and sample files without pandas float
-    sample_df_subset.drop(columns=list(EXTRA_COLS)).to_csv(
+    sample_df_subset.drop(columns=["Dataset"]).to_csv(
         f"{dataset_dir}/data_clinical_sample.txt",
         sep="\t",
         index=False,
         float_format="%.12g",
     )
 
-    patient_df_subset.drop(columns=list(EXTRA_COLS)).to_csv(
+    patient_df_subset.drop(columns=["Dataset"]).to_csv(
         f"{dataset_dir}/data_clinical_patient.txt",
         sep="\t",
         index=False,
@@ -334,7 +308,7 @@ def add_clinical_header(
     merged_df_subset = input_dfs["merged"][
         input_dfs["merged"]["Dataset"] == dataset_name
     ]
-    merged_df_subset.drop(columns=list(EXTRA_COLS)).to_csv(
+    merged_df_subset.drop(columns=["Dataset"]).to_csv(
         f"{dataset_dir}/data_clinical_merged.txt",
         sep="\t",
         index=False,
