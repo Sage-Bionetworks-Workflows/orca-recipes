@@ -10,13 +10,8 @@ def clear_workspace(dir_path: str) -> None:
     Args:
         dir_path (str): directory path
     """
-    for entry in os.listdir(dir_path):
-        entry_path = os.path.join(dir_path, entry)
-        if os.path.isdir(entry_path):
-            shutil.rmtree(entry_path)
-        else:
-            os.remove(entry_path)
-            
+    shutil.rmtree(dir_path)
+    os.makedirs(dir_path, exist_ok=True)
 
 def get_local_dataset_output_folder_path(
     dataset_name: str, datahub_tools_path: str

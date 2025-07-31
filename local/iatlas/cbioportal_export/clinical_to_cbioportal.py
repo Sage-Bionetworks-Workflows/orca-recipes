@@ -17,7 +17,6 @@ import utils
 my_agent = "iatlas-cbioportal/0.0.0"
 syn = synapseclient.Synapse(user_agent=my_agent).login()
 
-
 EXTRA_COLS = ["Dataset"]
 
 IATLAS_DATASETS = [
@@ -113,6 +112,7 @@ def preprocessing(
         f"{datahub_tools_path}/add-clinical-header/cli_remapped.csv",
         index=False,
         sep="\t",
+        float_format="%.12g",
     )
     cli_w_cancer_types = convert_oncotree_codes(datahub_tools_path)
     get_updated_cli_attributes(cli_to_cbio_mapping, datahub_tools_path)
@@ -252,6 +252,7 @@ def get_updated_cli_attributes(
     cli_attr_full.to_csv(
         f"{datahub_tools_path}/add-clinical-header/clinical_attributes_metadata.txt",
         sep="\t",
+        float_format="%.12g",
     )
     return cli_attr_full
 
@@ -301,24 +302,26 @@ def add_clinical_header(
     patient_df_subset = input_dfs["patient"][
         input_dfs["patient"]["Dataset"] == dataset_name
     ]
-    patient_df_subset_text = utils.remove_pandas_float(
-        df=patient_df_subset.drop(columns=list(EXTRA_COLS))
-    )
-    
+
     sample_df_subset = input_dfs["sample"][
         input_dfs["sample"]["Dataset"] == dataset_name
     ]
-    sample_df_subset_text = utils.remove_pandas_float(
-        df=sample_df_subset.drop(columns=list(EXTRA_COLS))
-    )
     
     # saves the patient and sample files without pandas float
-    with open(f"{dataset_dir}/data_clinical_patient.txt", "w") as new_cli_pat_f:
-        new_cli_pat_f.write(patient_df_subset_text)
+    sample_df_subset.drop(columns=list(EXTRA_COLS)).to_csv(
+        f"{dataset_dir}/data_clinical_sample.txt",
+        sep="\t",
+        index=False,
+        float_format="%.12g",
+    )
 
-    with open(f"{dataset_dir}/data_clinical_sample.txt", "w") as new_cli_sam_f:
-        new_cli_sam_f.write(sample_df_subset_text)
-        
+    patient_df_subset.drop(columns=list(EXTRA_COLS)).to_csv(
+        f"{dataset_dir}/data_clinical_patient.txt",
+        sep="\t",
+        index=False,
+        float_format="%.12g",
+    )
+
     cmd = f"""
     cd {datahub_tools_path}/add-clinical-header/
     python3 {datahub_tools_path}/add-clinical-header/insert_clinical_metadata.py \
@@ -332,7 +335,10 @@ def add_clinical_header(
         input_dfs["merged"]["Dataset"] == dataset_name
     ]
     merged_df_subset.drop(columns=list(EXTRA_COLS)).to_csv(
-        f"{dataset_dir}/data_clinical_merged.txt", sep="\t", index=False
+        f"{dataset_dir}/data_clinical_merged.txt",
+        sep="\t",
+        index=False,
+        float_format="%.12g",
     )
 
 

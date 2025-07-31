@@ -19,7 +19,7 @@ def split_into_chunks(
     dataset_name: str,
     input_df: pd.DataFrame,
     datahub_tools_path: str,
-    max_rows : int = 40000,
+    max_rows: int = 40000,
 ) -> int:
     """Splits the maf file into designated number of equal (if possible) chunks.
        Maf files don't need to be randomnly shuffled prior because the
@@ -32,7 +32,7 @@ def split_into_chunks(
         input_df (pd.DataFrame): Input maf data to be split
         datahub_tools_path (str): Path to the datahub tools repo
         max_rows (int): maximum rows to split each chunk into
-        
+
     Returns:
         int: Number of maf chunks
     """
@@ -42,7 +42,12 @@ def split_into_chunks(
     n_maf_chunks = (len(input_df) + max_rows - 1) // max_rows  # ceiling division
     for i in range(n_maf_chunks):
         maf_chunk = input_df[i * max_rows : (i + 1) * max_rows]
-        maf_chunk.to_csv(f"{dataset_dir}/data_mutations_{i + 1}.txt", sep="\t", index=False)
+        maf_chunk.to_csv(
+            f"{dataset_dir}/data_mutations_{i + 1}.txt",
+            sep="\t",
+            index=False,
+            float_format="%.12g",
+        )
     return n_maf_chunks
 
 
@@ -133,13 +138,15 @@ def concatenate_mafs(
     error_mafs_all = pd.concat(error_mafs)
 
     annotated_mafs_all_processed = postprocessing(input_df=annotated_mafs_all)
-    annotated_mafs_text = utils.remove_pandas_float(df = annotated_mafs_all_processed)
-    
-    with open(f"{dataset_dir}/data_mutations.txt", "w") as new_maf_f:
-        new_maf_f.write(annotated_mafs_text)
-        
+    annotated_mafs_all_processed.to_csv(
+        f"{dataset_dir}/data_mutations.txt", sep="\t", index=False, float_format="%.12g"
+    )
+
     error_mafs_all.to_csv(
-        f"{dataset_dir}/data_mutations_error_report.txt", sep="\t", index=False
+        f"{dataset_dir}/data_mutations_error_report.txt",
+        sep="\t",
+        index=False,
+        float_format="%.12g",
     )
     return {"annotated_maf": annotated_mafs_all, "error_maf": error_mafs_all}
 
@@ -232,7 +239,7 @@ def generate_meta_files(dataset_name: str, datahub_tools_path: str) -> None:
     """
     # Run in shell to allow sourcing
     subprocess.run(cmd, shell=True, executable="/bin/bash")
-    
+
 
 def validate_export_files(input_df: pd.DataFrame, output_df: pd.DataFrame) -> None:
     """Validates the export files, checking rows
@@ -267,7 +274,7 @@ def main():
         "--max_rows",
         type=int,
         help="Max rows per maf chunk used to split maf file. Default: 40000",
-        default=40000
+        default=40000,
     )
     parser.add_argument(
         "--output_folder_synid",
@@ -306,9 +313,7 @@ def main():
 
     args = parser.parse_args()
     if args.clear_workspace:
-        utils.clear_workspace(
-            dir_path=f"{args.datahub_tools_path}/add-clinical-header"
-        )
+        utils.clear_workspace(dir_path=f"{args.datahub_tools_path}/add-clinical-header")
 
     maf_df = pd.read_csv(
         syn.get(args.input_df_synid).path, sep="\t", comment="#", low_memory=False
@@ -317,7 +322,7 @@ def main():
         dataset_name=args.dataset,
         input_df=maf_df,
         datahub_tools_path=args.datahub_tools_path,
-        max_rows = args.max_rows
+        max_rows=args.max_rows,
     )
     run_genome_nexus(
         dataset_name=args.dataset,
