@@ -14,8 +14,9 @@ import synapseutils
 
 import utils
 
-my_agent = "iatlas-cbioportal/0.0.0"
-syn = synapseclient.Synapse(user_agent=my_agent).login()
+# my_agent = "iatlas-cbioportal/0.0.0"
+# syn = synapseclient.Synapse(user_agent=my_agent).login()
+syn = synapseclient.login()
 
 EXTRA_COLS = ["study_sample_name", "study_patient_name"]
 
@@ -44,7 +45,11 @@ IATLAS_DATASETS = [
     "Anders_JITC_2022",
     "Zappasodi_Nature_2021",
 ]
-    
+
+IATLAS_DATASETS = [
+    "Riaz_Nivolumab_2017",
+]
+
 ONCOTREE_MERGE_COLS = ["TCGA_Study", "AMADEUS_Study", "Dataset"]
 
 CBIOPORTAL_METADATA_COLS = [
@@ -280,7 +285,7 @@ def add_clinical_header(
     sample_df_subset = input_dfs["sample"][
         input_dfs["sample"]["Dataset"] == dataset_name
     ]
-    
+
     # saves the patient and sample files without pandas float
     sample_df_subset.drop(columns=["Dataset"]).to_csv(
         f"{dataset_dir}/data_clinical_sample.txt",
@@ -414,33 +419,6 @@ def write_single_oncotree_case_list(
     return case_list_path
 
 
-def write_case_list_all(clinical_samples: list, output_directory: str, study_id: str):
-    """
-    Writes the genie all samples.
-
-    Args:
-        clinical_samples: List of clinical samples
-        output_directory: Directory to write case lists
-        study_id: cBioPortal study id
-
-    Returns:
-        list: case list sequenced and all
-    """
-    caselist_files = []
-    case_list_ids = "\t".join(clinical_samples)
-    cases_all_path = os.path.abspath(os.path.join(output_directory, "cases_all.txt"))
-    with open(cases_all_path, "w") as case_list_all_file:
-        case_list_file_text = CASE_LIST_TEXT_TEMPLATE.format(
-            study_id=study_id,
-            stable_id=study_id + "_all",
-            case_list_name="All samples",
-            case_list_description="All samples",
-            case_list_ids=case_list_ids,
-        )
-        case_list_all_file.write(case_list_file_text)
-    return caselist_files
-
-
 def write_case_list_files(
     clinical_file_map: dict, output_directory: str, study_id: str
 ):
@@ -465,7 +443,13 @@ def write_case_list_files(
     return case_list_files
 
 
-def create_case_lists(clinical_file_name: str, output_directory: str, study_id: str):
+def create_case_lists(
+    dataset_name: str,
+    datahub_tools_path: str,
+    clinical_file_name: str,
+    output_directory: str,
+    study_id: str,
+) -> None:
     """Gets clinical file and gene matrix file and processes it
     to obtain case list files
 
@@ -479,7 +463,31 @@ def create_case_lists(clinical_file_name: str, output_directory: str, study_id: 
         os.makedirs(output_directory)
     case_lists_map, clin_samples = create_case_lists_map(clinical_file_name)
     write_case_list_files(case_lists_map, output_directory, study_id)
-    write_case_list_all(clin_samples, output_directory, study_id)
+    write_case_lists_all_and_sequenced(dataset_name, datahub_tools_path, study_id)
+
+
+def write_case_lists_all_and_sequenced(
+    dataset_name: str, datahub_tools_path: str, study_id: str
+) -> None:
+    """Adds the case lists for all samples and sequenced samples
+        using cbioportal tools
+
+    Args:
+        dataset_name (str): name of dataset to add clinical headers to
+        datahub_tools_path (str): Path to the datahub tools repo
+        study_id (str): cBioPortal study id
+    """
+    dataset_dir = utils.get_local_dataset_output_folder_path(
+        dataset_name, datahub_tools_path
+    )
+    cmd = f"""
+    python3 {datahub_tools_path}/generate-case-lists/generate_case_lists.py \
+        -c {datahub_tools_path}/generate-case-lists/case_list_conf.txt \
+        -d {dataset_dir}/case_lists \
+        -s {dataset_dir} \
+        -i {study_id}
+    """
+    subprocess.run(cmd, shell=True, executable="/bin/bash")
 
 
 def save_to_synapse(
@@ -733,6 +741,8 @@ def main():
             datahub_tools_path=args.datahub_tools_path,
         )
         create_case_lists(
+            dataset_name=dataset,
+            datahub_tools_path=args.datahub_tools_path,
             clinical_file_name=f"{args.datahub_tools_path}/add-clinical-header/{dataset}/data_clinical_merged.txt",
             output_directory=f"{args.datahub_tools_path}/add-clinical-header/{dataset}/case_lists/",
             study_id=f"iatlas_{dataset}",
