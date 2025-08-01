@@ -34,10 +34,10 @@ def read_and_merge_maf_files(input_folder_synid: str) -> pd.DataFrame:
 
     if not dfs:
         print(f"No MAF files found in  {input_folder_synid:}")
-        return
-
-    merged_df = pd.concat(dfs, ignore_index=True)
-    return merged_df
+        return None
+    else:
+        merged_df = pd.concat(dfs, ignore_index=True)
+        return merged_df
 
 
 def split_into_chunks(
