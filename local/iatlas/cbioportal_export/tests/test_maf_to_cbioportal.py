@@ -14,7 +14,6 @@ def syn_mock():
 
 
 def test_that_read_and_merge_maf_files_returns_expected_when_has_maf_files(syn_mock):
-
     # Mock getChildren to return fake .maf files
     syn_mock.getChildren.return_value = [
         {"name": "file1.maf", "id": "syn1"},
@@ -37,8 +36,6 @@ def test_that_read_and_merge_maf_files_returns_expected_when_has_maf_files(syn_m
 
 
 def test_read_and_merge_maf_files_returns_none_when_no_maf_files(syn_mock):
-    syn_mock = mock.create_autospec(maf_to_cbio.syn)
-
     # Return only non-MAF files
     syn_mock.getChildren.return_value = [
         {"name": "file1.txt", "id": "syn1"},
