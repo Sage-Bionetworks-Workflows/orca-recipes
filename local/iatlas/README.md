@@ -108,10 +108,11 @@ This script will run the iatlas mutations data through genome nexus so it can be
 
 The script does the following:
 
-1. Splits the maf into smaller chunks for genome nexus annotation
-2. [Annotates via genome nexus](https://github.com/genome-nexus/genome-nexus-annotation-pipeline)
-3. Concatenates the results
-4. [Creates the required meta_* data](https://github.com/cBioPortal/datahub-study-curation-tools/tree/master/generate-meta-files)
+1. Reads in and merges all the individual mafs from a given folder
+2. Splits the maf into smaller chunks for genome nexus annotation
+3. [Annotates via genome nexus](https://github.com/genome-nexus/genome-nexus-annotation-pipeline)
+4. Concatenates the results
+5. [Creates the required meta_* data](https://github.com/cBioPortal/datahub-study-curation-tools/tree/master/generate-meta-files)
 
 
 #### clinical_to_cbioportal.py
@@ -199,19 +200,30 @@ Any additional files are the intermediate processing files and can be ignored.
 **Example:**
 Doing a dry run on all of the datasets:
 
+For clinical
 ```
 python3 clinical_to_cbioportal.py 
     --input_df_synid syn66314245 \
     --cli_to_cbio_mapping_synid syn66276162 
     --cli_to_oncotree_mapping_synid syn66313842 \
     --output_folder_synid syn64136279 \
-    --datahub_tools_path /some_path/datahub-study-curation-tools \
+    --datahub_tools_path /<some_path>/datahub-study-curation-tools \
     --cbioportal_path /<some_path>/cbioportal
     --dry_run
 ```
 
+For mafs
+```
+python3 maf_to_cbioportal.py 
+    --dataset Riaz
+    --input_folder_synid syn68785881 
+    --output_folder_synid syn68633933 
+    --datahub_tools_path /<some_path>/datahub-study-curation-tools --n_workers 3 
+    --dry_run
+```
+
 **Example:**
-Saving files to synapse with comment
+Saving clinical files to synapse with comment
 
 ```
 python3 clinical_to_cbioportal.py 
