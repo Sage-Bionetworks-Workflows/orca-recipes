@@ -15,6 +15,31 @@ my_agent = "iatlas-cbioportal/0.0.0"
 syn = synapseclient.Synapse(user_agent=my_agent).login()
 
 
+def read_and_merge_maf_files(input_folder_synid: str) -> pd.DataFrame:
+    """Read in and merge MAF files from a specified folder
+    
+    Args:
+        folder: Synapse id of folder containing MAF files
+        
+    Return:
+        pd.DataFrame: Merged maf of all mafs in input folder
+    """
+    entities = syn.getChildren(input_folder_synid)
+    # Filter for files ending in .maf
+    dfs = []
+    for item in entities:
+        if item['name'].endswith('.maf'):
+            df = pd.read_csv(syn.get(item['id']).path, sep="\t", comment="#")
+            dfs.append(df)
+
+    if not dfs:
+        print(f"No MAF files found in  {input_folder_synid:}")
+        return None
+    else:
+        merged_df = pd.concat(dfs, ignore_index=True)
+        return merged_df
+
+
 def split_into_chunks(
     dataset_name: str,
     input_df: pd.DataFrame,
@@ -266,9 +291,9 @@ def main():
         help="Name of dataset to run processing for",
     )
     parser.add_argument(
-        "--input_df_synid",
+        "--input_folder_synid",
         type=str,
-        help="Synapse id for the input maf file",
+        help="Synapse id for the input folder containing all of the mafs to be merged",
     )
     parser.add_argument(
         "--max_rows",
@@ -315,9 +340,7 @@ def main():
     if args.clear_workspace:
         utils.clear_workspace(dir_path=f"{args.datahub_tools_path}/add-clinical-header")
 
-    maf_df = pd.read_csv(
-        syn.get(args.input_df_synid).path, sep="\t", comment="#", low_memory=False
-    )
+    maf_df = read_and_merge_maf_files(input_folder_synid = args.input_folder_synid)
     n_maf_chunks = split_into_chunks(
         dataset_name=args.dataset,
         input_df=maf_df,

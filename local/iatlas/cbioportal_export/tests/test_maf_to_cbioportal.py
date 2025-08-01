@@ -1,9 +1,50 @@
-import pytest
-import pandas as pd
 import os
 from tempfile import TemporaryDirectory
+from unittest import mock
+
+import pytest
+import pandas as pd
 
 import maf_to_cbioportal as maf_to_cbio
+
+
+@pytest.fixture
+def syn_mock():
+    return mock.create_autospec(maf_to_cbio.syn)
+
+
+def test_that_read_and_merge_maf_files_returns_expected_when_has_maf_files(syn_mock):
+    # Mock getChildren to return fake .maf files
+    syn_mock.getChildren.return_value = [
+        {"name": "file1.maf", "id": "syn1"},
+        {"name": "file2.maf", "id": "syn2"},
+    ]
+
+    syn_mock.get.side_effect = lambda x: mock.Mock(path=f"/fake/path/{x}.maf")
+
+    with mock.patch.object(maf_to_cbio, "syn", syn_mock), mock.patch.object(
+        maf_to_cbio.pd, "read_csv"
+    ) as mock_read_csv:
+
+        mock_read_csv.side_effect = [
+            pd.DataFrame({"col": [1]}),
+            pd.DataFrame({"col": [2]}),
+        ]
+
+        result = maf_to_cbio.read_and_merge_maf_files("synFolder123")
+        assert result.equals(pd.DataFrame({"col": [1, 2]}))
+
+
+def test_read_and_merge_maf_files_returns_none_when_no_maf_files(syn_mock):
+    # Return only non-MAF files
+    syn_mock.getChildren.return_value = [
+        {"name": "file1.txt", "id": "syn1"},
+        {"name": "notes.docx", "id": "syn2"},
+    ]
+
+    with mock.patch.object(maf_to_cbio, "syn", syn_mock):
+        result = maf_to_cbio.read_and_merge_maf_files("synFolder123")
+        assert result is None
 
 
 @pytest.mark.parametrize(
