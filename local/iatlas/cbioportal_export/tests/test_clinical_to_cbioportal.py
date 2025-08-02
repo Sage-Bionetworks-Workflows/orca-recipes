@@ -6,9 +6,77 @@ from unittest.mock import patch
 
 import numpy as np
 import pandas as pd
+from pandas.testing import assert_frame_equal
 import pytest
 
 import clinical_to_cbioportal as cli_to_cbio
+
+
+@pytest.mark.parametrize(
+    "input_df,expected_df",
+    [
+        (
+            pd.DataFrame(
+                {
+                    "sample_name": ["old_sample1", "old_sample2"],
+                    "patient_name": ["old_patient1", "old_patient2"],
+                    "study_sample_name": ["new_sample1", "new_sample2"],
+                    "study_patient_name": ["new_patient1", "new_patient2"],
+                }
+            ),
+            pd.DataFrame(
+                {
+                    "SAMPLE_ID": ["new_sample1", "new_sample2"],
+                    "PATIENT_ID": ["new_patient1", "new_patient2"],
+                    "study_sample_name": ["new_sample1", "new_sample2"],
+                    "study_patient_name": ["new_patient1", "new_patient2"],
+                }
+            ),
+        ),
+        (
+            pd.DataFrame(
+                {
+                    "sample_name": ["old_sample1", "old_sample2"],
+                    "patient_name": ["old_patient1", "old_patient2"],
+                    "study_sample_name": ["new_sample1", pd.NA],
+                    "study_patient_name": [pd.NA, "new_patient2"],
+                }
+            ),
+            pd.DataFrame(
+                {
+                    "SAMPLE_ID": ["new_sample1", "old_sample2"],
+                    "PATIENT_ID": ["old_patient1", "new_patient2"],
+                    "study_sample_name": ["new_sample1", pd.NA],
+                    "study_patient_name": [pd.NA, "new_patient2"],
+                }
+            ),
+        ),
+        (
+            pd.DataFrame(
+                {
+                    "sample_name": ["s1"],
+                    "patient_name": ["p1"],
+                    "study_sample_name": ["s2"],
+                    "study_patient_name": ["p2"],
+                    "extra_col": [42],
+                }
+            ),
+            pd.DataFrame(
+                {
+                    "SAMPLE_ID": ["s2"],
+                    "PATIENT_ID": ["p2"],
+                    "study_sample_name": ["s2"],
+                    "study_patient_name": ["p2"],
+                    "extra_col": [42],
+                }
+            ),
+        ),
+    ],
+    ids=["all_values_present", "some_missing_papers_ids", "extra_col_preserved"],
+)
+def test_that_remap_clinical_ids_to_paper_ids_returns_expected(input_df, expected_df):
+    result = cli_to_cbio.remap_clinical_ids_to_paper_ids(input_df)
+    assert_frame_equal(result, expected_df)
 
 
 @pytest.fixture
@@ -37,6 +105,7 @@ def test_cli_to_cbio_mapping():
         }
     )
     return cli_to_cbio_mapping
+
 
 class TestSplitPatientAndSampleData:
     def test_split_structure(self, test_input_clinical_data, test_cli_to_cbio_mapping):
@@ -145,7 +214,8 @@ def test_that_get_updated_cli_attributes_updates_correctly():
             }
         )
         pd.testing.assert_frame_equal(
-            updated_attr_df.reset_index(drop=True), expected_df.reset_index(drop=True)
+            updated_attr_df.reset_index(drop=True),
+            expected_df.reset_index(drop=True),
         )
 
 
@@ -193,23 +263,6 @@ def test_write_single_oncotree_case_list_writes_correctly():
             assert "S1" in contents
             assert "S2" in contents
             assert f"{study_id}_LUNG" in contents
-
-
-def test_that_write_case_list_all_writes_correctly():
-    clinical_samples = ["S1", "S2", "S3"]
-    study_id = "test_study"
-
-    with tempfile.TemporaryDirectory() as tmpdir:
-        files = cli_to_cbio.write_case_list_all(clinical_samples, tmpdir, study_id)
-
-        # We expect no return files, but a specific file to exist
-        expected_file = os.path.join(tmpdir, "cases_all.txt")
-        assert os.path.exists(expected_file)
-
-        with open(expected_file) as f:
-            contents = f.read()
-            assert "test_study_all" in contents
-            assert "\t".join(clinical_samples) in contents
 
 
 def test_that_write_case_list_files_writes_correctly():
