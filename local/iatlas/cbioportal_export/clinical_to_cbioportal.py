@@ -14,9 +14,8 @@ import synapseutils
 
 import utils
 
-#my_agent = "iatlas-cbioportal/0.0.0"
-#syn = synapseclient.Synapse(user_agent=my_agent).login()
-syn = synapseclient.login()
+my_agent = "iatlas-cbioportal/0.0.0"
+syn = synapseclient.Synapse(user_agent=my_agent).login()
 
 EXTRA_COLS = ["study_sample_name", "study_patient_name"]
 
