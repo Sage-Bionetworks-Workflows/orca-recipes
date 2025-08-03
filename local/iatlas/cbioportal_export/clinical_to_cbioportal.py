@@ -680,12 +680,10 @@ def validate_export_files(
     
     for file in REQUIRED_OUTPUT_FILES:
         if file.startswith("cases"): 
-            required_file_path = f"{dataset_dir}/{file}" 
-        else:
             required_file_path = f"{dataset_dir}/case_lists/{file}"
-            
-        required_file_path = f"{dataset_dir}/{file}"
-        if not Path().exists(required_file_path):
+        else:
+            required_file_path = f"{dataset_dir}/{file}"
+        if not Path(required_file_path).exists():
             logger.error(f"Missing REQUIRED OUTPUT FILE: {required_file_path}")
     print("\n\n")
 
