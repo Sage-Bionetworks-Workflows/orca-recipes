@@ -2,6 +2,7 @@ import argparse
 from collections import defaultdict
 import csv
 import logging
+from pathlib import Path
 import os
 import subprocess
 import sys
@@ -64,8 +65,17 @@ CASE_LIST_TEXT_TEMPLATE = (
     "case_list_ids: {case_list_ids}"
 )
 
+REQUIRED_OUTPUT_FILES = [
+    "data_clinical_patient.txt",
+    "data_clinical_sample.txt",
+    "cases_sequenced.txt",
+    "cases_all.txt",
+    "meta_clinical_patient.txt",
+    "meta_clinical_sample.txt"
+]
 
-def remap_clinical_ids_to_paper_ids(input_df: pd.DataFrame, **kwargs) -> pd.DataFrame:
+
+def remap_clinical_ids_to_paper_ids(input_df: pd.DataFrame) -> pd.DataFrame:
     """Remaps the clinical sample and patient id attributes to use the
         new paper identifiers that will be used across all data file types
         for consistency.
@@ -79,7 +89,6 @@ def remap_clinical_ids_to_paper_ids(input_df: pd.DataFrame, **kwargs) -> pd.Data
     Returns:
         pd.DataFrame: remapped clinical dataset with new paper ids
     """
-    logger = kwargs.get("logger", logging.getLogger(__name__))
     cli_remapped = input_df.copy()
     cli_remapped.loc[~cli_remapped["study_sample_name"].isna(), "sample_name"] = (
         cli_remapped.loc[~cli_remapped["study_sample_name"].isna(), "study_sample_name"]
@@ -89,8 +98,6 @@ def remap_clinical_ids_to_paper_ids(input_df: pd.DataFrame, **kwargs) -> pd.Data
             ~cli_remapped["study_patient_name"].isna(), "study_patient_name"
         ]
     )
-    if cli_remapped.sample_name.isna().any() or cli_remapped.patient_name.isna().any():
-        logger.error("There are missing sample_name and/or patient_name values.")
     cli_remapped.rename(
         columns={"sample_name": "SAMPLE_ID", "patient_name": "PATIENT_ID"}, inplace=True
     )
@@ -102,7 +109,6 @@ def preprocessing(
     cli_to_cbio_mapping: pd.DataFrame,
     cli_to_oncotree_mapping_synid: str,
     datahub_tools_path: str,
-    **kwargs,
 ) -> pd.DataFrame:
     """Preprocesses the data, runs the individual steps:
         1. Gets the input clinical data
@@ -136,7 +142,7 @@ def preprocessing(
         )
     )
     cli_remapped = cli_with_oncotree.rename(columns=cli_to_cbio_mapping_dict)
-    cli_remapped = remap_clinical_ids_to_paper_ids(input_df=cli_remapped, **kwargs)
+    cli_remapped = remap_clinical_ids_to_paper_ids(input_df=cli_remapped)
     cli_remapped = remap_column_values(input_df=cli_remapped)
     cli_remapped.to_csv(
         f"{datahub_tools_path}/add-clinical-header/cli_remapped.csv",
@@ -516,6 +522,7 @@ def write_case_lists_all_and_sequenced(
         -i {study_id}
     """
     subprocess.run(cmd, shell=True, executable="/bin/bash")
+    
 
 
 def save_to_synapse(
@@ -616,6 +623,14 @@ def validate_export_files(
 ) -> None:
     """Does simple validation of the sample and patient count
         for the input and output clincial files
+        
+        Validation rules available:
+        -  Validation #1: Checks that rows match before and after
+        -  Validation #2: Checks that samples match before and after
+        -  Validation #3: Checks that patients match before and after
+        -  Validation #4: Checks that there are no NA sample values
+        -  Validation #5: Checks that there are no NA patient values
+        -  Validation #6: Checks that all REQUIRED_OUTPUT_FILES are present locally
 
     Args:
         input_df_synid (str): input clinical file synapse id
@@ -625,20 +640,20 @@ def validate_export_files(
     logger = kwargs.get("logger", logging.getLogger(__name__))
     input_df = pd.read_csv(syn.get(input_df_synid).path, sep="\t")
     cli_df_subset = input_df[input_df["Dataset"] == dataset_name]
-    dataset_dir = os.path.join(
-        f"{datahub_tools_path}/add-clinical-header/", dataset_name
+    dataset_dir = utils.get_local_dataset_output_folder_path(
+        dataset_name, datahub_tools_path
     )
 
     output_patient_df = pd.read_csv(
         os.path.join(dataset_dir, f"data_clinical_patient.txt"),
         sep="\t",
-        skiprows=4,
+        skiprows=4, # skips the clinical header when reading it in
     )
 
     output_samples_df = pd.read_csv(
         os.path.join(dataset_dir, f"data_clinical_sample.txt"),
         sep="\t",
-        skiprows=4,
+        skiprows=4, # skips the clinical header when reading it in
     )
     n_samples_start = len(cli_df_subset.sample_name.unique())
     n_patients_start = len(cli_df_subset.patient_name.unique())
@@ -657,6 +672,21 @@ def validate_export_files(
         logger.error(
             f"There are {n_patients_start} patients start, there are {n_patients_end} patients end"
         )
+    if output_samples_df.SAMPLE_ID.isna().any():
+        logger.error("There are missing SAMPLE_ID values.")
+        
+    if output_patient_df.PATIENT_ID.isna().any():
+        logger.error("There are missing PATIENT_ID values.")
+    
+    for file in REQUIRED_OUTPUT_FILES:
+        if file.startswith("cases"): 
+            required_file_path = f"{dataset_dir}/{file}" 
+        else:
+            required_file_path = f"{dataset_dir}/case_lists/{file}"
+            
+        required_file_path = f"{dataset_dir}/{file}"
+        if not Path().exists(required_file_path):
+            logger.error(f"Missing REQUIRED OUTPUT FILE: {required_file_path}")
     print("\n\n")
 
 
@@ -747,11 +777,6 @@ def main():
         help="Version comment for the files on Synapse. Optional. Defaults to None.",
     )
 
-    logger = utils.create_logger(
-        dataset_name=args.dataset,
-        datahub_tools_path=args.datahub_tools_path,
-        log_file_name="clinical_to_cbioportal_log",
-    )
     args = parser.parse_args()
     if args.clear_workspace:
         utils.clear_workspace(dir_path=f"{args.datahub_tools_path}/add-clinical-header")
@@ -764,12 +789,16 @@ def main():
         cli_to_cbio_mapping=cli_to_cbio_mapping,
         cli_to_oncotree_mapping_synid=args.cli_to_oncotree_mapping_synid,
         datahub_tools_path=args.datahub_tools_path,
-        logger=logger,
     )
     cli_dfs = split_into_patient_and_sample_data(
         input_data=cli_df, cli_to_cbio_mapping=cli_to_cbio_mapping
     )
     for dataset in args.dataset:
+        logger = utils.create_logger(
+            dataset_name=dataset,
+            datahub_tools_path=args.datahub_tools_path,
+            log_file_name="clinical_to_cbioportal_log.txt",
+        )
         add_clinical_header(
             input_dfs=cli_dfs,
             dataset_name=dataset,
