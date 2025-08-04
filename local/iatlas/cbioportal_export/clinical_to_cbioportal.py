@@ -74,6 +74,8 @@ REQUIRED_OUTPUT_FILES = [
     "meta_clinical_sample.txt"
 ]
 
+LOG_FILE_NAME = "iatlas_cli_validation_log.txt"
+
 
 def remap_clinical_ids_to_paper_ids(input_df: pd.DataFrame) -> pd.DataFrame:
     """Remaps the clinical sample and patient id attributes to use the
@@ -722,7 +724,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--dataset",
-        type=list,
+        nargs="+",
         default=IATLAS_DATASETS,
         help="List of dataset names to run for. Optional. Defaults to IATLAS_DATASETS global variable.",
     )
@@ -795,7 +797,7 @@ def main():
         logger = utils.create_logger(
             dataset_name=dataset,
             datahub_tools_path=args.datahub_tools_path,
-            log_file_name="clinical_to_cbioportal_log.txt",
+            log_file_name=LOG_FILE_NAME,
         )
         add_clinical_header(
             input_dfs=cli_dfs,
