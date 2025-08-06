@@ -13,6 +13,90 @@ import clinical_to_cbioportal as cli_to_cbio
 
 
 @pytest.mark.parametrize(
+    "input_df, expected_df",
+    [
+        (
+            # Suffix present
+            pd.DataFrame(
+                {
+                    "CANCER_TYPE": ["liver_cancer_type", "lung_cancer_type"],
+                    "AMADEUS_STUDY": ["study1", "study2"],
+                }
+            ),
+            pd.DataFrame(
+                {
+                    "CANCER_TYPE": ["liver", "lung"],
+                    "AMADEUS_STUDY": ["study1", "study2"],
+                }
+            ),
+        ),
+        (
+            # Numeric column should be untouched
+            pd.DataFrame({"AGE": [45, 60], "AMADEUS_STUDY": ["study1", "study2"]}),
+            pd.DataFrame({"AGE": [45, 60], "AMADEUS_STUDY": ["study1", "study2"]}),
+        ),
+        (
+            # String column with no suffix to remove
+            pd.DataFrame(
+                {
+                    "STATUS": ["Complete", "Ongoing"],
+                    "AMADEUS_STUDY": ["study1", "study2"],
+                }
+            ),
+            pd.DataFrame(
+                {
+                    "STATUS": ["Complete", "Ongoing"],
+                    "AMADEUS_STUDY": ["study1", "study2"],
+                }
+            ),
+        ),
+        (
+            # Special case: AMADEUS_STUDY column with suffix to remove
+            pd.DataFrame({"AMADEUS_STUDY": ["study1_amadeus", "study2_amadeus"]}),
+            pd.DataFrame({"AMADEUS_STUDY": ["study1", "study2"]}),
+        ),
+    ],
+    ids=["suffix_present", "numeric", "string_no_suffix", "amadeus_study_column"],
+)
+def test_remove_suffix_from_column_values(input_df, expected_df):
+    result_df = cli_to_cbio.remove_suffix_from_column_values(input_df)
+    assert_frame_equal(result_df, expected_df)
+
+
+@pytest.mark.parametrize(
+    "input_df, cli_to_cbio_mapping, expected_df",
+    [
+        (
+            # Test CAPS transformation
+            pd.DataFrame({"RACE": ["asian", "not_reported"]}),
+            pd.DataFrame({"NORMALIZED_HEADER": ["RACE"], "Case": ["CAPS"]}),
+            pd.DataFrame({"RACE": ["ASIAN", "NOT REPORTED"]}),
+        ),
+        (
+            # Test Title Case transformation
+            pd.DataFrame(
+                {"ETHNICITY": ["not_hispanic_or_latino", "hispanic_or_latino"]}
+            ),
+            pd.DataFrame({"NORMALIZED_HEADER": ["ETHNICITY"], "Case": ["Title Case"]}),
+            pd.DataFrame(
+                {"ETHNICITY": ["Not Hispanic Or Latino", "Hispanic Or Latino"]}
+            ),
+        ),
+        (
+            # No transformation applied
+            pd.DataFrame({"SEX": ["Male", "Female"]}),
+            pd.DataFrame({"NORMALIZED_HEADER": ["SEX"], "Case": ["None"]}),
+            pd.DataFrame({"SEX": ["Male", "Female"]}),
+        ),
+    ],
+    ids=["caps", "titlecase", "no_case"],
+)
+def test_update_case_of_column_values(input_df, cli_to_cbio_mapping, expected_df):
+    result_df = cli_to_cbio.update_case_of_column_values(input_df, cli_to_cbio_mapping)
+    assert_frame_equal(result_df, expected_df)
+
+
+@pytest.mark.parametrize(
     "input_df,expected_df",
     [
         (
