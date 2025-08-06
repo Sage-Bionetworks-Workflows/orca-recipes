@@ -71,10 +71,8 @@ REQUIRED_OUTPUT_FILES = [
     "cases_sequenced.txt",
     "cases_all.txt",
     "meta_clinical_patient.txt",
-    "meta_clinical_sample.txt"
+    "meta_clinical_sample.txt",
 ]
-
-LOG_FILE_NAME = "iatlas_cli_validation_log.txt"
 
 
 def remap_clinical_ids_to_paper_ids(input_df: pd.DataFrame) -> pd.DataFrame:
@@ -104,6 +102,65 @@ def remap_clinical_ids_to_paper_ids(input_df: pd.DataFrame) -> pd.DataFrame:
         columns={"sample_name": "SAMPLE_ID", "patient_name": "PATIENT_ID"}, inplace=True
     )
     return cli_remapped
+
+
+def get_study_sample_name_to_lens_id_mapping(
+    lens_id_mapping_synid: str, **kwargs
+) -> pd.DataFrame:
+    """Gets the mapping of the iatlas paper ids (study_sample_name) to
+        lens id to merge into the clinical later
+
+    Args:
+        lens_id_mapping_synid (str): synapse id of the iatlas paper ids
+            (study_sample_name) to lens id mapping
+
+    Returns:
+        pd.DataFrame: mapping of the iatlas paper ids to lens id
+    """
+    logger = kwargs.get("logger", logging.getLogger(__name__))
+    lens_id_mapping = pd.read_csv(syn.get(lens_id_mapping_synid).path, sep="\t")
+    if lens_id_mapping.duplicated().any():
+        logger.error(
+            "There are duplicated rows in the study_sample_name to lens id mapping."
+        )
+    if lens_id_mapping.duplicated(subset=["study_sample_name"]).any():
+        logger.error(
+            "There are duplicated study_sample_names in the study_sample_name to lens id mapping."
+        )
+
+    if lens_id_mapping.duplicated(subset=["lens_id"]).any():
+        logger.error(
+            "There are duplicated lens_id in the study_sample_name to lens id mapping."
+        )
+
+    return lens_id_mapping
+
+
+def add_lens_id_as_sample_display_name(
+    input_df: pd.DataFrame, lens_id_mapping: pd.DataFrame, **kwargs
+) -> pd.DataFrame:
+    """Adds in lens_id as clinical attribute SAMPLE_DISPLAY_NAME
+
+    Args:
+        input_df (pd.DataFrame): input clinical data
+        lens_id_mapping (pd.DataFrame): Mapping file of lens_id and study_sample_name
+
+    Returns:
+        pd.DataFrame: clinical data with SAMPLE_DISPLAY_NAME
+    """
+    logger = kwargs.get("logger", logging.getLogger(__name__))
+    lens_id_mapping_renamed = lens_id_mapping.rename(
+        columns={"lens_id": "SAMPLE_DISPLAY_NAME", "study_sample_name": "SAMPLE_ID"}
+    )
+    input_df_mapped = input_df.merge(
+        lens_id_mapping_renamed, on=["SAMPLE_ID"], how="left"
+    )
+    if input_df_mapped.SAMPLE_DISPLAY_NAME.isnull().any():
+        logger.error(
+            "There are missing SAMPLE_DISPLAY_NAME (formerly lens_id) "
+            "values after merging in lens_id on SAMPLE_ID"
+        )
+    return input_df_mapped
 
 
 def preprocessing(
@@ -524,7 +581,6 @@ def write_case_lists_all_and_sequenced(
         -i {study_id}
     """
     subprocess.run(cmd, shell=True, executable="/bin/bash")
-    
 
 
 def save_to_synapse(
@@ -625,7 +681,7 @@ def validate_export_files(
 ) -> None:
     """Does simple validation of the sample and patient count
         for the input and output clincial files
-        
+
         Validation rules available:
         -  Validation #1: Checks that rows match before and after
         -  Validation #2: Checks that samples match before and after
@@ -649,13 +705,13 @@ def validate_export_files(
     output_patient_df = pd.read_csv(
         os.path.join(dataset_dir, f"data_clinical_patient.txt"),
         sep="\t",
-        skiprows=4, # skips the clinical header when reading it in
+        skiprows=4,  # skips the clinical header when reading it in
     )
 
     output_samples_df = pd.read_csv(
         os.path.join(dataset_dir, f"data_clinical_sample.txt"),
         sep="\t",
-        skiprows=4, # skips the clinical header when reading it in
+        skiprows=4,  # skips the clinical header when reading it in
     )
     n_samples_start = len(cli_df_subset.sample_name.unique())
     n_patients_start = len(cli_df_subset.patient_name.unique())
@@ -676,12 +732,12 @@ def validate_export_files(
         )
     if output_samples_df.SAMPLE_ID.isna().any():
         logger.error("There are missing SAMPLE_ID values.")
-        
+
     if output_patient_df.PATIENT_ID.isna().any():
         logger.error("There are missing PATIENT_ID values.")
-    
+
     for file in REQUIRED_OUTPUT_FILES:
-        if file.startswith("cases"): 
+        if file.startswith("cases"):
             required_file_path = f"{dataset_dir}/case_lists/{file}"
         else:
             required_file_path = f"{dataset_dir}/{file}"
@@ -744,6 +800,11 @@ def main():
         help="Synapse id for the clinical to oncotree mapping file",
     )
     parser.add_argument(
+        "--lens_id_mapping_synid",
+        type=str,
+        help="Synapse id for the study_sample_name (paper ids) to lens id mapping file",
+    )
+    parser.add_argument(
         "--output_folder_synid",
         type=str,
         help="Synapse id for output folder to store the export files",
@@ -781,6 +842,12 @@ def main():
     if args.clear_workspace:
         utils.clear_workspace(dir_path=f"{args.datahub_tools_path}/add-clinical-header")
 
+    # general logger
+    main_logger = utils.create_logger(
+        dataset_name=None,
+        datahub_tools_path=args.datahub_tools_path,
+        log_file_name="iatlas_general_cli_log.txt",
+    )
     cli_to_cbio_mapping = get_cli_to_cbio_mapping(
         cli_to_cbio_mapping_synid=args.cli_to_cbio_mapping_synid
     )
@@ -793,12 +860,21 @@ def main():
     cli_dfs = split_into_patient_and_sample_data(
         input_data=cli_df, cli_to_cbio_mapping=cli_to_cbio_mapping
     )
+    lens_id_mapping = get_study_sample_name_to_lens_id_mapping(
+        lens_id_mapping_synid=args.lens_id_mapping_synid, logger=main_logger
+    )
+    cli_dfs["sample"] = add_lens_id_as_sample_display_name(
+        input_df=cli_dfs["sample"],
+        lens_id_mapping=lens_id_mapping,
+        logger=main_logger,
+    )
     for dataset in args.dataset:
-        logger = utils.create_logger(
+        dataset_logger = utils.create_logger(
             dataset_name=dataset,
             datahub_tools_path=args.datahub_tools_path,
-            log_file_name=LOG_FILE_NAME,
+            log_file_name="iatlas_cli_validation_log.txt",
         )
+
         add_clinical_header(
             input_dfs=cli_dfs,
             dataset_name=dataset,
@@ -818,7 +894,7 @@ def main():
             input_df_synid=args.input_df_synid,
             dataset_name=dataset,
             datahub_tools_path=args.datahub_tools_path,
-            logger=logger,
+            logger=dataset_logger,
         )
         run_cbioportal_validator(
             dataset_name=dataset,

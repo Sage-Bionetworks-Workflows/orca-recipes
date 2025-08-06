@@ -2,7 +2,8 @@
 import csv
 import os
 import tempfile
-from unittest.mock import patch
+from unittest import mock
+from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pandas as pd
@@ -10,6 +11,11 @@ from pandas.testing import assert_frame_equal
 import pytest
 
 import clinical_to_cbioportal as cli_to_cbio
+
+
+@pytest.fixture
+def syn_mock():
+    return mock.create_autospec(cli_to_cbio.syn)
 
 
 @pytest.mark.parametrize(
@@ -77,6 +83,45 @@ import clinical_to_cbioportal as cli_to_cbio
 def test_that_remap_clinical_ids_to_paper_ids_returns_expected(input_df, expected_df):
     result = cli_to_cbio.remap_clinical_ids_to_paper_ids(input_df)
     assert_frame_equal(result, expected_df)
+
+
+def test_that_add_lens_id_as_sample_display_name_returns_expected_with_error_log_if_missing():
+    input_df = pd.DataFrame({"SAMPLE_ID": ["sample1", "sample2"]})
+    lens_mapping = pd.DataFrame(
+        {"study_sample_name": ["sample1"], "lens_id": ["lens1"]}
+    )
+    expected_df = pd.DataFrame(
+        {
+            "SAMPLE_ID": ["sample1", "sample2"],
+            "SAMPLE_DISPLAY_NAME": ["lens1", None],
+        }
+    )
+
+    mock_logger = MagicMock()
+    result_df = cli_to_cbio.add_lens_id_as_sample_display_name(
+        input_df, lens_mapping, logger=mock_logger
+    )
+    mock_logger.error.assert_called_with(
+        "There are missing SAMPLE_DISPLAY_NAME (formerly lens_id) values after merging in lens_id on SAMPLE_ID"
+    )
+    assert_frame_equal(result_df, expected_df)
+
+
+def test_that_add_lens_id_as_sample_display_name_returns_expected_if_no_missing():
+    input_df = pd.DataFrame({"SAMPLE_ID": ["sample1", "sample2"]})
+    lens_mapping = pd.DataFrame(
+        {"study_sample_name": ["sample1", "sample2"], "lens_id": ["lens1", "lens2"]}
+    )
+    expected_df = pd.DataFrame(
+        {"SAMPLE_ID": ["sample1", "sample2"], "SAMPLE_DISPLAY_NAME": ["lens1", "lens2"]}
+    )
+
+    mock_logger = MagicMock()
+    result_df = cli_to_cbio.add_lens_id_as_sample_display_name(
+        input_df, lens_mapping, logger=mock_logger
+    )
+    mock_logger.error.assert_not_called()
+    assert_frame_equal(result_df, expected_df)
 
 
 @pytest.fixture
