@@ -8,7 +8,6 @@ import subprocess
 import sys
 from typing import Dict
 
-import numpy as np
 import pandas as pd
 import synapseclient
 import synapseutils
@@ -73,6 +72,78 @@ REQUIRED_OUTPUT_FILES = [
     "meta_clinical_patient.txt",
     "meta_clinical_sample.txt",
 ]
+
+
+def remove_suffix_from_column_values(input_df: pd.DataFrame, **kwargs) -> pd.DataFrame:
+    """Removes the attribute name suffix from all columns. Almost all values
+    in the string columns in the clinical data has this format:
+        [value]_[attribute_name]
+
+    E.g: The Cancer_Tissue column has values like liver_cancer_tissue
+
+    The exception is the AMADEUS_STUDY column which contains value with
+    [value]_amadeus, this just needs special exception handling
+
+    Args:
+        input_df (pd.DataFrame): input clinical data with the attribute name
+        formatted as a suffix into its values
+
+    Returns:
+        pd.DataFrame: cleaned clinical data without the suffixes attached
+    """
+    logger = kwargs.get("logger", logging.getLogger(__name__))
+    input_df_cleaned = input_df.copy()
+    for col in input_df_cleaned.select_dtypes(include="object").columns:
+        suffix = f"_{col}".lower()
+        input_df_cleaned[col] = input_df_cleaned[col].str.replace(
+            suffix, "", n=1, regex=False
+        )
+    # special scenario for AMADEUS_STUDY column
+    if "AMADEUS_STUDY" in input_df_cleaned.columns:
+        input_df_cleaned["AMADEUS_STUDY"] = input_df_cleaned["AMADEUS_STUDY"].str.replace(
+            "_amadeus", "", n=1, regex=False
+        )
+
+    # make sure we didn't create/reduce NA values
+    if input_df.isna().sum().sum() != input_df_cleaned.isna().sum().sum():
+        logger.error(
+            "The number of NA values before and after removing the suffix doesn't match"
+        )
+    return input_df_cleaned
+
+
+def update_case_of_column_values(
+    input_df: pd.DataFrame, cli_to_cbio_mapping: pd.DataFrame
+) -> pd.DataFrame:
+    """Each string column's values has an expected case: caps or
+    titlecase that it is expected to be in. This function
+    does the case-handling for those string columns,
+
+    Args:
+        input_df (pd.DataFrame): input clinical data
+        cli_to_cbio_mapping (pd.DataFrame): mapping that
+            also contains the expected case for each columns
+
+    Returns:
+        pd.DataFrame: case handled clinical data
+    """
+    input_df_cleaned = input_df.copy()
+    for col in cli_to_cbio_mapping.NORMALIZED_HEADER.unique():
+        case = cli_to_cbio_mapping[
+            cli_to_cbio_mapping.NORMALIZED_HEADER == col
+        ].Case.values[0]
+        if case == "CAPS":
+            input_df_cleaned[col] = (
+                input_df_cleaned[col].str.replace("_", " ").str.upper()
+            )
+        elif case == "Title Case":
+            input_df_cleaned[col] = (
+                input_df_cleaned[col].str.replace("_", " ").str.title()
+            )
+        # no cleaning otherwise
+        else:
+            pass
+    return input_df_cleaned
 
 
 def remap_clinical_ids_to_paper_ids(input_df: pd.DataFrame) -> pd.DataFrame:
@@ -203,7 +274,11 @@ def preprocessing(
     cli_remapped = cli_with_oncotree.rename(columns=cli_to_cbio_mapping_dict)
     cli_remapped = remap_clinical_ids_to_paper_ids(input_df=cli_remapped)
     cli_remapped = remap_column_values(input_df=cli_remapped)
-    cli_remapped.to_csv(
+    cli_remapped_cleaned = remove_suffix_from_column_values(input_df=cli_remapped)
+    cli_remapped_cleaned = update_case_of_column_values(
+        input_df=cli_remapped_cleaned, cli_to_cbio_mapping=cli_to_cbio_mapping
+    )
+    cli_remapped_cleaned.to_csv(
         f"{datahub_tools_path}/add-clinical-header/cli_remapped.csv",
         index=False,
         sep="\t",
