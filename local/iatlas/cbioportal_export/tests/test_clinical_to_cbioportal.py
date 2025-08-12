@@ -61,8 +61,28 @@ def syn_mock():
             pd.DataFrame({"AMADEUS_STUDY": ["study1_amadeus", "study2_amadeus"]}),
             pd.DataFrame({"AMADEUS_STUDY": ["study1", "study2"]}),
         ),
+        (
+            pd.DataFrame(
+                {
+                    "Response": ["clinical_response", "clinical_response_response"],
+                    "AMADEUS_STUDY": ["study1", "study2"],
+                }
+            ),
+            pd.DataFrame(
+                {
+                    "Response": ["clinical", "clinical_response"],
+                    "AMADEUS_STUDY": ["study1", "study2"],
+                }
+            ),
+        ),
     ],
-    ids=["suffix_present", "numeric", "string_no_suffix", "amadeus_study_column"],
+    ids=[
+        "suffix_present",
+        "numeric",
+        "string_no_suffix",
+        "amadeus_study_column",
+        "multiple_of_same_suffix",
+    ],
 )
 def test_remove_suffix_from_column_values(input_df, expected_df):
     result_df = cli_to_cbio.remove_suffix_from_column_values(input_df)

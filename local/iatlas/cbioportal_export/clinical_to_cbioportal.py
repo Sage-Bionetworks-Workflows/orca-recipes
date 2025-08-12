@@ -8,7 +8,6 @@ import subprocess
 import sys
 from typing import Dict
 
-import numpy as np
 import pandas as pd
 import synapseclient
 import synapseutils
@@ -81,7 +80,7 @@ def remove_suffix_from_column_values(input_df: pd.DataFrame, **kwargs) -> pd.Dat
         [value]_[attribute_name]
 
     E.g: The Cancer_Tissue column has values like liver_cancer_tissue
-    
+
     The exception is the AMADEUS_STUDY column which contains value with
     [value]_amadeus, this just needs special exception handling
 
@@ -97,16 +96,18 @@ def remove_suffix_from_column_values(input_df: pd.DataFrame, **kwargs) -> pd.Dat
     for col in input_df_cleaned.select_dtypes(include="object").columns:
         suffix = f"_{col}".lower()
         input_df_cleaned[col] = input_df_cleaned[col].str.replace(
-            suffix, "", regex=False
+            suffix, "", n=1, regex=False
         )
     # special scenario for AMADEUS_STUDY column
     input_df_cleaned["AMADEUS_STUDY"] = input_df_cleaned["AMADEUS_STUDY"].str.replace(
-        "_amadeus", "", regex=False
+        "_amadeus", "", n=1, regex=False
     )
-    
+
     # make sure we didn't create/reduce NA values
     if input_df.isna().sum().sum() != input_df_cleaned.isna().sum().sum():
-        logger.error("The number of NA values before and after removing the suffix doesn't match")
+        logger.error(
+            "The number of NA values before and after removing the suffix doesn't match"
+        )
     return input_df_cleaned
 
 

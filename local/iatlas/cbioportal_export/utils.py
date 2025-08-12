@@ -19,7 +19,10 @@ def create_logger(
     Returns:
         logging.Logger: logger for use in the processing functions
     """
-    dataset_dir = get_local_dataset_output_folder_path(dataset_name, datahub_tools_path)
+    if dataset_name:
+        dataset_dir = get_local_dataset_output_folder_path(dataset_name, datahub_tools_path)
+    else:
+        dataset_dir = datahub_tools_path
     logger = logging.getLogger()
     logger.setLevel(logging.INFO)
 
