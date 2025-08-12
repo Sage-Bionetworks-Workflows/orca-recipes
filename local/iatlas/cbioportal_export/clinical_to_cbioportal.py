@@ -99,9 +99,10 @@ def remove_suffix_from_column_values(input_df: pd.DataFrame, **kwargs) -> pd.Dat
             suffix, "", n=1, regex=False
         )
     # special scenario for AMADEUS_STUDY column
-    input_df_cleaned["AMADEUS_STUDY"] = input_df_cleaned["AMADEUS_STUDY"].str.replace(
-        "_amadeus", "", n=1, regex=False
-    )
+    if "AMADEUS_STUDY" in input_df_cleaned.columns:
+        input_df_cleaned["AMADEUS_STUDY"] = input_df_cleaned["AMADEUS_STUDY"].str.replace(
+            "_amadeus", "", n=1, regex=False
+        )
 
     # make sure we didn't create/reduce NA values
     if input_df.isna().sum().sum() != input_df_cleaned.isna().sum().sum():

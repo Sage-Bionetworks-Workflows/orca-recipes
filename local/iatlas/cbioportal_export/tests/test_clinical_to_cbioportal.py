@@ -26,33 +26,29 @@ def syn_mock():
             pd.DataFrame(
                 {
                     "CANCER_TYPE": ["liver_cancer_type", "lung_cancer_type"],
-                    "AMADEUS_STUDY": ["study1", "study2"],
                 }
             ),
             pd.DataFrame(
                 {
                     "CANCER_TYPE": ["liver", "lung"],
-                    "AMADEUS_STUDY": ["study1", "study2"],
                 }
             ),
         ),
         (
             # Numeric column should be untouched
-            pd.DataFrame({"AGE": [45, 60], "AMADEUS_STUDY": ["study1", "study2"]}),
-            pd.DataFrame({"AGE": [45, 60], "AMADEUS_STUDY": ["study1", "study2"]}),
+            pd.DataFrame({"AGE": [45, 60]}),
+            pd.DataFrame({"AGE": [45, 60]}),
         ),
         (
             # String column with no suffix to remove
             pd.DataFrame(
                 {
                     "STATUS": ["Complete", "Ongoing"],
-                    "AMADEUS_STUDY": ["study1", "study2"],
                 }
             ),
             pd.DataFrame(
                 {
                     "STATUS": ["Complete", "Ongoing"],
-                    "AMADEUS_STUDY": ["study1", "study2"],
                 }
             ),
         ),
@@ -65,13 +61,11 @@ def syn_mock():
             pd.DataFrame(
                 {
                     "Response": ["clinical_response", "clinical_response_response"],
-                    "AMADEUS_STUDY": ["study1", "study2"],
                 }
             ),
             pd.DataFrame(
                 {
                     "Response": ["clinical", "clinical_response"],
-                    "AMADEUS_STUDY": ["study1", "study2"],
                 }
             ),
         ),
