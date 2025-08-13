@@ -362,6 +362,31 @@ def test_that_get_updated_cli_attributes_updates_correctly():
         )
 
 
+@pytest.mark.parametrize(
+    "input_df, expected_cols",
+    (
+        pd.DataFrame(
+            {"a": [None, None, None], "b": [1, None, 3], "c": [None, None, None]}
+        ),
+        ["b"],
+    ),
+    (
+        pd.DataFrame({"a": [None, 2, None], "b": [1, None, 3], "c": [1, None, None]}),
+        ["a", "b", "c"],
+    ),
+    (
+        pd.DataFrame(
+            {"a": [None, None, None], "b": [None, None, None], "c": [None, None, None]}
+        ),
+        ["a", "b", "c"],
+    ),
+    ids=["some_all_na_cols", "no_all_na_cols", "all_all_na_cols"],
+)
+def that_get_all_non_na_columns_returns_expected(input_df, expected_cols):
+    result = cli_to_cbio.get_all_non_na_columns(input_df)
+    assert result == expected_cols
+
+
 def test_that_create_case_lists_map_returns_expected_map():
     # Create a fake clinical file in TSV format
     rows = [
