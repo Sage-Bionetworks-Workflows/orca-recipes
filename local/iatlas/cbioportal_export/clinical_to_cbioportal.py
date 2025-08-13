@@ -6,7 +6,7 @@ from pathlib import Path
 import os
 import subprocess
 import sys
-from typing import Dict
+from typing import Dict, List
 
 import pandas as pd
 import synapseclient
@@ -100,9 +100,9 @@ def remove_suffix_from_column_values(input_df: pd.DataFrame, **kwargs) -> pd.Dat
         )
     # special scenario for AMADEUS_STUDY column
     if "AMADEUS_STUDY" in input_df_cleaned.columns:
-        input_df_cleaned["AMADEUS_STUDY"] = input_df_cleaned["AMADEUS_STUDY"].str.replace(
-            "_amadeus", "", n=1, regex=False
-        )
+        input_df_cleaned["AMADEUS_STUDY"] = input_df_cleaned[
+            "AMADEUS_STUDY"
+        ].str.replace("_amadeus", "", n=1, regex=False)
 
     # make sure we didn't create/reduce NA values
     if input_df.isna().sum().sum() != input_df_cleaned.isna().sum().sum():
@@ -424,8 +424,20 @@ def convert_oncotree_codes(datahub_tools_path: str) -> pd.DataFrame:
     return cli_w_cancer_types
 
 
+def get_all_non_na_columns(input_df: pd.DataFrame) -> List[str]:
+    """ Gets all the columns in input data without all (100%) NAs
+    Args:
+        input_df (pd.DataFrame): input data
+
+    Returns:
+        List[str]: Returns a list of column names in df where there is at least
+        one value (subsets out columns with all NAs)
+    """
+    return input_df.columns[~input_df.isna().all()].tolist()
+
+
 def add_clinical_header(
-    input_dfs: pd.DataFrame,
+    input_dfs: Dict[str, pd.DataFrame],
     dataset_name: str,
     datahub_tools_path: str,
 ) -> None:
@@ -433,7 +445,10 @@ def add_clinical_header(
         by calling cbioportal repo
 
     Args:
-        cli_df (pd.DataFrame): input clinical dataframe with all mappings
+        input_dfs (Dict[str, pd.DataFrame]): A dictionary with the following keys:
+            "merged" : the clinical merged file before split
+            "patient" : patient dataset
+            "sample" : sample dataset
         dataset_name (str): name of dataset to add clinical headers to
         datahub_tools_path (str): Path to the datahub tools repo
     """
@@ -451,16 +466,20 @@ def add_clinical_header(
     sample_df_subset = input_dfs["sample"][
         input_dfs["sample"]["Dataset"] == dataset_name
     ]
+    
+    # get the columns without 100% NAs
+    patient_subset_cols = get_all_non_na_columns(input_df=patient_df_subset)
+    sample_subset_cols = get_all_non_na_columns(input_df=sample_df_subset)
 
     # saves the patient and sample files without pandas float
-    sample_df_subset.drop(columns=["Dataset"]).to_csv(
+    sample_df_subset[sample_subset_cols].drop(columns=["Dataset"]).to_csv(
         f"{dataset_dir}/data_clinical_sample.txt",
         sep="\t",
         index=False,
         float_format="%.12g",
     )
 
-    patient_df_subset.drop(columns=["Dataset"]).to_csv(
+    patient_df_subset[patient_subset_cols].drop(columns=["Dataset"]).to_csv(
         f"{dataset_dir}/data_clinical_patient.txt",
         sep="\t",
         index=False,
@@ -758,12 +777,12 @@ def validate_export_files(
         for the input and output clincial files
 
         Validation rules available:
-        -  Validation #1: Checks that rows match before and after
-        -  Validation #2: Checks that samples match before and after
-        -  Validation #3: Checks that patients match before and after
-        -  Validation #4: Checks that there are no NA sample values
-        -  Validation #5: Checks that there are no NA patient values
-        -  Validation #6: Checks that all REQUIRED_OUTPUT_FILES are present locally
+        -  Validation #1: Checks that all REQUIRED_OUTPUT_FILES are present locally
+        -  Validation #2: Checks that rows match before and after
+        -  Validation #3: Checks that samples match before and after
+        -  Validation #4: Checks that patients match before and after
+        -  Validation #5: Checks that there are no NA sample values
+        -  Validation #6: Checks that there are no NA patient values
 
     Args:
         input_df_synid (str): input clinical file synapse id
@@ -776,6 +795,14 @@ def validate_export_files(
     dataset_dir = utils.get_local_dataset_output_folder_path(
         dataset_name, datahub_tools_path
     )
+    
+    for file in REQUIRED_OUTPUT_FILES:
+        if file.startswith("cases"):
+            required_file_path = f"{dataset_dir}/case_lists/{file}"
+        else:
+            required_file_path = f"{dataset_dir}/{file}"
+        if not Path(required_file_path).exists():
+            logger.error(f"Missing REQUIRED OUTPUT FILE: {required_file_path}")
 
     output_patient_df = pd.read_csv(
         os.path.join(dataset_dir, f"data_clinical_patient.txt"),
@@ -810,14 +837,14 @@ def validate_export_files(
 
     if output_patient_df.PATIENT_ID.isna().any():
         logger.error("There are missing PATIENT_ID values.")
-
-    for file in REQUIRED_OUTPUT_FILES:
-        if file.startswith("cases"):
-            required_file_path = f"{dataset_dir}/case_lists/{file}"
-        else:
-            required_file_path = f"{dataset_dir}/{file}"
-        if not Path(required_file_path).exists():
-            logger.error(f"Missing REQUIRED OUTPUT FILE: {required_file_path}")
+    
+    # check that there are no all NA columns
+    if output_patient_df.isna().all().any():
+        logger.error("There are patient columns with ALL NAs.")
+        
+    if output_samples_df.isna().all().any():
+        logger.error("There are sample columns with ALL NAs.")
+        
     print("\n\n")
 
 
