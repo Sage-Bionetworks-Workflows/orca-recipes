@@ -312,10 +312,11 @@ def validate_that_allele_freq_are_not_na(
     logger = kwargs.get("logger", logging.getLogger(__name__))
     # check that allele _freq are present
     allele_freq_cols = ["t_ref_count", "t_alt_count"]
-    if input_df[allele_freq_cols].isna().any().any():
-        logger.error(
-            f"There are NAs in the allele frequency columns: {allele_freq_cols}"
-        )
+    if set(allele_freq_cols) <= set(input_df.columns):
+        if input_df[allele_freq_cols].isna().any().any():
+            logger.error(
+                f"There are NAs in the allele frequency columns: {allele_freq_cols}"
+            )
 
 
 def main():

@@ -175,8 +175,17 @@ def test_that_validate_export_files_has_no_logging_when_valid(caplog):
             ),
             True,
         ),
+        # Case 4: doesn't have required columns for validation
+        (
+            pd.DataFrame(
+                {
+                    "chromosome":[1,2,3]
+                }
+            ),
+            False,
+        ),
     ],
-    ids=["no_nas", "has_nas_in_one", "has_nas_in_all"],
+    ids=["no_nas", "has_nas_in_one", "has_nas_in_all", "no_req_cols"],
 )
 def test_validate_that_allele_freq_are_not_na_does_expected_logging(
     df, expect_error, caplog
