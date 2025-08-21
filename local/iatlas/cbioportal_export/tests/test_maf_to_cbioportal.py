@@ -177,11 +177,7 @@ def test_that_validate_export_files_has_no_logging_when_valid(caplog):
         ),
         # Case 4: doesn't have required columns for validation
         (
-            pd.DataFrame(
-                {
-                    "chromosome":[1,2,3]
-                }
-            ),
+            pd.DataFrame({"chromosome": [1, 2, 3]}),
             False,
         ),
     ],
@@ -199,5 +195,43 @@ def test_validate_that_allele_freq_are_not_na_does_expected_logging(
             and caplog.records[0].message
             == "There are NAs in the allele frequency columns: ['t_ref_count', 't_alt_count']"
         )
+    else:
+        assert len(caplog.records) == 0
+
+
+@pytest.mark.parametrize(
+    "df, expect_error, error",
+    [
+        # Case 1: No missing columns
+        (
+            pd.DataFrame(
+                {col: ["dummy"] for col in maf_to_cbio.REQUIRED_MAF_COLS},
+            ),
+            False,
+            ""
+        ),
+        # Case 2: Has missing column
+        (
+            pd.DataFrame(
+                {
+                    col: ["dummy"]
+                    for col in maf_to_cbio.REQUIRED_MAF_COLS
+                    if col not in ["Annotation_Status"]
+                },
+            ),
+            True,
+            "Missing required columns in maf: ['Annotation_Status']",
+        ),
+    ],
+    ids=["no_missing_cols", "has_missing_col"],
+)
+def test_validate_that_required_columns_are_present_expected_logging(
+    df, expect_error, error, caplog
+):
+    with caplog.at_level(logging.ERROR):
+        maf_to_cbio.validate_that_required_columns_are_present(df)
+
+    if expect_error:
+        assert len(caplog.records) == 1 and caplog.records[0].message == error
     else:
         assert len(caplog.records) == 0
