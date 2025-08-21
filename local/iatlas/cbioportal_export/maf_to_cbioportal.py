@@ -1,11 +1,11 @@
 import argparse
+import logging
 from multiprocessing import Pool
 import os
 import subprocess
 from typing import Dict
 
 import pandas as pd
-import numpy as np
 import synapseclient
 import synapseutils
 
@@ -14,13 +14,130 @@ import utils
 my_agent = "iatlas-cbioportal/0.0.0"
 syn = synapseclient.Synapse(user_agent=my_agent).login()
 
+REQUIRED_MAF_COLS = [
+    "Hugo_Symbol",
+    "Entrez_Gene_Id",
+    "Center",
+    "NCBI_Build",
+    "Chromosome",
+    "Start_Position",
+    "End_Position",
+    "Strand",
+    "Consequence",
+    "Variant_Classification",
+    "Variant_Type",
+    "Reference_Allele",
+    "Tumor_Seq_Allele1",
+    "Tumor_Seq_Allele2",
+    "dbSNP_RS",
+    "dbSNP_Val_Status",
+    "Tumor_Sample_Barcode",
+    "Matched_Norm_Sample_Barcode",
+    "Match_Norm_Seq_Allele1",
+    "Match_Norm_Seq_Allele2",
+    "Tumor_Validation_Allele1",
+    "Tumor_Validation_Allele2",
+    "Match_Norm_Validation_Allele1",
+    "Match_Norm_Validation_Allele2",
+    "Verification_Status",
+    "Validation_Status",
+    "Mutation_Status",
+    "Sequencing_Phase",
+    "Sequence_Source",
+    "Validation_Method",
+    "Score",
+    "BAM_File",
+    "Sequencer",
+    "n_ref_count",
+    "n_alt_count",
+    "HGVSc",
+    "HGVSp",
+    "HGVSp_Short",
+    "Transcript_ID",
+    "RefSeq",
+    "Protein_position",
+    "Codons",
+    "Exon_Number",
+    "AA_AF",
+    "AF",
+    "AFR_AF",
+    "ALLELE_NUM",
+    "AMR_AF",
+    "ASN_AF",
+    "Allele",
+    "Amino_acids",
+    "BIOTYPE",
+    "CANONICAL",
+    "CCDS",
+    "CDS_position",
+    "CLIN_SIG",
+    "DISTANCE",
+    "DOMAINS",
+    "EAS_AF",
+    "EA_AF",
+    "ENSP",
+    "EUR_AF",
+    "EXON",
+    "Existing_variation",
+    "FILTER",
+    "Feature",
+    "Feature_type",
+    "GENE_PHENO",
+    "Gene",
+    "HGNC_ID",
+    "HGVS_OFFSET",
+    "HIGH_INF_POS",
+    "IMPACT",
+    "INTRON",
+    "MINIMISED",
+    "MOTIF_NAME",
+    "MOTIF_POS",
+    "MOTIF_SCORE_CHANGE",
+    "PHENO",
+    "PICK",
+    "PUBMED",
+    "PolyPhen",
+    "SAS_AF",
+    "SIFT",
+    "SOMATIC",
+    "STRAND_VEP",
+    "SWISSPROT",
+    "SYMBOL",
+    "SYMBOL_SOURCE",
+    "TREMBL",
+    "TSL",
+    "UNIPARC",
+    "VARIANT_CLASS",
+    "all_effects",
+    "cDNA_position",
+    "flanking_bps",
+    "genomic_location_explanation",
+    "gnomADe_AF",
+    "gnomADe_AFR_AF",
+    "gnomADe_AMR_AF",
+    "gnomADe_ASJ_AF",
+    "gnomADe_EAS_AF",
+    "gnomADe_FIN_AF",
+    "gnomADe_NFE_AF",
+    "gnomADe_OTH_AF",
+    "gnomADe_SAS_AF",
+    "n_depth",
+    "t_depth",
+    "t_ref_count",
+    "t_alt_count",
+    "vcf_id",
+    "vcf_pos",
+    "vcf_qual",
+    "Annotation_Status",
+]
+
 
 def read_and_merge_maf_files(input_folder_synid: str) -> pd.DataFrame:
     """Read in and merge MAF files from a specified folder
-    
+
     Args:
         folder: Synapse id of folder containing MAF files
-        
+
     Return:
         pd.DataFrame: Merged maf of all mafs in input folder
     """
@@ -28,8 +145,8 @@ def read_and_merge_maf_files(input_folder_synid: str) -> pd.DataFrame:
     # Filter for files ending in .maf
     dfs = []
     for item in entities:
-        if item['name'].endswith('.maf'):
-            df = pd.read_csv(syn.get(item['id']).path, sep="\t", comment="#")
+        if item["name"].endswith(".maf"):
+            df = pd.read_csv(syn.get(item["id"]).path, sep="\t", comment="#")
             dfs.append(df)
 
     if not dfs:
@@ -266,21 +383,71 @@ def generate_meta_files(dataset_name: str, datahub_tools_path: str) -> None:
     subprocess.run(cmd, shell=True, executable="/bin/bash")
 
 
-def validate_export_files(input_df: pd.DataFrame, output_df: pd.DataFrame) -> None:
-    """Validates the export files, checking rows
+def validate_export_files(
+    input_df: pd.DataFrame, output_df: pd.DataFrame, **kwargs
+) -> None:
+    """Validates the export files, doing basic checks
+
+        Validation # 1: Check that number of rows are equal
+        Validation # 2: Check that there are no duplicates
+        Validation # 3: Check that the output's Tumor_Sample_Barcode values
+         exist in the input df
 
     Args:
         input_df (pd.DataFrame): input maf data
         output_df (pd.DataFrame): output annotated maf data
     """
-    start_rows = input_df.shape[0]
-    assert start_rows == len(output_df)
+    logger = kwargs.get("logger", logging.getLogger(__name__))
+    if len(input_df) != len(output_df):
+        logger.error(
+            f"Output rows {len(output_df)} are not equal to input rows {len(input_df)}."
+        )
     # no dups
-    assert len(output_df[output_df.duplicated()]) == 0
-    # check that the SAMPLE_ID/Tumor_Sample_Barcode exists in original maf
-    assert set(list(output_df.Tumor_Sample_Barcode.unique())) == set(
+    if len(output_df[output_df.duplicated()]) > 0:
+        logger.error("There are duplicates in the output.")
+    # check that the Tumor_Sample_Barcode exists in original maf
+    if set(list(output_df.Tumor_Sample_Barcode.unique())) != set(
         list(input_df.Tumor_Sample_Barcode.unique())
-    )
+    ):
+        logger.error(
+            "The Tumor_Sample_Barcode values are not equal in the output compared to input."
+        )
+
+
+def validate_that_allele_freq_are_not_na(
+    input_df: pd.DataFrame,
+    **kwargs,
+) -> None:
+    """Validation: Checks that there are no NAs in the
+        maf allele frequency columns: t_ref_count, t_alt_count
+        as these are required to calculate the allele frequency(AF):
+            AF = t_alt_count / (t_alt_count + t_ref_count)
+
+    Args:
+        input_df (pd.DataFrame): input dataframe with allele freq columns
+    """
+    logger = kwargs.get("logger", logging.getLogger(__name__))
+    # check that allele _freq are present
+    allele_freq_cols = ["t_ref_count", "t_alt_count"]
+    if set(allele_freq_cols) <= set(input_df.columns):
+        if input_df[allele_freq_cols].isna().any().any():
+            logger.error(
+                f"There are NAs in the allele frequency columns: {allele_freq_cols}"
+            )
+
+
+def validate_that_required_columns_are_present(
+    input_df: pd.DataFrame, **kwargs
+) -> None:
+    """Validate that required set of maf columns are present
+
+    Args:
+        input_df (pd.DataFrame): _description_
+    """
+    logger = kwargs.get("logger", logging.getLogger(__name__))
+    if set(REQUIRED_MAF_COLS) != set(list(input_df.columns)):
+        missing_cols = set(REQUIRED_MAF_COLS) - set(list(input_df.columns))
+        logger.error(f"Missing required columns in maf: {list(missing_cols)}")
 
 
 def main():
@@ -340,7 +507,12 @@ def main():
     if args.clear_workspace:
         utils.clear_workspace(dir_path=f"{args.datahub_tools_path}/add-clinical-header")
 
-    maf_df = read_and_merge_maf_files(input_folder_synid = args.input_folder_synid)
+    dataset_logger = utils.create_logger(
+        dataset_name=args.dataset,
+        datahub_tools_path=args.datahub_tools_path,
+        log_file_name="iatlas_maf_validation_log.txt",
+    )
+    maf_df = read_and_merge_maf_files(input_folder_synid=args.input_folder_synid)
     n_maf_chunks = split_into_chunks(
         dataset_name=args.dataset,
         input_df=maf_df,
@@ -358,7 +530,13 @@ def main():
         n_maf_chunks=n_maf_chunks,
         datahub_tools_path=args.datahub_tools_path,
     )
-    validate_export_files(input_df=maf_df, output_df=mafs["annotated_maf"])
+    validate_export_files(
+        input_df=maf_df, output_df=mafs["annotated_maf"], logger=dataset_logger
+    )
+    validate_that_required_columns_are_present(
+        mafs["annotated_maf"], logger=dataset_logger
+    )
+    validate_that_allele_freq_are_not_na(mafs["annotated_maf"], logger=dataset_logger)
     generate_meta_files(
         dataset_name=args.dataset, datahub_tools_path=args.datahub_tools_path
     )
