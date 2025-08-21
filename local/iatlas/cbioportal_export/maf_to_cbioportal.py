@@ -388,7 +388,7 @@ def validate_export_files(
 ) -> None:
     """Validates the export files, doing basic checks
 
-        Validation # 1: Check that rows are equal
+        Validation # 1: Check that number of rows are equal
         Validation # 2: Check that there are no duplicates
         Validation # 3: Check that the output's Tumor_Sample_Barcode values
          exist in the input df
