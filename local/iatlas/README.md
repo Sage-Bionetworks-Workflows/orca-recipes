@@ -128,18 +128,21 @@ The script does the following:
 
 
 ### Setup
-- `pandas` == 2.0
-- `synapseclient`==4.8.0
+WIP
 
 ### How to Run
 
 Getting help
 ```
-python3 clinical_to_cbioportal.py --help
+python3 clinical.py --help
 ```
 
 ```
-python3 maf_to_cbioportal.py --help
+python3 maf.py --help
+```
+
+```
+python3 load.py --help
 ```
 
 ### Outputs
@@ -199,50 +202,54 @@ Any additional files are the intermediate processing files and can be ignored.
 
 ### General Workflow
 
-1. Do a dry run on the maf datasets (this won't upload to Synapse).
-2. Do a dry run on the clinical datasets (this won't upload to Synapse, will run the cbioportal validator and output results from there)
+1. Run processing on the maf datasets
+2. Run processing on the clinical datasets
+3. Run `load.py` via dry run to run the cbioportal validator on your outputted files
 3. Check your `cbioportal_validator_output.txt` from the dry run.
 4. Resolve any `ERROR`s
 5. Repeat steps 1-3 until all `ERROR`s are gone
-6. Run the same command now without the `dry_run` flag (so you upload to Synapse) for both the clinical and maf datasets
+6. Run the same command with `load.py` now without the `dry_run` flag (so you upload to Synapse)
 
 **Example:**
-Doing a dry run on all of the datasets:
+Sample workflow
 
-For clinical
+Run clinical processing
 ```
 python3 clinical_to_cbioportal.py 
     --input_df_synid syn66314245 \
     --cli_to_cbio_mapping_synid syn66276162 
     --cli_to_oncotree_mapping_synid syn66313842 \
-    --output_folder_synid syn64136279 \
     --datahub_tools_path /<some_path>/datahub-study-curation-tools \
-    --cbioportal_path /<some_path>/cbioportal
     --lens_id_mapping_synid syn68826836
-    --dry_run
 ```
 
-For mafs
+Run maf processing
 ```
-python3 maf_to_cbioportal.py 
+python3 maf.py 
     --dataset Riaz
     --input_folder_synid syn68785881 
-    --output_folder_synid syn68633933 
-    --datahub_tools_path /<some_path>/datahub-study-curation-tools --n_workers 3 
-    --dry_run
+    --datahub_tools_path /<some_path>/datahub-study-curation-tools 
+    --n_workers 3 
 ```
 
-**Example:**
-Saving clinical files to synapse with comment
+Run cbioportal validator without loading into Synapse
 
 ```
-python3 clinical_to_cbioportal.py 
-    --input_df_synid syn66314245 \
-    --cli_to_cbio_mapping_synid syn66276162 
-    --cli_to_oncotree_mapping_synid syn66313842 \
-    --output_folder_synid syn64136279 \
-    --lens_id_mapping_synid syn68826836 \
-    --datahub_tools_path /some_path/datahub-study-curation-tools \
-    --cbioportal_path /<some_path>/cbioportal
+python3 load.py 
+    --dataset Riaz  
+    --output_folder_synid syn64136279 
+    --datahub_tools_path /<some_path>/datahub-study-curation-tools  
+    --cbioportal_path /<some_path>/cbioportal/ 
+```
+
+Save into synapse with version comment `v1`
+
+```
+python3 load.py
+    --dataset Riaz  
+    --output_folder_synid syn64136279
+    --datahub_tools_path /<some_path>/datahub-study-curation-tools  
+    --cbioportal_path /<some_path>/cbioportal/
     --version_comment "v1"
+    --upload
 ```
