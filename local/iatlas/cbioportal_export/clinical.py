@@ -376,7 +376,7 @@ def get_updated_cli_attributes(
     """
     cli_attr = pd.read_csv(
         f"{datahub_tools_path}/add-clinical-header/clinical_attributes_metadata.txt",
-        sep="\t",
+        sep="\t"
     )
     cli_to_cbio_mapping_to_append = cli_to_cbio_mapping.rename(
         columns={
@@ -422,6 +422,22 @@ def convert_oncotree_codes(datahub_tools_path: str) -> pd.DataFrame:
     return cli_w_cancer_types
 
 
+def rename_files_on_disk(filepath : str) -> None:
+    """Renames files on disk by removing the .metadata ext from filenames.
+        NOTE: This will overwrite previous files with the same name.
+        
+        This is needed because the insert_clinical_metadata script from
+        datahub-curation-tools saves the sample and patient files with
+        ".metadata" ext but the cbioportal validation tool expects them to be 
+        withou the ".metadata"
+
+    Args:
+        filepath (str): the filepath to remove the .metadata ext from
+    """
+    filepath_new = filepath.removesuffix(".metadata")
+    os.replace(filepath, filepath_new)
+    
+    
 def get_all_non_na_columns(input_df: pd.DataFrame) -> List[str]:
     """Gets all the columns in input data without all (100%) NAs
     Args:
@@ -450,7 +466,6 @@ def add_clinical_header(
         dataset_name (str): name of dataset to add clinical headers to
         datahub_tools_path (str): Path to the datahub tools repo
     """
-
     dataset_dir = os.path.join(
         f"{datahub_tools_path}/add-clinical-header/", dataset_name
     )
@@ -491,6 +506,10 @@ def add_clinical_header(
     """
     # Run in shell to allow sourcing
     subprocess.run(cmd, shell=True, executable="/bin/bash")
+    
+    # remove .metadata from files
+    rename_files_on_disk(filepath = f"{dataset_dir}/data_clinical_patient.txt.metadata")
+    rename_files_on_disk(filepath = f"{dataset_dir}/data_clinical_sample.txt.metadata")
 
     # saved merged for case lists
     merged_df_subset = input_dfs["merged"][

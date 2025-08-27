@@ -10,7 +10,7 @@ import pandas as pd
 from pandas.testing import assert_frame_equal
 import pytest
 
-import clinical_to_cbioportal as cli_to_cbio
+import clinical as cli_to_cbio
 
 
 @pytest.fixture
@@ -249,7 +249,6 @@ def test_cli_to_cbio_mapping():
     )
     return cli_to_cbio_mapping
 
-
 class TestSplitPatientAndSampleData:
     def test_split_structure(self, test_input_clinical_data, test_cli_to_cbio_mapping):
         result = cli_to_cbio.split_into_patient_and_sample_data(
@@ -483,3 +482,36 @@ def test_that_remap_column_values_returns_expected(input_df, expected_os, expect
     result = cli_to_cbio.remap_column_values(input_df)
     np.testing.assert_equal(result["OS_STATUS"].tolist(), expected_os)
     np.testing.assert_equal(result["PFS_STATUS"].tolist(), expected_pfs)
+
+
+def test_that_rename_files_on_disk_removes_metadata_suffix(tmp_path):
+    # Arrange: create a dummy file with .metadata
+    original = tmp_path / "sample.txt.metadata"
+    original.write_text("dummy content")
+    expected = tmp_path / "sample.txt"
+
+    cli_to_cbio.rename_files_on_disk(str(original))
+
+    assert (
+        not original.exists()
+        and expected.exists()
+        and expected.read_text() == "dummy content"
+    )
+
+
+def test_that_rename_files_on_disk_overwrites_existing_file(tmp_path):
+    # Arrange: create two files: target and metadata
+    existing = tmp_path / "sample.txt"
+    existing.write_text("old content")
+
+    original = tmp_path / "sample.txt.metadata"
+    original.write_text("new content")
+
+    # Act: should overwrite existing file
+    cli_to_cbio.rename_files_on_disk(str(original))
+
+    assert (
+        not original.exists()
+        and existing.exists()
+        and existing.read_text() == "new content"
+    )
