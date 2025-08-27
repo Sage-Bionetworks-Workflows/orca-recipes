@@ -1,3 +1,4 @@
+import logging
 import os
 from tempfile import TemporaryDirectory
 from unittest import mock
@@ -92,3 +93,145 @@ def test_that_postprocessing_removes_chrM_variants():
     result = maf_to_cbio.postprocessing(df)
     assert all(result["Chromosome"] != "chrM")
     assert len(result) == 2
+
+
+@pytest.mark.parametrize(
+    "input, output, error",
+    [
+        # Case 1: Rows are unequal -> Error
+        (
+            pd.DataFrame({"Tumor_Sample_Barcode": [10, 20, 20]}),
+            pd.DataFrame({"Tumor_Sample_Barcode": [10, 20]}),
+            "Output rows 2 are not equal to input rows 3.",
+        ),
+        # Case 2: output has duplicates -> Error
+        (
+            pd.DataFrame({"Tumor_Sample_Barcode": [10, 10, 30]}),
+            pd.DataFrame({"Tumor_Sample_Barcode": [10, 10, 30]}),
+            "There are duplicates in the output.",
+        ),
+        # Case 3: tumor_sample_barcode vals in output not input -> Error
+        (
+            pd.DataFrame({"Tumor_Sample_Barcode": [10, 23, 30]}),
+            pd.DataFrame({"Tumor_Sample_Barcode": [10, 20, 30]}),
+            "The Tumor_Sample_Barcode values are not equal in the output compared to input.",
+        ),
+    ],
+    ids=["unequal_rows", "dups", "tumor_sample_barcode_not_equal"],
+)
+def test_that_validate_export_files_does_expected_error_logging(
+    input, output, error, caplog
+):
+    with caplog.at_level(logging.ERROR):
+        maf_to_cbio.validate_export_files(input, output)
+
+    assert len(caplog.records) == 1 and caplog.records[0].message == error
+
+
+def test_that_validate_export_files_has_no_logging_when_valid(caplog):
+    # Rows are equal, no duplicates, and tumor_sample_barcode matches -> No error
+    input = pd.DataFrame(
+        {"Tumor_Sample_Barcode": [10, 20, 30], "Chromosome": ["M", "2", "1"]}
+    )
+    output = pd.DataFrame(
+        {"Tumor_Sample_Barcode": [10, 20, 30], "Chromosome": ["M", "2", "1"]}
+    )
+    with caplog.at_level(logging.ERROR):
+        maf_to_cbio.validate_export_files(input, output)
+
+    assert len(caplog.records) == 0
+
+
+@pytest.mark.parametrize(
+    "df, expect_error",
+    [
+        # Case 1: no NAs → expect no error
+        (
+            pd.DataFrame(
+                {
+                    "t_ref_count": [10, 20, 30],
+                    "t_alt_count": [1, 2, 3],
+                }
+            ),
+            False,
+        ),
+        # Case 2: has NAs in one column → expect error
+        (
+            pd.DataFrame(
+                {
+                    "t_ref_count": [10, None, 30],
+                    "t_alt_count": [1, 2, 3],
+                }
+            ),
+            True,
+        ),
+        # Case 3: has NAs in all → expect error
+        (
+            pd.DataFrame(
+                {
+                    "t_ref_count": [10, None, 30],
+                    "t_alt_count": [1, 2, None],
+                }
+            ),
+            True,
+        ),
+        # Case 4: doesn't have required columns for validation
+        (
+            pd.DataFrame({"chromosome": [1, 2, 3]}),
+            False,
+        ),
+    ],
+    ids=["no_nas", "has_nas_in_one", "has_nas_in_all", "no_req_cols"],
+)
+def test_validate_that_allele_freq_are_not_na_does_expected_logging(
+    df, expect_error, caplog
+):
+    with caplog.at_level(logging.ERROR):
+        maf_to_cbio.validate_that_allele_freq_are_not_na(df)
+
+    if expect_error:
+        assert (
+            len(caplog.records) == 1
+            and caplog.records[0].message
+            == "There are NAs in the allele frequency columns: ['t_ref_count', 't_alt_count']"
+        )
+    else:
+        assert len(caplog.records) == 0
+
+
+@pytest.mark.parametrize(
+    "df, expect_error, error",
+    [
+        # Case 1: No missing columns
+        (
+            pd.DataFrame(
+                {col: ["dummy"] for col in maf_to_cbio.REQUIRED_MAF_COLS},
+            ),
+            False,
+            ""
+        ),
+        # Case 2: Has missing column
+        (
+            pd.DataFrame(
+                {
+                    col: ["dummy"]
+                    for col in maf_to_cbio.REQUIRED_MAF_COLS
+                    if col not in ["Annotation_Status"]
+                },
+            ),
+            True,
+            "Missing required columns in maf: ['Annotation_Status']",
+        ),
+    ],
+    ids=["no_missing_cols", "has_missing_col"],
+)
+def test_validate_that_required_columns_are_present_expected_logging(
+    df, expect_error, error, caplog
+):
+    with caplog.at_level(logging.ERROR):
+        maf_to_cbio.validate_that_required_columns_are_present(df)
+
+    if expect_error:
+        assert len(caplog.records) == 1 and caplog.records[0].message == error
+    else:
+        assert len(caplog.records) == 0
