@@ -29,29 +29,6 @@ REQUIRED_OUTPUT_FILES = [
     "cbioportal_validator_output.txt"
 ]
 
-def create_case_lists_map(clinical_file_name: str):
-    """
-    Creates the case list dictionary
-
-    Args:
-        clinical_file_name: clinical file path
-
-    Returns:
-        dict: key = cancer_type
-              value = list of sample ids
-        dict: key = seq_assay_id
-              value = list of sample ids
-        list: Clinical samples
-    """
-    with open(clinical_file_name, "r", newline=None) as clinical_file:
-        clinical_file_map = defaultdict(list)
-        clin_samples = []
-        reader = csv.DictReader(clinical_file, dialect="excel-tab")
-        for row in reader:
-            clinical_file_map[row["CANCER_TYPE"]].append(row["SAMPLE_ID"])
-            clin_samples.append(row["SAMPLE_ID"])
-    return clinical_file_map, clin_samples
-
 
 def write_case_lists_all_and_sequenced(
     dataset_name: str, datahub_tools_path: str, study_id: str
