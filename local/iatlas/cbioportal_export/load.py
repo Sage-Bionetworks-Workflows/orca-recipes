@@ -6,6 +6,8 @@ import sys
 import synapseclient
 import synapseutils
 
+import utils
+
 
 my_agent = "iatlas-cbioportal/0.0.0"
 syn = synapseclient.Synapse(user_agent=my_agent).login()
@@ -23,10 +25,59 @@ REQUIRED_OUTPUT_FILES = [
     "data_rna_seq_mrna.txt",
     "meta_rna_seq_mrna.txt",
     "data_neoantigen_priority_scores.txt",
-    "meta_eoantigen_priority_scores.txt",
+    "meta_neoantigen_priority_scores.txt",
     "cbioportal_validator_output.txt"
 ]
 
+def create_case_lists_map(clinical_file_name: str):
+    """
+    Creates the case list dictionary
+
+    Args:
+        clinical_file_name: clinical file path
+
+    Returns:
+        dict: key = cancer_type
+              value = list of sample ids
+        dict: key = seq_assay_id
+              value = list of sample ids
+        list: Clinical samples
+    """
+    with open(clinical_file_name, "r", newline=None) as clinical_file:
+        clinical_file_map = defaultdict(list)
+        clin_samples = []
+        reader = csv.DictReader(clinical_file, dialect="excel-tab")
+        for row in reader:
+            clinical_file_map[row["CANCER_TYPE"]].append(row["SAMPLE_ID"])
+            clin_samples.append(row["SAMPLE_ID"])
+    return clinical_file_map, clin_samples
+
+
+def write_case_lists_all_and_sequenced(
+    dataset_name: str, datahub_tools_path: str, study_id: str
+) -> None:
+    """Adds the case lists for all samples and sequenced samples
+        using cbioportal tools. This needs to be done together.
+        Sequenced samples contains the subset of samples in
+        mutation data that are in the clinical samples.
+
+    Args:
+        dataset_name (str): name of dataset to add clinical headers to
+        datahub_tools_path (str): Path to the datahub tools repo
+        study_id (str): cBioPortal study id
+    """
+    dataset_dir = utils.get_local_dataset_output_folder_path(
+        dataset_name, datahub_tools_path
+    )
+    cmd = f"""
+    python3 {datahub_tools_path}/generate-case-lists/generate_case_lists.py \
+        -c {datahub_tools_path}/generate-case-lists/case_list_conf.txt \
+        -d {dataset_dir}/case_lists \
+        -s {dataset_dir} \
+        -i {study_id}
+    """
+    subprocess.run(cmd, shell=True, executable="/bin/bash")
+    
 
 def run_cbioportal_validator(
     dataset_name: str, cbioportal_path: str, datahub_tools_path: str
@@ -146,7 +197,19 @@ def main():
         help="Path to cbioportal repo",
     )
     parser.add_argument(
-        "--dry_run",
+        "--create-case-lists",
+        action="store_true",
+        default=False,
+        help="Whether to generate the all and sequenced caselists",
+    )
+    parser.add_argument(
+        "--validate",
+        action="store_true",
+        default=False,
+        help="Whether to run cbioportal validator",
+    )
+    parser.add_argument(
+        "--upload",
         action="store_true",
         default=False,
         help="Whether to run without saving to Synapse",
@@ -158,13 +221,19 @@ def main():
         help="Version comment for the files on Synapse. Optional. Defaults to None.",
     )
     args = parser.parse_args()
-    
-    run_cbioportal_validator(
-        dataset_name=args.dataset,
-        cbioportal_path=args.cbioportal_path,
-        datahub_tools_path=args.datahub_tools_path,
-    )
-    if not args.dry_run:
+    if args.create_case_lists:
+        write_case_lists_all_and_sequenced(
+            dataset_name=args.dataset, 
+            datahub_tools_path=args.datahub_tools_path,
+            study_id=f"iatlas_{args.dataset}",
+        )
+    if args.validate:
+        run_cbioportal_validator(
+            dataset_name=args.dataset,
+            cbioportal_path=args.cbioportal_path,
+            datahub_tools_path=args.datahub_tools_path,
+        )
+    if args.upload:
         save_to_synapse(
             dataset_name=args.dataset,
             datahub_tools_path=args.datahub_tools_path,

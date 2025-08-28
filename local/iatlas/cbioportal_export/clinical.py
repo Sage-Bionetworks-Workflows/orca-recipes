@@ -665,33 +665,6 @@ def create_case_lists(
         os.makedirs(output_directory)
     case_lists_map, clin_samples = create_case_lists_map(clinical_file_name)
     write_case_list_files(case_lists_map, output_directory, study_id)
-    write_case_lists_all_and_sequenced(dataset_name, datahub_tools_path, study_id)
-
-
-def write_case_lists_all_and_sequenced(
-    dataset_name: str, datahub_tools_path: str, study_id: str
-) -> None:
-    """Adds the case lists for all samples and sequenced samples
-        using cbioportal tools. This needs to be done together.
-        Sequenced samples contains the subset of samples in
-        mutation data that are in the clinical samples.
-
-    Args:
-        dataset_name (str): name of dataset to add clinical headers to
-        datahub_tools_path (str): Path to the datahub tools repo
-        study_id (str): cBioPortal study id
-    """
-    dataset_dir = utils.get_local_dataset_output_folder_path(
-        dataset_name, datahub_tools_path
-    )
-    cmd = f"""
-    python3 {datahub_tools_path}/generate-case-lists/generate_case_lists.py \
-        -c {datahub_tools_path}/generate-case-lists/case_list_conf.txt \
-        -d {dataset_dir}/case_lists \
-        -s {dataset_dir} \
-        -i {study_id}
-    """
-    subprocess.run(cmd, shell=True, executable="/bin/bash")
 
 
 def validate_export_files(
