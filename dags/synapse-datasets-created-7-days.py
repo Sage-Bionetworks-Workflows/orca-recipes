@@ -99,7 +99,6 @@ def datasets_or_projects_created_7_days() -> None:
     @task
     def get_datasets_projects_created_7_days(**context) -> List[EntityCreated]:
         """Execute the query on Snowflake and return the results."""
-        print(context["params"])
         snow_hook = SnowflakeHook(context["params"]["snowflake_developer_service_conn"])
         ctx = snow_hook.get_conn()
         cs = ctx.cursor()
@@ -163,7 +162,6 @@ def datasets_or_projects_created_7_days() -> None:
     @task
     def generate_slack_message(entity_created: List[EntityCreated], **context) -> str:
         """Generate the message to be posted to the slack channel."""
-        return ""
         message = ":synapse: Datasets or projects created in the last 7 days \n\n"
         public_ds_message = ""
         private_ds_message = ""
@@ -184,7 +182,6 @@ def datasets_or_projects_created_7_days() -> None:
     @task
     def post_slack_messages(message: str) -> bool:
         """Post the top downloads to the slack channel."""
-        return True
         client = WebClient(token=Variable.get("SLACK_DPE_TEAM_BOT_TOKEN"))
         result = client.chat_postMessage(channel="hotdrops", text=message)
         print(f"Result of posting to slack: [{result}]")
@@ -218,12 +215,11 @@ def datasets_or_projects_created_7_days() -> None:
                     today,
                 ]
             )
-            print([row.id, row.is_public])
 
-        #syn_hook = SynapseHook(context["params"]["synapse_conn_id"])
-        #syn_hook.client.store(
-        #    synapseclient.Table(schema=SYNAPSE_RESULTS_TABLE, values=data)
-        #)
+        syn_hook = SynapseHook(context["params"]["synapse_conn_id"])
+        syn_hook.client.store(
+            synapseclient.Table(schema=SYNAPSE_RESULTS_TABLE, values=data)
+        )
 
     @task
     def push_public_results_to_synapse_table(
@@ -255,11 +251,10 @@ def datasets_or_projects_created_7_days() -> None:
                         today,
                     ]
                 )
-                print([row.id, row.is_public])
-        #syn_hook = SynapseHook(context["params"]["synapse_conn_id"])
-        #syn_hook.client.store(
-        #    synapseclient.Table(schema=SYNAPSE_PUBLIC_RESULTS_TABLE, values=data)
-        #)
+        syn_hook = SynapseHook(context["params"]["synapse_conn_id"])
+        syn_hook.client.store(
+            synapseclient.Table(schema=SYNAPSE_PUBLIC_RESULTS_TABLE, values=data)
+        )
 
     entity_created = get_datasets_projects_created_7_days()
     check = check_backfill()
@@ -269,7 +264,7 @@ def datasets_or_projects_created_7_days() -> None:
     slack_message = generate_slack_message(entity_created=entity_created)
     post_to_slack = post_slack_messages(message=slack_message)
 
-    entity_created >> [stop, slack_message]
+    entity_created >> check >> [stop, slack_message]
     slack_message >> post_to_slack
     entity_created >> [push_to_synapse_table, push_public_to_synapse_table]
 
