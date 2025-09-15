@@ -20,7 +20,7 @@ A complete Airflow deployment is made up of multiple services running in paralle
 
 #### Dev Container
 
-There are multiple ways to set up and interface with a dev container, depending on whether you want an IDE-agnostic approach, a VS Code workflow with the Dev Containers extension, or a cloud option like GitHub Codespaces. The Cloud option is most straightforward, and saves us the hassle of configuring Airflow secrets, although it requires you to develop in the browser.
+There are multiple ways to set up and interface with a dev container, depending on whether you want an IDE-agnostic approach, a VS Code workflow with the Dev Containers extension, or a cloud option like GitHub Codespaces. The cloud option is the most straightforward, and saves us the hassle of configuring Airflow secrets, although because the infrastructure is running in the cloud, there is a limit on how much time we can develop before we need to pay for the service. 
 
 * Note: The environment setup for the Dev Container is defined in [Dockerfile](./Dockerfile). _How_ we deploy the container locally is defined in [devcontainer.json](.devcontainer/devcontainer.json).
 
