@@ -16,7 +16,7 @@ There is a helper script in this repository for accessing this Airflow server.
 
 See the [README](./README.md) for instructions on how to set up the development environment.
 
-Any edits to your DAG should get picked up by Airflow automatically. If you're not seeing that happen, you can try restarting the containers:
+Any edits to your DAG should automatically be picked up by the Airflow scheduler/webserver after a short time interval (see `scheduler.min_file_process_interval` in [airflow.cfg](config/airflow.cfg)). New DAGs are picked up by the scheduler/webserver according to a different interval (see `scheduler.dag_dir_list_interval`). You can force a "hard refresh" by restarting the containers:
 
 ```console
 docker compose restart
@@ -35,6 +35,16 @@ docker compose up --build --detach
 ## Testing
 
 Testing should be done via the Dev Containers setup online using GitHub Codespaces. Note that for testing of the DAGs directly on Airflow locally via Dev Containers, it's best to leave the DAG **unpaused** when triggering the DAG with various updates, otherwise you might be triggering the DAG twice and/or triggering it in its original state that had its parameters set to production mode.
+
+Logs can be inspected with docker compose:
+```console
+# All logs
+docker compose logs -f
+
+# Logs for a specific service(s)
+docker compose ps --services
+docker compose logs -f airflow-webserver airflow-scheduler
+```
 
 ## DAG Development Best Practices
 
