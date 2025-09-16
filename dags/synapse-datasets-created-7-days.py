@@ -1,4 +1,4 @@
-"""This script executes a query on Snowflake to retrieve data about entities created in the past 7 days and stores the results in a Synapse table.
+"""This script executes a query on Snowflake to retrieve data about project and dataset entities created in the past 7 days and stores the results in a Synapse table.
 It is scheduled to run every Monday at 00:00 UTC.
 
 A Note on the `backfill` functionality:
@@ -50,7 +50,7 @@ dag_config = {
 }
 
 SYNAPSE_RESULTS_TABLE = "syn64951484"
-SYNAPSE_PUBLIC_RESULTS_TABLE = "syn64951485" #TODO
+SYNAPSE_PUBLIC_RESULTS_TABLE = "syn69855119"
 
 
 @dataclass
@@ -240,14 +240,10 @@ def datasets_or_projects_created_7_days() -> None:
             if row.is_public:
                 data.append(
                     [
-                        row.name,
                         row.id,
-                        row.project_id,
                         row.node_type,
-                        row.content_type,
                         row.created_on,
                         row.created_by,
-                        row.is_public,
                         today,
                     ]
                 )
