@@ -182,6 +182,7 @@ def datasets_or_projects_created_7_days() -> None:
     @task
     def post_slack_messages(message: str) -> bool:
         """Post the top downloads to the slack channel."""
+        return True
         client = WebClient(token=Variable.get("SLACK_DPE_TEAM_BOT_TOKEN"))
         result = client.chat_postMessage(channel="hotdrops", text=message)
         print(f"Result of posting to slack: [{result}]")
@@ -192,6 +193,7 @@ def datasets_or_projects_created_7_days() -> None:
         entity_created: List[EntityCreated], **context
     ) -> None:
         """Push the results to a Synapse table."""
+        return
         data = []
         # convert context["params"]["backfill_date_time"] to date in same format as date.today()
         today = (
