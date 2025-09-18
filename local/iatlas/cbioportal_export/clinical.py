@@ -5,6 +5,7 @@ import logging
 from pathlib import Path
 import os
 import subprocess
+import time
 from typing import Dict, List
 
 import pandas as pd
@@ -70,6 +71,26 @@ REQUIRED_OUTPUT_FILES = [
     "meta_clinical_patient.txt",
     "meta_clinical_sample.txt",
 ]
+
+def filter_out_non_analyses_samples(input_df: pd.DataFrame) -> pd.DataFrame:
+    """Filter out the non analyses samples. 
+        This is on a dataset by dataset basis.
+        
+        Here non-analyses samples are defined as DNA only tumor samples and 
+        RNA samples not used in the analyses.
+
+    Args:
+        input_df (pd.DataFrame): input clinical data
+
+    Returns:
+        pd.DataFrame: output clinical data with the non analyses samples 
+            filtered out
+    """
+    filtered_df = input_df[
+        (~(input_df["sample_name"].str.contains(r'-(?:nd|ad|nr)-', na=False)) & 
+        (input_df["Dataset"]=="Anders_JITC_2022")) | (input_df["Dataset"]!="Anders_JITC_2022")
+    ]
+    return filtered_df
 
 
 def remove_suffix_from_column_values(input_df: pd.DataFrame, **kwargs) -> pd.DataFrame:
@@ -209,6 +230,8 @@ def add_lens_id_as_sample_display_name(
     input_df: pd.DataFrame, lens_id_mapping: pd.DataFrame, **kwargs
 ) -> pd.DataFrame:
     """Adds in lens_id as clinical attribute SAMPLE_DISPLAY_NAME
+    Note that lens mapping are dataset specific so sample ids can be all numeric values
+    so some conversion to str is needed
 
     Args:
         input_df (pd.DataFrame): input clinical data
@@ -221,6 +244,8 @@ def add_lens_id_as_sample_display_name(
     lens_id_mapping_renamed = lens_id_mapping.rename(
         columns={"lens_id": "SAMPLE_DISPLAY_NAME", "study_sample_name": "SAMPLE_ID"}
     )
+    # convert lens sample_id to string
+    lens_id_mapping_renamed["SAMPLE_ID"] = lens_id_mapping_renamed["SAMPLE_ID"].astype(str)
     input_df_mapped = input_df.merge(
         lens_id_mapping_renamed, on=["SAMPLE_ID"], how="left"
     )
@@ -241,9 +266,11 @@ def preprocessing(
     """Preprocesses the data, runs the individual steps:
         1. Gets the input clinical data
         2. Merges in the oncotree mappings
-        3. Remaps the columns to be cbioportal headers
-        4. Converts the oncotree codes to have the CANCER_TYPE and CANCER_TYPE_DETAILED columns
-        5. Updates the clinical_attributes_metadata.txt in prep for adding clinical headers
+        3. Does some dataset specific filtering
+        4. Remaps the clinical sample and patient ids to use paper ids
+        5. Remaps the columns to be cbioportal headers
+        6. Converts the oncotree codes to have the CANCER_TYPE and CANCER_TYPE_DETAILED columns
+        7. Updates the clinical_attributes_metadata.txt in prep for adding clinical headers
 
     Args:
         input_df_synid (str): Synapse id of input iatlas clinical dataset
@@ -270,6 +297,7 @@ def preprocessing(
         )
     )
     cli_remapped = cli_with_oncotree.rename(columns=cli_to_cbio_mapping_dict)
+    cli_remapped = filter_out_non_analyses_samples(cli_remapped)
     cli_remapped = remap_clinical_ids_to_paper_ids(input_df=cli_remapped)
     cli_remapped = remap_column_values(input_df=cli_remapped)
     cli_remapped_cleaned = remove_suffix_from_column_values(input_df=cli_remapped)
@@ -498,14 +526,14 @@ def add_clinical_header(
         index=False,
         float_format="%.12g",
     )
-
     cmd = f"""
     cd {datahub_tools_path}/add-clinical-header/
     python3 {datahub_tools_path}/add-clinical-header/insert_clinical_metadata.py \
         -d {dataset_dir}    
     """
-    # Run in shell to allow sourcing
+    time.sleep(2) # give subprocess some time before checking
     subprocess.run(cmd, shell=True, executable="/bin/bash")
+    time.sleep(2) # give subprocess some time before checking
     
     # remove .metadata from files
     rename_files_on_disk(filepath = f"{dataset_dir}/data_clinical_patient.txt.metadata")
@@ -552,7 +580,7 @@ def generate_meta_files(dataset_name: str, datahub_tools_path: str) -> None:
         "name: TBD\n",
         "pmid: 29033130\n",
         "reference_genome: hg38\n",
-        "citation: Tumor and Microenvironment Evolution during Immunotherapy with Nivolumab. Cell. 2017 Nov 2\n",
+        "citation: PLACEHOLDER\n",
         "description: PLACEHOLDER\n",
     ]
     with open(f"{dataset_dir}/meta_study.txt", "w") as meta_file:
@@ -646,8 +674,6 @@ def write_case_list_files(
 
 
 def create_case_lists(
-    dataset_name: str,
-    datahub_tools_path: str,
     clinical_file_name: str,
     output_directory: str,
     study_id: str,
@@ -692,7 +718,6 @@ def validate_export_files(
     dataset_dir = utils.get_local_dataset_output_folder_path(
         dataset_name, datahub_tools_path
     )
-
     for file in REQUIRED_OUTPUT_FILES:
         if file.startswith("cases"):
             required_file_path = f"{dataset_dir}/case_lists/{file}"
@@ -772,6 +797,7 @@ def main():
         "--lens_id_mapping_synid",
         type=str,
         help="Synapse id for the study_sample_name (paper ids) to lens id mapping file",
+        default=None
     )
     parser.add_argument(
         "--datahub_tools_path",
@@ -807,29 +833,27 @@ def main():
     cli_dfs = split_into_patient_and_sample_data(
         input_data=cli_df, cli_to_cbio_mapping=cli_to_cbio_mapping
     )
-    lens_id_mapping = get_study_sample_name_to_lens_id_mapping(
-        lens_id_mapping_synid=args.lens_id_mapping_synid, logger=main_logger
-    )
-    cli_dfs["sample"] = add_lens_id_as_sample_display_name(
-        input_df=cli_dfs["sample"],
-        lens_id_mapping=lens_id_mapping,
-        logger=main_logger,
-    )
+    if args.lens_id_mapping_synid is not None:
+        lens_id_mapping = get_study_sample_name_to_lens_id_mapping(
+            lens_id_mapping_synid=args.lens_id_mapping_synid, logger=main_logger
+        )
+        cli_dfs["sample"] = add_lens_id_as_sample_display_name(
+            input_df=cli_dfs["sample"],
+            lens_id_mapping=lens_id_mapping,
+            logger=main_logger,
+        )
     for dataset in args.dataset:
         dataset_logger = utils.create_logger(
             dataset_name=dataset,
             datahub_tools_path=args.datahub_tools_path,
             log_file_name="iatlas_cli_validation_log.txt",
         )
-
         add_clinical_header(
             input_dfs=cli_dfs,
             dataset_name=dataset,
             datahub_tools_path=args.datahub_tools_path,
         )
         create_case_lists(
-            dataset_name=dataset,
-            datahub_tools_path=args.datahub_tools_path,
             clinical_file_name=f"{args.datahub_tools_path}/add-clinical-header/{dataset}/data_clinical_merged.txt",
             output_directory=f"{args.datahub_tools_path}/add-clinical-header/{dataset}/case_lists/",
             study_id=f"iatlas_{dataset}",
