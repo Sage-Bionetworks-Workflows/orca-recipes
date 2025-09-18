@@ -174,7 +174,7 @@ def main():
         help="Path to cbioportal repo",
     )
     parser.add_argument(
-        "--create-case-lists",
+        "--create_case_lists",
         action="store_true",
         default=False,
         help="Whether to generate the all and sequenced caselists",

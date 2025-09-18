@@ -19,6 +19,37 @@ def syn_mock():
 
 
 @pytest.mark.parametrize(
+    "sample_name,dataset,expected_keep",
+    [
+        ("ABC-nd-001", "Anders_JITC_2022", False),  # excluded by -nd-
+        ("ABC-ad-001", "Anders_JITC_2022", False),  # excluded by -ad-
+        ("ABC-nr-001", "Anders_JITC_2022", False),  # excluded by -nr-
+        ("ABC-ar-001", "Anders_JITC_2022", True),   # allowed
+        ("plain",      "Anders_JITC_2022", True),   # allowed
+        ("ABC-ND-001", "Anders_JITC_2022", True),   # case-sensitive: not excluded
+        ("ABC-ad-001", "Other_Dataset",    True),  # non-Anders dataset => kept
+        ("plain",      "Other_Dataset",    True),  # non-Anders dataset => kept
+    ],
+)
+def test_that_filter_out_non_analyses_samples_filters_correctly(sample_name, dataset, expected_keep):
+    df = pd.DataFrame({"sample_name": [sample_name], "Dataset": [dataset]})
+    out = cli_to_cbio.filter_out_non_analyses_samples(df)
+
+    assert (len(out) == 1) == expected_keep
+
+    if expected_keep:
+        pd.testing.assert_frame_equal(out.reset_index(drop=True), df.reset_index(drop=True))
+    else:
+        assert out.empty
+        
+
+def test_that_filter_out_non_analyses_samples_filters_correctly_with_nas():
+    df = pd.DataFrame({"sample_name": ["plain", np.nan], "Dataset": ["Anders_JITC_2022", "Anders_JITC_2022"]})
+    out = cli_to_cbio.filter_out_non_analyses_samples(df)
+    pd.testing.assert_frame_equal(out.reset_index(drop=True), df.reset_index(drop=True))
+    
+
+@pytest.mark.parametrize(
     "input_df, expected_df",
     [
         (
@@ -205,21 +236,36 @@ def test_that_add_lens_id_as_sample_display_name_returns_expected_with_error_log
     assert_frame_equal(result_df, expected_df)
 
 
-def test_that_add_lens_id_as_sample_display_name_returns_expected_if_no_missing():
-    input_df = pd.DataFrame({"SAMPLE_ID": ["sample1", "sample2"]})
-    lens_mapping = pd.DataFrame(
-        {"study_sample_name": ["sample1", "sample2"], "lens_id": ["lens1", "lens2"]}
-    )
-    expected_df = pd.DataFrame(
-        {"SAMPLE_ID": ["sample1", "sample2"], "SAMPLE_DISPLAY_NAME": ["lens1", "lens2"]}
-    )
-
+@pytest.mark.parametrize(
+    "lens_map,expected",
+    [
+        (
+            pd.DataFrame(
+                {"study_sample_name": ["101", "102"], "lens_id": ["lens1", "lens2"]}
+                ),
+            pd.DataFrame(
+                {"SAMPLE_ID": ["101", "102"], "SAMPLE_DISPLAY_NAME": ["lens1", "lens2"]}
+                )
+        ),
+        (
+            pd.DataFrame(
+                {"study_sample_name": [101, 102], "lens_id": ["lens1", "lens2"]}
+                ),
+            pd.DataFrame(
+                {"SAMPLE_ID": ["101", "102"], "SAMPLE_DISPLAY_NAME": ["lens1", "lens2"]}
+                )
+        ),
+    ],
+    ids = ["normal", "numeric_sample_name_vals"]
+)
+def test_that_add_lens_id_as_sample_display_name_returns_expected_if_no_missing(lens_map, expected):
+    input = pd.DataFrame({"SAMPLE_ID": ["101", "102"]})
     mock_logger = MagicMock()
     result_df = cli_to_cbio.add_lens_id_as_sample_display_name(
-        input_df, lens_mapping, logger=mock_logger
+        input, lens_map, logger=mock_logger
     )
     mock_logger.error.assert_not_called()
-    assert_frame_equal(result_df, expected_df)
+    assert_frame_equal(result_df, expected)
 
 
 @pytest.fixture
