@@ -128,7 +128,45 @@ The script does the following:
 
 
 ### Setup
-WIP
+Prior to testing/developing/running this locally, you will need to setup the Docker image in order to run this.
+Optional: You can also build your environment via python env and install the `uv.lock` file
+
+1. Create and activate your venv
+
+```
+python3 -m venv <your_env_name>
+source <your_env_name>/bin/activate
+```
+
+2. Export dependencies from uv.lock
+
+```
+pip install uv
+uv export > requirements.txt
+```
+
+3. Install into your venv
+
+```
+pip install -r requirements.txt
+```
+
+But it is highly recommended you use the docker image
+
+1. Build the dockerfile
+
+```
+cd /orca-recipes/local/iatlas/cbioportal_export
+docker build -f Dockerfile -t <some_docker_name> .
+```
+
+2. Run the Dockerfile
+
+```
+docker run --rm -it -e SYNAPSE_AUTH_TOKEN=$YOUR_SYNAPSE_TOKEN <some_docker_image_name>
+```
+
+3. Follow the **How to Run** section below
 
 ### How to Run
 
@@ -257,4 +295,19 @@ python3 load.py
     --cbioportal_path /<some_path>/cbioportal/
     --version_comment "v1"
     --upload
+```
+
+### Running tests
+
+Tests are written via `pytest`.
+
+In your docker environment or local environment, install `pytest` via
+
+```
+pip install pytest
+```
+
+Then run all tests via
+```
+python3 -m pytest tests
 ```
