@@ -230,8 +230,9 @@ def add_lens_id_as_sample_display_name(
     input_df: pd.DataFrame, lens_id_mapping: pd.DataFrame, **kwargs
 ) -> pd.DataFrame:
     """Adds in lens_id as clinical attribute SAMPLE_DISPLAY_NAME
-    Note that lens mapping are dataset specific so sample ids can be all numeric values
-    so some conversion to str is needed
+    NOTE: The lens maps are dataset specific so there is a possibility of SAMPLE_ID being of
+    numeric data type so conversion to string is needed to merge with the clinical data where
+    SAMPLE_ID is string data type
 
     Args:
         input_df (pd.DataFrame): input clinical data
@@ -796,7 +797,7 @@ def main():
     parser.add_argument(
         "--lens_id_mapping_synid",
         type=str,
-        help="Synapse id for the study_sample_name (paper ids) to lens id mapping file",
+        help="Synapse id for the study_sample_name (paper ids) to lens id mapping file. Optional. Defaults to None, then adding lens id mapping is skipped",
         default=None
     )
     parser.add_argument(
@@ -833,6 +834,7 @@ def main():
     cli_dfs = split_into_patient_and_sample_data(
         input_data=cli_df, cli_to_cbio_mapping=cli_to_cbio_mapping
     )
+    # Skips the lens mapping when not provided because it's technically optional
     if args.lens_id_mapping_synid is not None:
         lens_id_mapping = get_study_sample_name_to_lens_id_mapping(
             lens_id_mapping_synid=args.lens_id_mapping_synid, logger=main_logger
