@@ -1,4 +1,4 @@
-"""This script executes a query on Snowflake to retrieve data about entities created in the past 7 days and stores the results in a Synapse table.
+"""This script executes a query on Snowflake to retrieve data about project and dataset entities created in the past 7 days and stores the results in a Synapse table.
 It is scheduled to run every Monday at 00:00 UTC.
 
 A Note on the `backfill` functionality:
@@ -50,6 +50,7 @@ dag_config = {
 }
 
 SYNAPSE_RESULTS_TABLE = "syn64951484"
+SYNAPSE_PUBLIC_RESULTS_TABLE = "syn69855119"
 
 
 @dataclass
@@ -220,16 +221,48 @@ def datasets_or_projects_created_7_days() -> None:
             synapseclient.Table(schema=SYNAPSE_RESULTS_TABLE, values=data)
         )
 
+    @task
+    def push_public_results_to_synapse_table(
+        entity_created: List[EntityCreated], **context
+    ) -> None:
+        """Push only the public results to a Synapse table."""
+        data = []
+        # convert context["params"]["backfill_date_time"] to date in same format as date.today()
+        today = (
+            date.today()
+            if not context["params"]["backfill"]
+            else datetime.strptime(
+                context["params"]["backfill_date_time"], "%Y-%m-%d  %H:%M:%S"
+            ).date()
+        )
+        # Filter for public datasets only
+        for row in entity_created:
+            if row.is_public:
+                data.append(
+                    [
+                        row.id,
+                        row.node_type,
+                        row.created_on,
+                        row.created_by,
+                        today,
+                    ]
+                )
+        syn_hook = SynapseHook(context["params"]["synapse_conn_id"])
+        syn_hook.client.store(
+            synapseclient.Table(schema=SYNAPSE_PUBLIC_RESULTS_TABLE, values=data)
+        )
+
     entity_created = get_datasets_projects_created_7_days()
     check = check_backfill()
     stop = stop_dag()
     push_to_synapse_table = push_results_to_synapse_table(entity_created=entity_created)
+    push_public_to_synapse_table = push_public_results_to_synapse_table(entity_created=entity_created)
     slack_message = generate_slack_message(entity_created=entity_created)
     post_to_slack = post_slack_messages(message=slack_message)
 
     entity_created >> check >> [stop, slack_message]
     slack_message >> post_to_slack
-    entity_created >> push_to_synapse_table
+    entity_created >> [push_to_synapse_table, push_public_to_synapse_table]
 
 
 datasets_or_projects_created_7_days()
