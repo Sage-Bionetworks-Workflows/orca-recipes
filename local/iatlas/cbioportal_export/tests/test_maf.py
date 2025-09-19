@@ -6,7 +6,7 @@ from unittest import mock
 import pytest
 import pandas as pd
 
-import maf_to_cbioportal as maf_to_cbio
+import maf as maf_to_cbio
 
 
 @pytest.fixture

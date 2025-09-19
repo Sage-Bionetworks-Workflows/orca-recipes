@@ -5,12 +5,11 @@ import logging
 from pathlib import Path
 import os
 import subprocess
-import sys
+import time
 from typing import Dict, List
 
 import pandas as pd
 import synapseclient
-import synapseutils
 
 import utils
 
@@ -72,6 +71,26 @@ REQUIRED_OUTPUT_FILES = [
     "meta_clinical_patient.txt",
     "meta_clinical_sample.txt",
 ]
+
+def filter_out_non_analyses_samples(input_df: pd.DataFrame) -> pd.DataFrame:
+    """Filter out the non analyses samples. 
+        This is on a dataset by dataset basis.
+        
+        Here non-analyses samples are defined as DNA only tumor samples and 
+        RNA samples not used in the analyses.
+
+    Args:
+        input_df (pd.DataFrame): input clinical data
+
+    Returns:
+        pd.DataFrame: output clinical data with the non analyses samples 
+            filtered out
+    """
+    filtered_df = input_df[
+        (~(input_df["sample_name"].str.contains(r'-(?:nd|ad|nr)-', na=False)) & 
+        (input_df["Dataset"]=="Anders_JITC_2022")) | (input_df["Dataset"]!="Anders_JITC_2022")
+    ]
+    return filtered_df
 
 
 def remove_suffix_from_column_values(input_df: pd.DataFrame, **kwargs) -> pd.DataFrame:
@@ -211,6 +230,9 @@ def add_lens_id_as_sample_display_name(
     input_df: pd.DataFrame, lens_id_mapping: pd.DataFrame, **kwargs
 ) -> pd.DataFrame:
     """Adds in lens_id as clinical attribute SAMPLE_DISPLAY_NAME
+    NOTE: The lens maps are dataset specific so there is a possibility of SAMPLE_ID being of
+    numeric data type so conversion to string is needed to merge with the clinical data where
+    SAMPLE_ID is string data type
 
     Args:
         input_df (pd.DataFrame): input clinical data
@@ -223,6 +245,8 @@ def add_lens_id_as_sample_display_name(
     lens_id_mapping_renamed = lens_id_mapping.rename(
         columns={"lens_id": "SAMPLE_DISPLAY_NAME", "study_sample_name": "SAMPLE_ID"}
     )
+    # convert lens sample_id to string
+    lens_id_mapping_renamed["SAMPLE_ID"] = lens_id_mapping_renamed["SAMPLE_ID"].astype(str)
     input_df_mapped = input_df.merge(
         lens_id_mapping_renamed, on=["SAMPLE_ID"], how="left"
     )
@@ -243,9 +267,11 @@ def preprocessing(
     """Preprocesses the data, runs the individual steps:
         1. Gets the input clinical data
         2. Merges in the oncotree mappings
-        3. Remaps the columns to be cbioportal headers
-        4. Converts the oncotree codes to have the CANCER_TYPE and CANCER_TYPE_DETAILED columns
-        5. Updates the clinical_attributes_metadata.txt in prep for adding clinical headers
+        3. Does some dataset specific filtering
+        4. Remaps the clinical sample and patient ids to use paper ids
+        5. Remaps the columns to be cbioportal headers
+        6. Converts the oncotree codes to have the CANCER_TYPE and CANCER_TYPE_DETAILED columns
+        7. Updates the clinical_attributes_metadata.txt in prep for adding clinical headers
 
     Args:
         input_df_synid (str): Synapse id of input iatlas clinical dataset
@@ -272,6 +298,7 @@ def preprocessing(
         )
     )
     cli_remapped = cli_with_oncotree.rename(columns=cli_to_cbio_mapping_dict)
+    cli_remapped = filter_out_non_analyses_samples(cli_remapped)
     cli_remapped = remap_clinical_ids_to_paper_ids(input_df=cli_remapped)
     cli_remapped = remap_column_values(input_df=cli_remapped)
     cli_remapped_cleaned = remove_suffix_from_column_values(input_df=cli_remapped)
@@ -378,7 +405,7 @@ def get_updated_cli_attributes(
     """
     cli_attr = pd.read_csv(
         f"{datahub_tools_path}/add-clinical-header/clinical_attributes_metadata.txt",
-        sep="\t",
+        sep="\t"
     )
     cli_to_cbio_mapping_to_append = cli_to_cbio_mapping.rename(
         columns={
@@ -424,8 +451,24 @@ def convert_oncotree_codes(datahub_tools_path: str) -> pd.DataFrame:
     return cli_w_cancer_types
 
 
+def rename_files_on_disk(filepath : str) -> None:
+    """Renames files on disk by removing the .metadata ext from filenames.
+        NOTE: This will overwrite previous files with the same name.
+        
+        This is needed because the insert_clinical_metadata script from
+        datahub-curation-tools saves the sample and patient files with
+        ".metadata" ext but the cbioportal validation tool expects them to be 
+        withou the ".metadata"
+
+    Args:
+        filepath (str): the filepath to remove the .metadata ext from
+    """
+    filepath_new = filepath.removesuffix(".metadata")
+    os.replace(filepath, filepath_new)
+    
+    
 def get_all_non_na_columns(input_df: pd.DataFrame) -> List[str]:
-    """ Gets all the columns in input data without all (100%) NAs
+    """Gets all the columns in input data without all (100%) NAs
     Args:
         input_df (pd.DataFrame): input data
 
@@ -452,7 +495,6 @@ def add_clinical_header(
         dataset_name (str): name of dataset to add clinical headers to
         datahub_tools_path (str): Path to the datahub tools repo
     """
-
     dataset_dir = os.path.join(
         f"{datahub_tools_path}/add-clinical-header/", dataset_name
     )
@@ -466,7 +508,7 @@ def add_clinical_header(
     sample_df_subset = input_dfs["sample"][
         input_dfs["sample"]["Dataset"] == dataset_name
     ]
-    
+
     # get the columns without 100% NAs
     patient_subset_cols = get_all_non_na_columns(input_df=patient_df_subset)
     sample_subset_cols = get_all_non_na_columns(input_df=sample_df_subset)
@@ -485,14 +527,18 @@ def add_clinical_header(
         index=False,
         float_format="%.12g",
     )
-
     cmd = f"""
     cd {datahub_tools_path}/add-clinical-header/
     python3 {datahub_tools_path}/add-clinical-header/insert_clinical_metadata.py \
         -d {dataset_dir}    
     """
-    # Run in shell to allow sourcing
+    time.sleep(2) # give subprocess some time before checking
     subprocess.run(cmd, shell=True, executable="/bin/bash")
+    time.sleep(2) # give subprocess some time before checking
+    
+    # remove .metadata from files
+    rename_files_on_disk(filepath = f"{dataset_dir}/data_clinical_patient.txt.metadata")
+    rename_files_on_disk(filepath = f"{dataset_dir}/data_clinical_sample.txt.metadata")
 
     # saved merged for case lists
     merged_df_subset = input_dfs["merged"][
@@ -535,7 +581,7 @@ def generate_meta_files(dataset_name: str, datahub_tools_path: str) -> None:
         "name: TBD\n",
         "pmid: 29033130\n",
         "reference_genome: hg38\n",
-        "citation: Tumor and Microenvironment Evolution during Immunotherapy with Nivolumab. Cell. 2017 Nov 2\n",
+        "citation: PLACEHOLDER\n",
         "description: PLACEHOLDER\n",
     ]
     with open(f"{dataset_dir}/meta_study.txt", "w") as meta_file:
@@ -629,8 +675,6 @@ def write_case_list_files(
 
 
 def create_case_lists(
-    dataset_name: str,
-    datahub_tools_path: str,
     clinical_file_name: str,
     output_directory: str,
     study_id: str,
@@ -648,126 +692,6 @@ def create_case_lists(
         os.makedirs(output_directory)
     case_lists_map, clin_samples = create_case_lists_map(clinical_file_name)
     write_case_list_files(case_lists_map, output_directory, study_id)
-    write_case_lists_all_and_sequenced(dataset_name, datahub_tools_path, study_id)
-
-
-def write_case_lists_all_and_sequenced(
-    dataset_name: str, datahub_tools_path: str, study_id: str
-) -> None:
-    """Adds the case lists for all samples and sequenced samples
-        using cbioportal tools. This needs to be done together.
-        Sequenced samples contains the subset of samples in
-        mutation data that are in the clinical samples.
-
-    Args:
-        dataset_name (str): name of dataset to add clinical headers to
-        datahub_tools_path (str): Path to the datahub tools repo
-        study_id (str): cBioPortal study id
-    """
-    dataset_dir = utils.get_local_dataset_output_folder_path(
-        dataset_name, datahub_tools_path
-    )
-    cmd = f"""
-    python3 {datahub_tools_path}/generate-case-lists/generate_case_lists.py \
-        -c {datahub_tools_path}/generate-case-lists/case_list_conf.txt \
-        -d {dataset_dir}/case_lists \
-        -s {dataset_dir} \
-        -i {study_id}
-    """
-    subprocess.run(cmd, shell=True, executable="/bin/bash")
-
-
-def save_to_synapse(
-    dataset_name: str,
-    datahub_tools_path: str,
-    output_folder_synid: str,
-    version_comment: str = None,
-) -> None:
-    """Saves the dataset's clinical file, case lists
-        and meta files to its synapse respective folders
-
-    Args:
-        dataset_name (str): name of the iatlas dataset to save to
-            synapse
-        datahub_tools_path (str): Path to the datahub tools repo
-        output_folder_synid (str): Synapse id of the output folder
-        version_comment (str): Version comment for this iteration of files on synapse. Optional.
-            Defaults to None.
-    """
-    # TODO: Make into argument
-    dataset_dir = os.path.join(datahub_tools_path, "add-clinical-header", dataset_name)
-    # see if dataset_folder exists
-    dataset_folder_exists = False
-    for _, directory_names, _ in synapseutils.walk(syn=syn, synId=output_folder_synid):
-        directories = directory_names  # top level directories
-        break
-
-    for dataset_folder in directories:
-        if dataset_name == dataset_folder[0]:
-            dataset_folder_exists = True
-            dataset_folder_id = dataset_folder[1]
-            break
-
-    if not dataset_folder_exists:
-        new_dataset_folder = synapseclient.Folder(
-            dataset_name, parent=output_folder_synid
-        )
-        dataset_folder_id = syn.store(new_dataset_folder).id
-
-    # store clinical patient file
-    syn.store(
-        synapseclient.File(
-            f"{dataset_dir}/data_clinical_patient.txt",
-            name="data_clinical_patient.txt",
-            parent=dataset_folder_id,
-            version_comment=version_comment,
-        )
-    )
-    # store clinical sample file
-    syn.store(
-        synapseclient.File(
-            f"{dataset_dir}/data_clinical_sample.txt",
-            name="data_clinical_sample.txt",
-            parent=dataset_folder_id,
-            version_comment=version_comment,
-        )
-    )
-    # store meta* files
-    syn.store(
-        synapseclient.File(
-            f"{dataset_dir}/meta_clinical_patient.txt",
-            parent=dataset_folder_id,
-            version_comment=version_comment,
-        )
-    )
-    syn.store(
-        synapseclient.File(
-            f"{dataset_dir}/meta_clinical_sample.txt",
-            parent=dataset_folder_id,
-            version_comment=version_comment,
-        )
-    )
-    syn.store(
-        synapseclient.File(
-            f"{dataset_dir}/meta_study.txt",
-            parent=dataset_folder_id,
-            version_comment=version_comment,
-        )
-    )
-    case_list_files = os.listdir(os.path.join(dataset_dir, "case_lists"))
-    case_list_folder = synapseclient.Folder("case_lists", parent=dataset_folder_id)
-    try:
-        case_list_folder_id = syn.store(case_list_folder).id
-    except:
-        sys.exit(-1)
-    for file in case_list_files:
-        syn.store(
-            synapseclient.File(
-                f"{dataset_dir}/case_lists/{file}",
-                parent=case_list_folder_id,
-                version_comment=version_comment,
-            )
-        )
 
 
 def validate_export_files(
@@ -795,7 +719,6 @@ def validate_export_files(
     dataset_dir = utils.get_local_dataset_output_folder_path(
         dataset_name, datahub_tools_path
     )
-    
     for file in REQUIRED_OUTPUT_FILES:
         if file.startswith("cases"):
             required_file_path = f"{dataset_dir}/case_lists/{file}"
@@ -837,45 +760,15 @@ def validate_export_files(
 
     if output_patient_df.PATIENT_ID.isna().any():
         logger.error("There are missing PATIENT_ID values.")
-    
+
     # check that there are no all NA columns
     if output_patient_df.isna().all().any():
         logger.error("There are patient columns with ALL NAs.")
-        
+
     if output_samples_df.isna().all().any():
         logger.error("There are sample columns with ALL NAs.")
-        
+
     print("\n\n")
-
-
-def run_cbioportal_validator(
-    dataset_name: str, cbioportal_path: str, datahub_tools_path: str
-) -> None:
-    """Runs the cbioportal validation script to check the
-        input clinical, metadata files and saves the output
-
-    Args:
-        dataset_name (str): name of the dataset
-        cbioportal_path (str): Path to cbioportal repo containing validator script
-        datahub_tools_path (str): path to the datahub tools repo containing
-            the locally saved clinical files
-    """
-    cmd = f"""
-    python3 {cbioportal_path}/core/src/main/scripts/importer/validateData.py \
-        -s "{datahub_tools_path}/add-clinical-header/{dataset_name}" \
-            --no_portal_checks \
-            --strict_maf_checks
-    """
-    validated = f"{datahub_tools_path}/add-clinical-header/{dataset_name}/cbioportal_validator_output.txt"
-    with open(f"{validated}", "w") as outfile:
-        subprocess.run(
-            cmd,
-            shell=True,
-            executable="/bin/bash",
-            stdout=outfile,
-            stderr=subprocess.STDOUT,
-        )
-    print(f"cbioportal validator results saved to: {validated}")
 
 
 def main():
@@ -904,12 +797,8 @@ def main():
     parser.add_argument(
         "--lens_id_mapping_synid",
         type=str,
-        help="Synapse id for the study_sample_name (paper ids) to lens id mapping file",
-    )
-    parser.add_argument(
-        "--output_folder_synid",
-        type=str,
-        help="Synapse id for output folder to store the export files",
+        help="Synapse id for the study_sample_name (paper ids) to lens id mapping file. Optional. Defaults to None, then adding lens id mapping is skipped",
+        default=None
     )
     parser.add_argument(
         "--datahub_tools_path",
@@ -917,27 +806,10 @@ def main():
         help="Path to datahub-study-curation-tools repo",
     )
     parser.add_argument(
-        "--cbioportal_path",
-        type=str,
-        help="Path to cbioportal repo",
-    )
-    parser.add_argument(
-        "--dry_run",
-        action="store_true",
-        default=False,
-        help="Whether to run without saving to Synapse",
-    )
-    parser.add_argument(
         "--clear_workspace",
         action="store_true",
         default=False,
         help="Whether to clear local directory of files or not",
-    )
-    parser.add_argument(
-        "--version_comment",
-        default=None,
-        type=str,
-        help="Version comment for the files on Synapse. Optional. Defaults to None.",
     )
 
     args = parser.parse_args()
@@ -962,29 +834,28 @@ def main():
     cli_dfs = split_into_patient_and_sample_data(
         input_data=cli_df, cli_to_cbio_mapping=cli_to_cbio_mapping
     )
-    lens_id_mapping = get_study_sample_name_to_lens_id_mapping(
-        lens_id_mapping_synid=args.lens_id_mapping_synid, logger=main_logger
-    )
-    cli_dfs["sample"] = add_lens_id_as_sample_display_name(
-        input_df=cli_dfs["sample"],
-        lens_id_mapping=lens_id_mapping,
-        logger=main_logger,
-    )
+    # Skips the lens mapping when not provided because it's technically optional
+    if args.lens_id_mapping_synid is not None:
+        lens_id_mapping = get_study_sample_name_to_lens_id_mapping(
+            lens_id_mapping_synid=args.lens_id_mapping_synid, logger=main_logger
+        )
+        cli_dfs["sample"] = add_lens_id_as_sample_display_name(
+            input_df=cli_dfs["sample"],
+            lens_id_mapping=lens_id_mapping,
+            logger=main_logger,
+        )
     for dataset in args.dataset:
         dataset_logger = utils.create_logger(
             dataset_name=dataset,
             datahub_tools_path=args.datahub_tools_path,
             log_file_name="iatlas_cli_validation_log.txt",
         )
-
         add_clinical_header(
             input_dfs=cli_dfs,
             dataset_name=dataset,
             datahub_tools_path=args.datahub_tools_path,
         )
         create_case_lists(
-            dataset_name=dataset,
-            datahub_tools_path=args.datahub_tools_path,
             clinical_file_name=f"{args.datahub_tools_path}/add-clinical-header/{dataset}/data_clinical_merged.txt",
             output_directory=f"{args.datahub_tools_path}/add-clinical-header/{dataset}/case_lists/",
             study_id=f"iatlas_{dataset}",
@@ -998,18 +869,6 @@ def main():
             datahub_tools_path=args.datahub_tools_path,
             logger=dataset_logger,
         )
-        run_cbioportal_validator(
-            dataset_name=dataset,
-            cbioportal_path=args.cbioportal_path,
-            datahub_tools_path=args.datahub_tools_path,
-        )
-        if not args.dry_run:
-            save_to_synapse(
-                dataset_name=dataset,
-                datahub_tools_path=args.datahub_tools_path,
-                output_folder_synid=args.output_folder_synid,
-                version_comment=args.version_comment,
-            )
 
 
 if __name__ == "__main__":

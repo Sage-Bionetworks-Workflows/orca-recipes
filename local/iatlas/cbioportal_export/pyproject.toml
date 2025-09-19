@@ -1,0 +1,11 @@
+# pyproject.toml
+[project]
+name = "cbioportal_export"
+version = "0.1.0"
+dependencies = [
+  "synapseclient[pandas]>=4,<5",
+  "pandas>=2.2",
+]
+
+[dependency-groups]
+dev = ["pytest"]
