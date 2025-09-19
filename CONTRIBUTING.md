@@ -2,31 +2,49 @@
 
 ## Infrastructure
 
-We have one Airflow server:
+We have both dev and prod Airflow servers, although the dev server is not always running and there may not be feature parity between dev and prod (e.g., not all prod secrets have analogues in dev):
 
-1. `airflow-prod`: Hosted in the `dpe-prod` AWS account. Deployed using CloudFormation. Only has a private IP address (accessible via SSM port forwarding).
+* `airflow-dev`: Hosted in the `dnt-dev` AWS account.
+* `airflow-prod`: Hosted in the `dpe-prod` AWS account. Deployed using OpenTofu. Only accessible via [port forwarding](https://kubernetes.io/docs/tasks/access-application-cluster/port-forward-access-application-cluster/#forward-a-local-port-to-a-port-on-the-pod).
 	* Deployed from the `main` branch in this repository.
+
+Please see [Connecting to AWS EKS](https://sagebionetworks.jira.com/wiki/spaces/DPE/pages/3389325317/Connecting+to+AWS+EKS+Kubernetes+K8s+cluster) on Confluence if you want to interface with the EKS/Kubernetes cluster. Otherwise, for local development you will likely only be interested in using AWS Secrets Manager as a backend for Airflow Secrets.
 
 There is a helper script in this repository for accessing this Airflow server.
 
 ## Development
 
-To develop on this repository, it's recommended that you use the Dev Containers setup online using GitHub Codespaces. While the entry-level machine type (2-core, 4GB RAM) in Codespaces supports basic editing, you should use a bigger machine type (at least 4-core, 8GB RAM) if you plan on running Airflow using Docker Compose.
+See the [README](./README.md) for instructions on how to set up the development environment.
 
-Note that you don't need to add your AWS credentials to the `.env` file when using GitHub Codespaces because a default IAM user has been configured in the repository's secrets.
+Any edits to your DAG should automatically be picked up by the Airflow scheduler/webserver after a short time interval (see `scheduler.min_file_process_interval` in [airflow.cfg](config/airflow.cfg)). New DAGs are picked up by the scheduler/webserver according to a different interval (see `scheduler.dag_dir_list_interval`). You can force a "hard refresh" by restarting the containers:
 
-1. Create a branch for your changes
-2. From the main repo page click on `<> Code`
-3. Under `Codespaces` click the 3 ellipses and `New with options...`
-4. Choose your branch and 4-core
-5. Once created and you are connected follow the [Quick Start guide](https://github.com/Sage-Bionetworks-Workflows/orca-recipes/blob/main/README.md#quick-start) to start the Airflow server running in the GitHub codespace.
-6. After your've ran the docker comamnds you will find the Forwarded Address under the `PORTS` tab that you may use to connect to the airflow UI.
+```console
+docker compose restart
+```
 
-* Note: The instructions above will create a development environment with all necessary dependencies for Airflow development. The environment setup for the Dev Container is defined in `Dockerfile`.
+If you edit `Dockerfile`, `docker-compose.yaml`, `requirements-*.txt`, or configuration files, or otherwise want to redo the build process, rebuild the containers:
+
+```console
+docker compose down
+docker compose up --build --detach
+# OR
+# do not use cached images
+# docker compose up --no-cache --build --detach 
+```
 
 ## Testing
 
 Testing should be done via the Dev Containers setup online using GitHub Codespaces. Note that for testing of the DAGs directly on Airflow locally via Dev Containers, it's best to leave the DAG **unpaused** when triggering the DAG with various updates, otherwise you might be triggering the DAG twice and/or triggering it in its original state that had its parameters set to production mode.
+
+Logs can be inspected with docker compose:
+```console
+# All logs
+docker compose logs -f
+
+# Logs for a specific service(s)
+docker compose ps --services
+docker compose logs -f airflow-webserver airflow-scheduler
+```
 
 ## DAG Development Best Practices
 
