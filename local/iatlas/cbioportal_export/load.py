@@ -145,7 +145,6 @@ def main():
         )
     if args.upload:
         save_to_synapse(
-            syn=syn,
             dataset_name=args.dataset,
             datahub_tools_path=args.datahub_tools_path,
             output_folder_synid=args.output_folder_synid,

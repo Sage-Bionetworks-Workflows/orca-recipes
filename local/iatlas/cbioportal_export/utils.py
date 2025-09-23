@@ -35,7 +35,7 @@ def synapse_login(debug: typing.Optional[bool] = False) -> synapseclient.Synapse
         Synapseclient object
     """
     # If debug is True, then silent should be False
-    silent = False if debug else False
+    silent = False if debug else True
     syn = synapseclient.Synapse(
         debug=debug, silent=silent, user_agent=f"iatlas-cbioportal/0.0.0"
     )
