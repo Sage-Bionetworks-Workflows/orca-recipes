@@ -298,9 +298,9 @@ def preprocessing(
     """Preprocesses the data, runs the individual steps:
         1. Gets the input clinical data
         2. Merges in the oncotree mappings
-        3. Merges in the neoantigen data
-        4. Does some dataset specific filtering
-        5. Remaps the clinical sample and patient ids to use paper ids
+        3. Remaps the clinical sample and patient ids to use paper ids
+        4. Merges in the neoantigen data
+        5. Does some dataset specific filtering
         6. Remaps the columns to be cbioportal headers
         7. Converts the oncotree codes to have the CANCER_TYPE and CANCER_TYPE_DETAILED columns
         8. Updates the clinical_attributes_metadata.txt in prep for adding clinical headers
