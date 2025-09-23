@@ -258,25 +258,57 @@ def add_lens_id_as_sample_display_name(
     return input_df_mapped
 
 
+def merge_in_neoantigen_study_data(
+    input_df : pd.DataFrame, 
+    neoantigen_data_synid : str, **kwargs
+    ) -> pd.DataFrame:
+    """Adds in the new neoantigen summaries study data for the specific
+        dataset to the overall clinical dataset (which contains all datasets)
+
+    Args:
+        input_df (pd.DataFrame): input clinical data
+        neoantigen_data_synid (str): Synapse id to the neoantigen data
+
+    Returns:
+        pd.DataFrame: clinical data with neoantigen data added in
+    """
+    logger = kwargs.get("logger", logging.getLogger(__name__))
+    neoantigen_data = pd.read_csv(syn.get(neoantigen_data_synid).path, sep = "\t")
+    neoantigen_data = neoantigen_data.rename(columns = {"SAMPLE_ID":"sample_name"})
+    df_with_neoantigen = input_df.merge(
+        neoantigen_data,
+        how = "outer",
+        on = "sample_name"
+    )
+    if len(df_with_neoantigen) > len(input_df):
+        logger.error(
+            "There are more rows in the clinical data after merging in the neoantigen data"
+        )
+    return df_with_neoantigen
+
+
 def preprocessing(
     input_df_synid: str,
     cli_to_cbio_mapping: pd.DataFrame,
     cli_to_oncotree_mapping_synid: str,
+    neoantigen_data_synid : str,
     datahub_tools_path: str,
 ) -> pd.DataFrame:
     """Preprocesses the data, runs the individual steps:
         1. Gets the input clinical data
         2. Merges in the oncotree mappings
-        3. Does some dataset specific filtering
-        4. Remaps the clinical sample and patient ids to use paper ids
-        5. Remaps the columns to be cbioportal headers
-        6. Converts the oncotree codes to have the CANCER_TYPE and CANCER_TYPE_DETAILED columns
-        7. Updates the clinical_attributes_metadata.txt in prep for adding clinical headers
+        3. Merges in the neoantigen data
+        4. Does some dataset specific filtering
+        5. Remaps the clinical sample and patient ids to use paper ids
+        6. Remaps the columns to be cbioportal headers
+        7. Converts the oncotree codes to have the CANCER_TYPE and CANCER_TYPE_DETAILED columns
+        8. Updates the clinical_attributes_metadata.txt in prep for adding clinical headers
 
     Args:
         input_df_synid (str): Synapse id of input iatlas clinical dataset
         cli_to_cbio_mapping (pd.DataFrame): Clinical to cbioportal attirbutes mapping
         cli_to_oncotree_mapping_synid (str): Oncotree mapping for clinical dataset
+        neoantigen_data_synid (str): Synapse id of the neoantigen dataset
         datahub_tools_path (str): Path to the datahub tools repo
 
     Returns:
@@ -291,13 +323,17 @@ def preprocessing(
         how="left",
         on=ONCOTREE_MERGE_COLS,
     )
+    cli_with_neoantigen = merge_in_neoantigen_study_data(
+        input_df = cli_with_oncotree, 
+        neoantigen_data_synid = neoantigen_data_synid
+    )
     cli_to_cbio_mapping_dict = dict(
         zip(
             cli_to_cbio_mapping["iATLAS_attribute"],
             cli_to_cbio_mapping["NORMALIZED_HEADER"],
         )
     )
-    cli_remapped = cli_with_oncotree.rename(columns=cli_to_cbio_mapping_dict)
+    cli_remapped = cli_with_neoantigen.rename(columns=cli_to_cbio_mapping_dict)
     cli_remapped = filter_out_non_analyses_samples(cli_remapped)
     cli_remapped = remap_clinical_ids_to_paper_ids(input_df=cli_remapped)
     cli_remapped = remap_column_values(input_df=cli_remapped)
@@ -801,6 +837,11 @@ def main():
         default=None
     )
     parser.add_argument(
+        "--neoantigen_data_synid",
+        type=str,
+        help="Synapse id for the summary neoantigen data that needs to be merged into the clinical.",
+    )
+    parser.add_argument(
         "--datahub_tools_path",
         type=str,
         help="Path to datahub-study-curation-tools repo",
@@ -829,6 +870,7 @@ def main():
         input_df_synid=args.input_df_synid,
         cli_to_cbio_mapping=cli_to_cbio_mapping,
         cli_to_oncotree_mapping_synid=args.cli_to_oncotree_mapping_synid,
+        neoantigen_data_synid=args.neoantigen_data_synid,
         datahub_tools_path=args.datahub_tools_path,
     )
     cli_dfs = split_into_patient_and_sample_data(

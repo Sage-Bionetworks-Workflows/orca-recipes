@@ -262,6 +262,7 @@ python3 clinical.py
     --cli_to_oncotree_mapping_synid syn66313842 \
     --datahub_tools_path /<some_path>/datahub-study-curation-tools \
     --lens_id_mapping_synid syn68826836
+    --neoantigen-data-synid syn21841882
 ```
 
 Run maf processing
