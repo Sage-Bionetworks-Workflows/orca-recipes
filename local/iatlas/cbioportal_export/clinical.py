@@ -13,8 +13,7 @@ import synapseclient
 
 import utils
 
-my_agent = "iatlas-cbioportal/0.0.0"
-syn = synapseclient.Synapse(user_agent=my_agent).login()
+syn = utils.synapse_login()
 
 EXTRA_COLS = ["study_sample_name", "study_patient_name"]
 
@@ -87,7 +86,7 @@ def filter_out_non_analyses_samples(input_df: pd.DataFrame) -> pd.DataFrame:
             filtered out
     """
     filtered_df = input_df[
-        (~(input_df["sample_name"].str.contains(r'-(?:nd|ad|nr)-', na=False)) & 
+        (~(input_df["SAMPLE_ID"].str.contains(r'-(?:nd|ad|nr)-', na=False)) & 
         (input_df["Dataset"]=="Anders_JITC_2022")) | (input_df["Dataset"]!="Anders_JITC_2022")
     ]
     return filtered_df
@@ -274,15 +273,16 @@ def merge_in_neoantigen_study_data(
     """
     logger = kwargs.get("logger", logging.getLogger(__name__))
     neoantigen_data = pd.read_csv(syn.get(neoantigen_data_synid).path, sep = "\t")
-    neoantigen_data = neoantigen_data.rename(columns = {"SAMPLE_ID":"sample_name"})
+    neoantigen_data = neoantigen_data.rename(columns = {"Sample_ID":"SAMPLE_ID"})
+    neoantigen_data['SAMPLE_ID'] = neoantigen_data['SAMPLE_ID'].astype(str)
     df_with_neoantigen = input_df.merge(
         neoantigen_data,
         how = "outer",
-        on = "sample_name"
+        on = "SAMPLE_ID"
     )
     if len(df_with_neoantigen) > len(input_df):
         logger.error(
-            "There are more rows in the clinical data after merging in the neoantigen data"
+            "There are more rows in the clinical data after merging in the neoantigen data."
         )
     return df_with_neoantigen
 
@@ -293,6 +293,7 @@ def preprocessing(
     cli_to_oncotree_mapping_synid: str,
     neoantigen_data_synid : str,
     datahub_tools_path: str,
+    **kwargs,
 ) -> pd.DataFrame:
     """Preprocesses the data, runs the individual steps:
         1. Gets the input clinical data
@@ -314,6 +315,7 @@ def preprocessing(
     Returns:
         pd.DataFrame: preprocessed clinical merged dataset
     """
+    logger = kwargs.get("logger", logging.getLogger(__name__))
     input_df = pd.read_csv(syn.get(input_df_synid).path, sep="\t")
     cli_to_oncotree_mapping = pd.read_csv(
         syn.get(cli_to_oncotree_mapping_synid).path, sep="\t"
@@ -323,9 +325,11 @@ def preprocessing(
         how="left",
         on=ONCOTREE_MERGE_COLS,
     )
+    cli_remapped = remap_clinical_ids_to_paper_ids(input_df=cli_with_oncotree)
     cli_with_neoantigen = merge_in_neoantigen_study_data(
-        input_df = cli_with_oncotree, 
-        neoantigen_data_synid = neoantigen_data_synid
+        input_df = cli_remapped, 
+        neoantigen_data_synid = neoantigen_data_synid,
+        logger = logger
     )
     cli_to_cbio_mapping_dict = dict(
         zip(
@@ -335,7 +339,6 @@ def preprocessing(
     )
     cli_remapped = cli_with_neoantigen.rename(columns=cli_to_cbio_mapping_dict)
     cli_remapped = filter_out_non_analyses_samples(cli_remapped)
-    cli_remapped = remap_clinical_ids_to_paper_ids(input_df=cli_remapped)
     cli_remapped = remap_column_values(input_df=cli_remapped)
     cli_remapped_cleaned = remove_suffix_from_column_values(input_df=cli_remapped)
     cli_remapped_cleaned = update_case_of_column_values(
@@ -872,6 +875,7 @@ def main():
         cli_to_oncotree_mapping_synid=args.cli_to_oncotree_mapping_synid,
         neoantigen_data_synid=args.neoantigen_data_synid,
         datahub_tools_path=args.datahub_tools_path,
+        logger = main_logger,
     )
     cli_dfs = split_into_patient_and_sample_data(
         input_data=cli_df, cli_to_cbio_mapping=cli_to_cbio_mapping

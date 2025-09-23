@@ -2,8 +2,52 @@ import logging
 import os
 import shutil
 import sys
+import typing
 
 import pandas as pd
+import synapseclient
+
+
+REQUIRED_OUTPUT_FILES = [
+    "data_clinical_patient.txt",
+    "data_clinical_sample.txt",
+    "meta_clinical_patient.txt",
+    "meta_clinical_sample.txt",
+    "data_mutations.txt",
+    "meta_mutations.txt",
+    "data_gene_signatures.txt",
+    "meta_gene_signatures.txt",
+    "data_rna_seq_mrna.txt",
+    "meta_rna_seq_mrna.txt",
+    "cbioportal_validator_output.txt"
+]
+
+
+def synapse_login(debug: typing.Optional[bool] = False) -> synapseclient.Synapse:
+    """
+    Logs into Synapse if credentials are saved.
+    If not saved, then user is prompted username and auth token.
+
+    Args:
+        debug: Synapse debug feature. Defaults to False
+
+    Returns:
+        Synapseclient object
+    """
+    # If debug is True, then silent should be False
+    silent = False if debug else False
+    syn = synapseclient.Synapse(
+        debug=debug, silent=silent, user_agent=f"iatlas-cbioportal/0.0.0"
+    )
+    try:
+        syn.login()
+    except Exception:
+        raise ValueError(
+            "Please view https://help.synapse.org/docs/Client-Configuration.1985446156.html"
+            "to configure authentication to the client.  Configure a ~/.synapseConfig"
+            "or set the SYNAPSE_AUTH_TOKEN environmental variable."
+        )
+    return syn
 
 
 def create_logger(

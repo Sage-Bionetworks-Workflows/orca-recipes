@@ -8,27 +8,7 @@ import synapseutils
 
 import utils
 
-
-my_agent = "iatlas-cbioportal/0.0.0"
-syn = synapseclient.Synapse(user_agent=my_agent).login()
-
-
-REQUIRED_OUTPUT_FILES = [
-    "data_clinical_patient.txt",
-    "data_clinical_sample.txt",
-    "meta_clinical_patient.txt",
-    "meta_clinical_sample.txt",
-    "data_mutations.txt",
-    "meta_mutations.txt",
-    "data_gene_signatures.txt",
-    "meta_gene_signatures.txt",
-    "data_rna_seq_mrna.txt",
-    "meta_rna_seq_mrna.txt",
-    "data_neoantigen_priority_scores.txt",
-    "meta_neoantigen_priority_scores.txt",
-    "cbioportal_validator_output.txt"
-]
-
+syn = utils.synapse_login()
 
 def write_case_lists_all_and_sequenced(
     dataset_name: str, datahub_tools_path: str, study_id: str
@@ -55,36 +35,6 @@ def write_case_lists_all_and_sequenced(
     """
     subprocess.run(cmd, shell=True, executable="/bin/bash")
     
-
-def run_cbioportal_validator(
-    dataset_name: str, cbioportal_path: str, datahub_tools_path: str
-) -> None:
-    """Runs the cbioportal validation script to check the
-        input clinical, metadata files and saves the output
-
-    Args:
-        dataset_name (str): name of the dataset
-        cbioportal_path (str): Path to cbioportal repo containing validator script
-        datahub_tools_path (str): path to the datahub tools repo containing
-            the locally saved clinical files
-    """
-    cmd = f"""
-    python3 {cbioportal_path}/core/src/main/scripts/importer/validateData.py \
-        -s "{datahub_tools_path}/add-clinical-header/{dataset_name}" \
-            --no_portal_checks \
-            --strict_maf_checks
-    """
-    validated = f"{datahub_tools_path}/add-clinical-header/{dataset_name}/cbioportal_validator_output.txt"
-    with open(f"{validated}", "w") as outfile:
-        subprocess.run(
-            cmd,
-            shell=True,
-            executable="/bin/bash",
-            stdout=outfile,
-            stderr=subprocess.STDOUT,
-        )
-    print(f"cbioportal validator results saved to: {validated}")
-
 
 def save_to_synapse(
     dataset_name: str,
@@ -124,7 +74,7 @@ def save_to_synapse(
         dataset_folder_id = syn.store(new_dataset_folder).id
 
     # store required files
-    for file in REQUIRED_OUTPUT_FILES:
+    for file in utils.REQUIRED_OUTPUT_FILES:
         syn.store(
             synapseclient.File(
                 f"{dataset_dir}/{file}",
@@ -169,21 +119,10 @@ def main():
         help="Path to datahub-study-curation-tools repo",
     )
     parser.add_argument(
-        "--cbioportal_path",
-        type=str,
-        help="Path to cbioportal repo",
-    )
-    parser.add_argument(
         "--create_case_lists",
         action="store_true",
         default=False,
         help="Whether to generate the all and sequenced caselists",
-    )
-    parser.add_argument(
-        "--validate",
-        action="store_true",
-        default=False,
-        help="Whether to run cbioportal validator",
     )
     parser.add_argument(
         "--upload",
@@ -204,14 +143,9 @@ def main():
             datahub_tools_path=args.datahub_tools_path,
             study_id=f"iatlas_{args.dataset}",
         )
-    if args.validate:
-        run_cbioportal_validator(
-            dataset_name=args.dataset,
-            cbioportal_path=args.cbioportal_path,
-            datahub_tools_path=args.datahub_tools_path,
-        )
     if args.upload:
         save_to_synapse(
+            syn=syn,
             dataset_name=args.dataset,
             datahub_tools_path=args.datahub_tools_path,
             output_folder_synid=args.output_folder_synid,

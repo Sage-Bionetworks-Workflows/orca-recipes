@@ -19,7 +19,7 @@ def syn_mock():
 
 
 @pytest.mark.parametrize(
-    "sample_name,dataset,expected_keep",
+    "sample_id,dataset,expected_keep",
     [
         ("ABC-nd-001", "Anders_JITC_2022", False),  # excluded by -nd-
         ("ABC-ad-001", "Anders_JITC_2022", False),  # excluded by -ad-
@@ -31,8 +31,8 @@ def syn_mock():
         ("plain",      "Other_Dataset",    True),  # non-Anders dataset => kept
     ],
 )
-def test_that_filter_out_non_analyses_samples_filters_correctly(sample_name, dataset, expected_keep):
-    df = pd.DataFrame({"sample_name": [sample_name], "Dataset": [dataset]})
+def test_that_filter_out_non_analyses_samples_filters_correctly(sample_id, dataset, expected_keep):
+    df = pd.DataFrame({"SAMPLE_ID": [sample_id], "Dataset": [dataset]})
     out = cli_to_cbio.filter_out_non_analyses_samples(df)
 
     assert (len(out) == 1) == expected_keep
@@ -44,7 +44,7 @@ def test_that_filter_out_non_analyses_samples_filters_correctly(sample_name, dat
         
 
 def test_that_filter_out_non_analyses_samples_filters_correctly_with_nas():
-    df = pd.DataFrame({"sample_name": ["plain", np.nan], "Dataset": ["Anders_JITC_2022", "Anders_JITC_2022"]})
+    df = pd.DataFrame({"SAMPLE_ID": ["plain", np.nan], "Dataset": ["Anders_JITC_2022", "Anders_JITC_2022"]})
     out = cli_to_cbio.filter_out_non_analyses_samples(df)
     pd.testing.assert_frame_equal(out.reset_index(drop=True), df.reset_index(drop=True))
     
