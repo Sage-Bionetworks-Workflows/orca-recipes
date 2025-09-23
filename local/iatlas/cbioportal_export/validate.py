@@ -32,28 +32,6 @@ def validate_that_neoantigen_maf_ids_are_equal(
         )
 
 
-def validate_that_allele_freq_are_not_na(
-    input_df: pd.DataFrame,
-    **kwargs,
-) -> None:
-    """Validation: Checks that there are no NAs in the
-        maf allele frequency columns: t_ref_count, t_alt_count
-        as these are required to calculate the allele frequency(AF):
-            AF = t_alt_count / (t_alt_count + t_ref_count)
-
-    Args:
-        input_df (pd.DataFrame): input dataframe with allele freq columns
-    """
-    logger = kwargs.get("logger", logging.getLogger(__name__))
-    # check that allele _freq are present
-    allele_freq_cols = ["t_ref_count", "t_alt_count"]
-    if set(allele_freq_cols) <= set(input_df.columns):
-        if input_df[allele_freq_cols].isna().any().any():
-            logger.error(
-                f"There are NAs in the allele frequency columns: {allele_freq_cols}"
-            )
-            
-
 def get_all_files_to_validate(
     dataset_name: str, datahub_tools_path: str
 ) -> Dict[str, pd.DataFrame]:
