@@ -35,6 +35,16 @@ def validate_that_neoantigen_maf_ids_are_equal(
 def get_all_files_to_validate(
     dataset_name: str, datahub_tools_path: str
 ) -> Dict[str, pd.DataFrame]:
+    """This pulls in all of the datasets needed for validation
+
+    Args:
+        dataset_name (str): name of the dataset to validate
+        datahub_tools_path (str): local path to the datahub-tools repo
+
+    Returns:
+        Dict[str, pd.DataFrame]: dictionary where each key-value pair is
+            file_name : file read in as pandas dataframe
+    """
     dataset_dir = utils.get_local_dataset_output_folder_path(
         dataset_name, datahub_tools_path
     )

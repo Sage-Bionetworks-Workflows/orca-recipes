@@ -1,4 +1,3 @@
-# test_clinical_pipeline.py
 import csv
 import os
 import tempfile
