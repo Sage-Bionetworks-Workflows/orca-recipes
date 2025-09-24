@@ -299,7 +299,6 @@ python3 validate.py
 ```
 
 Save into synapse with version comment `v1`
-
 ```
 python3 load.py
     --dataset Riaz  

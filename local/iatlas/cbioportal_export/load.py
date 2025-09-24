@@ -49,44 +49,26 @@ def save_to_synapse(
         dataset_name (str): name of the iatlas dataset to save to
             synapse
         datahub_tools_path (str): Path to the datahub tools repo
-        output_folder_synid (str): Synapse id of the output folder
+        output_folder_synid (str): Synapse id of the outputs folder
         version_comment (str): Version comment for this iteration of files on synapse. Optional.
             Defaults to None.
     """
     # TODO: Make into argument
     dataset_dir = os.path.join(datahub_tools_path, "add-clinical-header", dataset_name)
-    # see if dataset_folder exists
-    dataset_folder_exists = False
-    for _, directory_names, _ in synapseutils.walk(syn=syn, synId=output_folder_synid):
-        directories = directory_names  # top level directories
-        break
-
-    for dataset_folder in directories:
-        if dataset_folder[0] == "outputs":
-            dataset_folder_exists = True
-            dataset_folder_id = dataset_folder[1]
-            break
-
-    if not dataset_folder_exists:
-        new_dataset_folder = synapseclient.Folder(
-            "outputs", parent=output_folder_synid
-        )
-        dataset_folder_id = syn.store(new_dataset_folder).id
-
     # store required files
     for file in utils.REQUIRED_OUTPUT_FILES:
         syn.store(
             synapseclient.File(
                 f"{dataset_dir}/{file}",
                 name=file,
-                parent=dataset_folder_id,
+                parent=output_folder_synid,
                 version_comment=version_comment
             )
         )
     
     # store case lists
     case_list_files = os.listdir(os.path.join(dataset_dir, "case_lists"))
-    case_list_folder = synapseclient.Folder("case_lists", parent=dataset_folder_id)
+    case_list_folder = synapseclient.Folder("case_lists", parent=output_folder_synid)
     try:
         case_list_folder_id = syn.store(case_list_folder).id
     except:
