@@ -4,7 +4,6 @@ import subprocess
 import sys
 
 import synapseclient
-import synapseutils
 
 import utils
 

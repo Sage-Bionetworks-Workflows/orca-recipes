@@ -6,133 +6,10 @@ import subprocess
 from typing import Dict
 
 import pandas as pd
-import synapseclient
 
 import utils
 
 syn = utils.synapse_login()
-
-REQUIRED_MAF_COLS = [
-    "Hugo_Symbol",
-    "Entrez_Gene_Id",
-    "Center",
-    "NCBI_Build",
-    "Chromosome",
-    "Start_Position",
-    "End_Position",
-    "Strand",
-    "Consequence",
-    "Variant_Classification",
-    "Variant_Type",
-    "Reference_Allele",
-    "Tumor_Seq_Allele1",
-    "Tumor_Seq_Allele2",
-    "dbSNP_RS",
-    "dbSNP_Val_Status",
-    "Tumor_Sample_Barcode",
-    "Matched_Norm_Sample_Barcode",
-    "Match_Norm_Seq_Allele1",
-    "Match_Norm_Seq_Allele2",
-    "Tumor_Validation_Allele1",
-    "Tumor_Validation_Allele2",
-    "Match_Norm_Validation_Allele1",
-    "Match_Norm_Validation_Allele2",
-    "Verification_Status",
-    "Validation_Status",
-    "Mutation_Status",
-    "Sequencing_Phase",
-    "Sequence_Source",
-    "Validation_Method",
-    "Score",
-    "BAM_File",
-    "Sequencer",
-    "n_ref_count",
-    "n_alt_count",
-    "HGVSc",
-    "HGVSp",
-    "HGVSp_Short",
-    "Transcript_ID",
-    "RefSeq",
-    "Protein_position",
-    "Codons",
-    "Exon_Number",
-    "AA_AF",
-    "AF",
-    "AFR_AF",
-    "ALLELE_NUM",
-    "AMR_AF",
-    "ASN_AF",
-    "Allele",
-    "Amino_acids",
-    "BIOTYPE",
-    "CANONICAL",
-    "CCDS",
-    "CDS_position",
-    "CLIN_SIG",
-    "DISTANCE",
-    "DOMAINS",
-    "EAS_AF",
-    "EA_AF",
-    "ENSP",
-    "EUR_AF",
-    "EXON",
-    "Existing_variation",
-    "FILTER",
-    "Feature",
-    "Feature_type",
-    "GENE_PHENO",
-    "Gene",
-    "HGNC_ID",
-    "HGVS_OFFSET",
-    "HIGH_INF_POS",
-    "IMPACT",
-    "INTRON",
-    "MINIMISED",
-    "MOTIF_NAME",
-    "MOTIF_POS",
-    "MOTIF_SCORE_CHANGE",
-    "PHENO",
-    "PICK",
-    "PUBMED",
-    "PolyPhen",
-    "SAS_AF",
-    "SIFT",
-    "SOMATIC",
-    "STRAND_VEP",
-    "SWISSPROT",
-    "SYMBOL",
-    "SYMBOL_SOURCE",
-    "TREMBL",
-    "TSL",
-    "UNIPARC",
-    "VARIANT_CLASS",
-    "all_effects",
-    "cDNA_position",
-    "flanking_bps",
-    "genomic_location_explanation",
-    "gnomADe_AF",
-    "gnomADe_AFR_AF",
-    "gnomADe_AMR_AF",
-    "gnomADe_ASJ_AF",
-    "gnomADe_EAS_AF",
-    "gnomADe_FIN_AF",
-    "gnomADe_NFE_AF",
-    "gnomADe_OTH_AF",
-    "gnomADe_SAS_AF",
-    "n_depth",
-    "t_depth",
-    "t_ref_count",
-    "t_alt_count",
-    "vcf_id",
-    "vcf_pos",
-    "vcf_qual",
-    "Annotation_Status",
-    "Peptide",
-    "HLA_Allele",
-    "MHCflurry_2.1.1_affinity_nm",
-    "MHCflurry_2.1.1_presentation_score"
-]
-
 
 def read_and_merge_maf_files(input_folder_synid: str) -> pd.DataFrame:
     """Read in and merge MAF files from a specified folder
@@ -386,20 +263,6 @@ def validate_that_allele_freq_are_not_na(
             )
 
 
-def validate_that_required_columns_are_present(
-    input_df: pd.DataFrame, **kwargs
-) -> None:
-    """Validate that required set of maf columns are present
-
-    Args:
-        input_df (pd.DataFrame): _description_
-    """
-    logger = kwargs.get("logger", logging.getLogger(__name__))
-    if set(REQUIRED_MAF_COLS) != set(list(input_df.columns)):
-        missing_cols = set(REQUIRED_MAF_COLS) - set(list(input_df.columns))
-        logger.error(f"Missing required columns in maf: {list(missing_cols)}")
-
-
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -466,9 +329,6 @@ def main():
     )
     validate_export_files(
         input_df=maf_df, output_df=mafs["annotated_maf"], logger=dataset_logger
-    )
-    validate_that_required_columns_are_present(
-        mafs["annotated_maf"], logger=dataset_logger
     )
     validate_that_allele_freq_are_not_na(mafs["annotated_maf"], logger=dataset_logger)
     generate_meta_files(
