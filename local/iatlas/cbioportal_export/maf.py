@@ -436,11 +436,12 @@ def main():
     args = parser.parse_args()
     if args.clear_workspace:
         utils.clear_workspace(dir_path=f"{args.datahub_tools_path}/add-clinical-header")
-
+    dataset_flagger = utils.ErrorFlagHandler()
     dataset_logger = utils.create_logger(
         dataset_name=args.dataset,
         datahub_tools_path=args.datahub_tools_path,
         log_file_name="iatlas_maf_validation_log.txt",
+        flagger=dataset_flagger
     )
     maf_df = read_and_merge_maf_files(input_folder_synid=args.input_folder_synid)
     n_maf_chunks = split_into_chunks(
@@ -470,6 +471,8 @@ def main():
     generate_meta_files(
         dataset_name=args.dataset, datahub_tools_path=args.datahub_tools_path
     )
+    if dataset_flagger.had_error:
+        dataset_logger.error("FAILED: Validation of study failed")
 
 
 if __name__ == "__main__":

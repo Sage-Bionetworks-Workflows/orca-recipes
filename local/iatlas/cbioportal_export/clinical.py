@@ -891,10 +891,12 @@ def main():
             logger=main_logger,
         )
     for dataset in args.dataset:
+        dataset_flagger = utils.ErrorFlagHandler()
         dataset_logger = utils.create_logger(
             dataset_name=dataset,
             datahub_tools_path=args.datahub_tools_path,
             log_file_name="iatlas_cli_validation_log.txt",
+            flagger=dataset_flagger
         )
         add_clinical_header(
             input_dfs=cli_dfs,
@@ -915,6 +917,8 @@ def main():
             datahub_tools_path=args.datahub_tools_path,
             logger=dataset_logger,
         )
+        if dataset_flagger.had_error:
+            dataset_logger.error("FAILED: Validation of study failed")
 
 
 if __name__ == "__main__":

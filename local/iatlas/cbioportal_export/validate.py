@@ -55,7 +55,7 @@ def get_all_files_to_validate(
 
 
 def run_cbioportal_validator(
-    dataset_name: str, cbioportal_path: str, datahub_tools_path: str
+    dataset_name: str, cbioportal_path: str, datahub_tools_path: str, **kwargs
 ) -> None:
     """Runs the cbioportal validation script to check the
         input clinical, metadata files and saves the output
@@ -66,6 +66,7 @@ def run_cbioportal_validator(
         datahub_tools_path (str): path to the datahub tools repo containing
             the locally saved clinical files
     """
+    logger = kwargs.get("logger", logging.getLogger(__name__))
     cmd = f"""
     python3 {cbioportal_path}/core/src/main/scripts/importer/validateData.py \
         -s "{datahub_tools_path}/add-clinical-header/{dataset_name}" \
@@ -81,7 +82,7 @@ def run_cbioportal_validator(
             stdout=outfile,
             stderr=subprocess.STDOUT,
         )
-    print(f"cbioportal validator results saved to: {validated}")
+    logger.info(f"cbioportal validator results saved to: {validated}")
 
 
 def main():
@@ -111,10 +112,12 @@ def main():
     all_files = get_all_files_to_validate(
         dataset_name=args.dataset, datahub_tools_path=args.datahub_tools_path
     )
+    dataset_flagger = utils.ErrorFlagHandler()
     dataset_logger = utils.create_logger(
         dataset_name=args.dataset,
         datahub_tools_path=args.datahub_tools_path,
         log_file_name="iatlas_validation_log.txt",
+        flagger=dataset_flagger
     )
     validate_that_neoantigen_maf_ids_are_equal(
         input_df=all_files["data_mutations.txt"],
@@ -125,7 +128,10 @@ def main():
         dataset_name=args.dataset,
         cbioportal_path=args.cbioportal_path,
         datahub_tools_path=args.datahub_tools_path,
+        logger=dataset_logger,
     )
+    if dataset_flagger.had_error:
+        dataset_logger.error("FAILED: Validation of study failed")
     
 if __name__ == "__main__":
     main()
