@@ -1,7 +1,7 @@
-# test_clinical_pipeline.py
 import csv
 import os
 import tempfile
+from types import SimpleNamespace
 from unittest import mock
 from unittest.mock import MagicMock, patch
 
@@ -19,35 +19,86 @@ def syn_mock():
 
 
 @pytest.mark.parametrize(
-    "sample_name,dataset,expected_keep",
+    "input_samples, neo_samples, expect_error",
+    [
+        # No new rows after merge → no error
+        (["S1", "S2"], ["S1", "S2"], False),
+        # No new rows after merge → no error
+        (["S1", "S2"], ["S1"], False),
+        # New sample appears only in neo data → error
+        (["S1"], ["S1", "S3"], True),
+    ],
+    ids=["merge_correct", "less_neoantigen_samples", "more_neoantigen_samples"],
+)
+def test_that_merge_in_neoantigen_study_data_does_expected(
+    input_samples, neo_samples, expect_error
+):
+    input_df = pd.DataFrame(
+        {"SAMPLE_ID": input_samples, "foo": range(len(input_samples))}
+    )
+
+    with mock.patch.object(
+        cli_to_cbio.syn, "get", return_value=SimpleNamespace(path="dummy.tsv")
+    ), mock.patch.object(
+        pd,
+        "read_csv",
+        return_value=pd.DataFrame(
+            {"Sample_ID": neo_samples, "SNV": list(range(len(neo_samples)))}
+        ),
+    ):
+        # Use a mock logger so we can assert .error calls directly
+        mock_logger = mock.Mock()
+        cli_to_cbio.merge_in_neoantigen_study_data(
+            input_df, neoantigen_data_synid="synZZZZ", logger=mock_logger
+        )
+        # Logger behavior
+        if expect_error:
+            mock_logger.error.assert_called_with(
+                "There are more rows in the clinical data after merging in the neoantigen data."
+            )
+        else:
+            mock_logger.error.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "sample_id,dataset,expected_keep",
     [
         ("ABC-nd-001", "Anders_JITC_2022", False),  # excluded by -nd-
         ("ABC-ad-001", "Anders_JITC_2022", False),  # excluded by -ad-
         ("ABC-nr-001", "Anders_JITC_2022", False),  # excluded by -nr-
-        ("ABC-ar-001", "Anders_JITC_2022", True),   # allowed
-        ("plain",      "Anders_JITC_2022", True),   # allowed
-        ("ABC-ND-001", "Anders_JITC_2022", True),   # case-sensitive: not excluded
-        ("ABC-ad-001", "Other_Dataset",    True),  # non-Anders dataset => kept
-        ("plain",      "Other_Dataset",    True),  # non-Anders dataset => kept
+        ("ABC-ar-001", "Anders_JITC_2022", True),  # allowed
+        ("plain", "Anders_JITC_2022", True),  # allowed
+        ("ABC-ND-001", "Anders_JITC_2022", True),  # case-sensitive: not excluded
+        ("ABC-ad-001", "Other_Dataset", True),  # non-Anders dataset => kept
+        ("plain", "Other_Dataset", True),  # non-Anders dataset => kept
     ],
 )
-def test_that_filter_out_non_analyses_samples_filters_correctly(sample_name, dataset, expected_keep):
-    df = pd.DataFrame({"sample_name": [sample_name], "Dataset": [dataset]})
+def test_that_filter_out_non_analyses_samples_filters_correctly(
+    sample_id, dataset, expected_keep
+):
+    df = pd.DataFrame({"SAMPLE_ID": [sample_id], "Dataset": [dataset]})
     out = cli_to_cbio.filter_out_non_analyses_samples(df)
 
     assert (len(out) == 1) == expected_keep
 
     if expected_keep:
-        pd.testing.assert_frame_equal(out.reset_index(drop=True), df.reset_index(drop=True))
+        pd.testing.assert_frame_equal(
+            out.reset_index(drop=True), df.reset_index(drop=True)
+        )
     else:
         assert out.empty
-        
+
 
 def test_that_filter_out_non_analyses_samples_filters_correctly_with_nas():
-    df = pd.DataFrame({"sample_name": ["plain", np.nan], "Dataset": ["Anders_JITC_2022", "Anders_JITC_2022"]})
+    df = pd.DataFrame(
+        {
+            "SAMPLE_ID": ["plain", np.nan],
+            "Dataset": ["Anders_JITC_2022", "Anders_JITC_2022"],
+        }
+    )
     out = cli_to_cbio.filter_out_non_analyses_samples(df)
     pd.testing.assert_frame_equal(out.reset_index(drop=True), df.reset_index(drop=True))
-    
+
 
 @pytest.mark.parametrize(
     "input_df, expected_df",
@@ -242,23 +293,25 @@ def test_that_add_lens_id_as_sample_display_name_returns_expected_with_error_log
         (
             pd.DataFrame(
                 {"study_sample_name": ["101", "102"], "lens_id": ["lens1", "lens2"]}
-                ),
+            ),
             pd.DataFrame(
                 {"SAMPLE_ID": ["101", "102"], "SAMPLE_DISPLAY_NAME": ["lens1", "lens2"]}
-                )
+            ),
         ),
         (
             pd.DataFrame(
                 {"study_sample_name": [101, 102], "lens_id": ["lens1", "lens2"]}
-                ),
+            ),
             pd.DataFrame(
                 {"SAMPLE_ID": ["101", "102"], "SAMPLE_DISPLAY_NAME": ["lens1", "lens2"]}
-                )
+            ),
         ),
     ],
-    ids = ["normal", "numeric_sample_name_vals"]
+    ids=["normal", "numeric_sample_name_vals"],
 )
-def test_that_add_lens_id_as_sample_display_name_returns_expected_if_no_missing(lens_map, expected):
+def test_that_add_lens_id_as_sample_display_name_returns_expected_if_no_missing(
+    lens_map, expected
+):
     input = pd.DataFrame({"SAMPLE_ID": ["101", "102"]})
     mock_logger = MagicMock()
     result_df = cli_to_cbio.add_lens_id_as_sample_display_name(
@@ -294,6 +347,7 @@ def test_cli_to_cbio_mapping():
         }
     )
     return cli_to_cbio_mapping
+
 
 class TestSplitPatientAndSampleData:
     def test_split_structure(self, test_input_clinical_data, test_cli_to_cbio_mapping):
