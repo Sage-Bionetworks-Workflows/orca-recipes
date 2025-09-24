@@ -1,3 +1,4 @@
+import logging
 from types import SimpleNamespace
 from unittest import mock
 
@@ -47,3 +48,44 @@ def test_that_merge_in_neoantigen_study_data_does_expected(
             )
         else:
             mock_logger.error.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "df, expect_error, error",
+    [
+        # Case 1: No missing columns
+        (
+            pd.DataFrame(
+                {col: ["dummy"] for col in validate.REQUIRED_MAF_COLS},
+            ),
+            False,
+            ""
+        ),
+        # Case 2: Has missing column
+        (
+            pd.DataFrame(
+                {
+                    col: ["dummy"]
+                    for col in validate.REQUIRED_MAF_COLS
+                    if col not in ["Annotation_Status"]
+                },
+            ),
+            True,
+            "Missing required columns in data_mutations.txt: ['Annotation_Status']",
+        ),
+    ],
+    ids=["no_missing_cols", "has_missing_col"],
+)
+def test_validate_that_required_columns_are_present_expected_logging(
+    df, expect_error, error, caplog
+):
+    with caplog.at_level(logging.ERROR):
+        validate.validate_that_required_columns_are_present(
+            df, 
+            required_cols = validate.REQUIRED_MAF_COLS,
+            dataset_file_name = "data_mutations.txt")
+
+    if expect_error:
+        assert len(caplog.records) == 1 and caplog.records[0].message == error
+    else:
+        assert len(caplog.records) == 0

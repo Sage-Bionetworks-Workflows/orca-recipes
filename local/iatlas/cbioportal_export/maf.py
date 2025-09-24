@@ -10,8 +10,7 @@ import synapseclient
 
 import utils
 
-my_agent = "iatlas-cbioportal/0.0.0"
-syn = synapseclient.Synapse(user_agent=my_agent).login()
+syn = utils.synapse_login()
 
 REQUIRED_MAF_COLS = [
     "Hugo_Symbol",
@@ -128,6 +127,10 @@ REQUIRED_MAF_COLS = [
     "vcf_pos",
     "vcf_qual",
     "Annotation_Status",
+    "Peptide",
+    "HLA_Allele",
+    "MHCflurry_2.1.1_affinity_nm",
+    "MHCflurry_2.1.1_presentation_score"
 ]
 
 

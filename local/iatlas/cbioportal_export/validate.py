@@ -11,6 +11,127 @@ import utils
 syn = utils.synapse_login()
 
 
+REQUIRED_MAF_COLS = [
+    "Hugo_Symbol",
+    "Entrez_Gene_Id",
+    "Center",
+    "NCBI_Build",
+    "Chromosome",
+    "Start_Position",
+    "End_Position",
+    "Strand",
+    "Consequence",
+    "Variant_Classification",
+    "Variant_Type",
+    "Reference_Allele",
+    "Tumor_Seq_Allele1",
+    "Tumor_Seq_Allele2",
+    "dbSNP_RS",
+    "dbSNP_Val_Status",
+    "Tumor_Sample_Barcode",
+    "Matched_Norm_Sample_Barcode",
+    "Match_Norm_Seq_Allele1",
+    "Match_Norm_Seq_Allele2",
+    "Tumor_Validation_Allele1",
+    "Tumor_Validation_Allele2",
+    "Match_Norm_Validation_Allele1",
+    "Match_Norm_Validation_Allele2",
+    "Verification_Status",
+    "Validation_Status",
+    "Mutation_Status",
+    "Sequencing_Phase",
+    "Sequence_Source",
+    "Validation_Method",
+    "Score",
+    "BAM_File",
+    "Sequencer",
+    "n_ref_count",
+    "n_alt_count",
+    "HGVSc",
+    "HGVSp",
+    "HGVSp_Short",
+    "Transcript_ID",
+    "RefSeq",
+    "Protein_position",
+    "Codons",
+    "Exon_Number",
+    "AA_AF",
+    "AF",
+    "AFR_AF",
+    "ALLELE_NUM",
+    "AMR_AF",
+    "ASN_AF",
+    "Allele",
+    "Amino_acids",
+    "BIOTYPE",
+    "CANONICAL",
+    "CCDS",
+    "CDS_position",
+    "CLIN_SIG",
+    "DISTANCE",
+    "DOMAINS",
+    "EAS_AF",
+    "EA_AF",
+    "ENSP",
+    "EUR_AF",
+    "EXON",
+    "Existing_variation",
+    "FILTER",
+    "Feature",
+    "Feature_type",
+    "GENE_PHENO",
+    "Gene",
+    "HGNC_ID",
+    "HGVS_OFFSET",
+    "HIGH_INF_POS",
+    "IMPACT",
+    "INTRON",
+    "MINIMISED",
+    "MOTIF_NAME",
+    "MOTIF_POS",
+    "MOTIF_SCORE_CHANGE",
+    "PHENO",
+    "PICK",
+    "PUBMED",
+    "PolyPhen",
+    "SAS_AF",
+    "SIFT",
+    "SOMATIC",
+    "STRAND_VEP",
+    "SWISSPROT",
+    "SYMBOL",
+    "SYMBOL_SOURCE",
+    "TREMBL",
+    "TSL",
+    "UNIPARC",
+    "VARIANT_CLASS",
+    "all_effects",
+    "cDNA_position",
+    "flanking_bps",
+    "genomic_location_explanation",
+    "gnomADe_AF",
+    "gnomADe_AFR_AF",
+    "gnomADe_AMR_AF",
+    "gnomADe_ASJ_AF",
+    "gnomADe_EAS_AF",
+    "gnomADe_FIN_AF",
+    "gnomADe_NFE_AF",
+    "gnomADe_OTH_AF",
+    "gnomADe_SAS_AF",
+    "n_depth",
+    "t_depth",
+    "t_ref_count",
+    "t_alt_count",
+    "vcf_id",
+    "vcf_pos",
+    "vcf_qual",
+    "Annotation_Status",
+    "Peptide",
+    "HLA_Allele",
+    "MHCflurry_2.1.1_affinity_nm",
+    "MHCflurry_2.1.1_presentation_score"
+]
+
 def validate_that_neoantigen_maf_ids_are_equal(
     input_df: pd.DataFrame, neoantigen_data_synid: pd.DataFrame, **kwargs
 ) -> None:
@@ -31,6 +152,21 @@ def validate_that_neoantigen_maf_ids_are_equal(
             "The Tumor_Sample_Barcode values in the maf data do not match the Sample_ID values in the neoantigen data."
         )
 
+def validate_that_required_columns_are_present(
+    input_df: pd.DataFrame, dataset_file_name : str, required_cols : list, **kwargs
+) -> None:
+    """Validate that required set of columns are present
+
+    Args:
+        input_df (pd.DataFrame): input dataset
+        dataset_file_name (str): name of the dataset file
+        required_cols (list): list of the required columns
+    """
+    logger = kwargs.get("logger", logging.getLogger(__name__))
+    if set(required_cols) != set(list(input_df.columns)):
+        missing_cols = set(required_cols) - set(list(input_df.columns))
+        logger.error(f"Missing required columns in {dataset_file_name}: {list(missing_cols)}")
+
 
 def get_all_files_to_validate(
     dataset_name: str, datahub_tools_path: str
@@ -49,6 +185,7 @@ def get_all_files_to_validate(
         dataset_name, datahub_tools_path
     )
     all_files = {}
+    # exclude the validator
     for file in utils.REQUIRED_OUTPUT_FILES:
         all_files[file] = pd.read_csv(os.path.join(dataset_dir, file), sep="\t")
     return all_files
@@ -122,6 +259,12 @@ def main():
     validate_that_neoantigen_maf_ids_are_equal(
         input_df=all_files["data_mutations.txt"],
         neoantigen_data_synid=args.neoantigen_data_synid,
+        logger=dataset_logger,
+    )
+    validate_that_required_columns_are_present(
+        input_df = all_files["data_mutations.txt"], 
+        dataset_file_name="data_mutations.txt",
+        required_cols = REQUIRED_MAF_COLS,
         logger=dataset_logger,
     )
     run_cbioportal_validator(

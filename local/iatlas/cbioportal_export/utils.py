@@ -19,7 +19,6 @@ REQUIRED_OUTPUT_FILES = [
     "meta_gene_signatures.txt",
     "data_rna_seq_mrna.txt",
     "meta_rna_seq_mrna.txt",
-    "cbioportal_validator_output.txt",
 ]
 
 

@@ -62,14 +62,14 @@ def save_to_synapse(
         break
 
     for dataset_folder in directories:
-        if dataset_name == dataset_folder[0]:
+        if dataset_folder[0] == "outputs":
             dataset_folder_exists = True
             dataset_folder_id = dataset_folder[1]
             break
 
     if not dataset_folder_exists:
         new_dataset_folder = synapseclient.Folder(
-            dataset_name, parent=output_folder_synid
+            "outputs", parent=output_folder_synid
         )
         dataset_folder_id = syn.store(new_dataset_folder).id
 
