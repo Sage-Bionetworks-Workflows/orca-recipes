@@ -17,8 +17,10 @@ import validate
         (["S1", "S2"], ["S1"], True),
         # IDs mismatch -> error
         (["S1"], ["S1", "S3"], True),
+        # IDs match -> no error
+        (["1", "2"], [1, 2], False),
     ],
-    ids=["ids_match", "less_neoantigen_samples", "more_neoantigen_samples"],
+    ids=["ids_match", "less_neoantigen_samples", "more_neoantigen_samples", "mismatch_dtypes"],
 )
 def test_that_merge_in_neoantigen_study_data_does_expected(
     input_samples, neo_samples, expect_error

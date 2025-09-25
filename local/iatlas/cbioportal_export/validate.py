@@ -144,7 +144,11 @@ def validate_that_neoantigen_maf_ids_are_equal(
     """
     logger = kwargs.get("logger", logging.getLogger(__name__))
     neoantigen_data = pd.read_csv(syn.get(neoantigen_data_synid).path, sep="\t")
+    
+    # set both to string to standardize
     neoantigen_data["Sample_ID"] = neoantigen_data["Sample_ID"].astype(str)
+    input_df["Tumor_Sample_Barcode"] = input_df["Tumor_Sample_Barcode"].astype(str)
+    
     if set(input_df["Tumor_Sample_Barcode"].unique()) != set(
         neoantigen_data["Sample_ID"].unique()
     ):
