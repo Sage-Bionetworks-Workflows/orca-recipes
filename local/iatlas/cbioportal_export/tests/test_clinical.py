@@ -1,7 +1,7 @@
-# test_clinical_pipeline.py
 import csv
 import os
 import tempfile
+from types import SimpleNamespace
 from unittest import mock
 from unittest.mock import MagicMock, patch
 
@@ -10,12 +10,94 @@ import pandas as pd
 from pandas.testing import assert_frame_equal
 import pytest
 
-import clinical_to_cbioportal as cli_to_cbio
+import clinical as cli_to_cbio
 
 
 @pytest.fixture
 def syn_mock():
     return mock.create_autospec(cli_to_cbio.syn)
+
+
+@pytest.mark.parametrize(
+    "input_samples, neo_samples, expect_error",
+    [
+        # No new rows after merge → no error
+        (["S1", "S2"], ["S1", "S2"], False),
+        # No new rows after merge → no error
+        (["S1", "S2"], ["S1"], False),
+        # New sample appears only in neo data → error
+        (["S1"], ["S1", "S3"], True),
+    ],
+    ids=["merge_correct", "less_neoantigen_samples", "more_neoantigen_samples"],
+)
+def test_that_merge_in_neoantigen_study_data_does_expected(
+    input_samples, neo_samples, expect_error
+):
+    input_df = pd.DataFrame(
+        {"SAMPLE_ID": input_samples, "foo": range(len(input_samples))}
+    )
+
+    with mock.patch.object(
+        cli_to_cbio.syn, "get", return_value=SimpleNamespace(path="dummy.tsv")
+    ), mock.patch.object(
+        pd,
+        "read_csv",
+        return_value=pd.DataFrame(
+            {"Sample_ID": neo_samples, "SNV": list(range(len(neo_samples)))}
+        ),
+    ):
+        # Use a mock logger so we can assert .error calls directly
+        mock_logger = mock.Mock()
+        cli_to_cbio.merge_in_neoantigen_study_data(
+            input_df, neoantigen_data_synid="synZZZZ", logger=mock_logger
+        )
+        # Logger behavior
+        if expect_error:
+            mock_logger.error.assert_called_with(
+                "There are more rows in the clinical data after merging in the neoantigen data."
+            )
+        else:
+            mock_logger.error.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "sample_id,dataset,expected_keep",
+    [
+        ("ABC-nd-001", "Anders_JITC_2022", False),  # excluded by -nd-
+        ("ABC-ad-001", "Anders_JITC_2022", False),  # excluded by -ad-
+        ("ABC-nr-001", "Anders_JITC_2022", False),  # excluded by -nr-
+        ("ABC-ar-001", "Anders_JITC_2022", True),  # allowed
+        ("plain", "Anders_JITC_2022", True),  # allowed
+        ("ABC-ND-001", "Anders_JITC_2022", True),  # case-sensitive: not excluded
+        ("ABC-ad-001", "Other_Dataset", True),  # non-Anders dataset => kept
+        ("plain", "Other_Dataset", True),  # non-Anders dataset => kept
+    ],
+)
+def test_that_filter_out_non_analyses_samples_filters_correctly(
+    sample_id, dataset, expected_keep
+):
+    df = pd.DataFrame({"SAMPLE_ID": [sample_id], "Dataset": [dataset]})
+    out = cli_to_cbio.filter_out_non_analyses_samples(df)
+
+    assert (len(out) == 1) == expected_keep
+
+    if expected_keep:
+        pd.testing.assert_frame_equal(
+            out.reset_index(drop=True), df.reset_index(drop=True)
+        )
+    else:
+        assert out.empty
+
+
+def test_that_filter_out_non_analyses_samples_filters_correctly_with_nas():
+    df = pd.DataFrame(
+        {
+            "SAMPLE_ID": ["plain", np.nan],
+            "Dataset": ["Anders_JITC_2022", "Anders_JITC_2022"],
+        }
+    )
+    out = cli_to_cbio.filter_out_non_analyses_samples(df)
+    pd.testing.assert_frame_equal(out.reset_index(drop=True), df.reset_index(drop=True))
 
 
 @pytest.mark.parametrize(
@@ -205,21 +287,38 @@ def test_that_add_lens_id_as_sample_display_name_returns_expected_with_error_log
     assert_frame_equal(result_df, expected_df)
 
 
-def test_that_add_lens_id_as_sample_display_name_returns_expected_if_no_missing():
-    input_df = pd.DataFrame({"SAMPLE_ID": ["sample1", "sample2"]})
-    lens_mapping = pd.DataFrame(
-        {"study_sample_name": ["sample1", "sample2"], "lens_id": ["lens1", "lens2"]}
-    )
-    expected_df = pd.DataFrame(
-        {"SAMPLE_ID": ["sample1", "sample2"], "SAMPLE_DISPLAY_NAME": ["lens1", "lens2"]}
-    )
-
+@pytest.mark.parametrize(
+    "lens_map,expected",
+    [
+        (
+            pd.DataFrame(
+                {"study_sample_name": ["101", "102"], "lens_id": ["lens1", "lens2"]}
+            ),
+            pd.DataFrame(
+                {"SAMPLE_ID": ["101", "102"], "SAMPLE_DISPLAY_NAME": ["lens1", "lens2"]}
+            ),
+        ),
+        (
+            pd.DataFrame(
+                {"study_sample_name": [101, 102], "lens_id": ["lens1", "lens2"]}
+            ),
+            pd.DataFrame(
+                {"SAMPLE_ID": ["101", "102"], "SAMPLE_DISPLAY_NAME": ["lens1", "lens2"]}
+            ),
+        ),
+    ],
+    ids=["normal", "numeric_sample_name_vals"],
+)
+def test_that_add_lens_id_as_sample_display_name_returns_expected_if_no_missing(
+    lens_map, expected
+):
+    input = pd.DataFrame({"SAMPLE_ID": ["101", "102"]})
     mock_logger = MagicMock()
     result_df = cli_to_cbio.add_lens_id_as_sample_display_name(
-        input_df, lens_mapping, logger=mock_logger
+        input, lens_map, logger=mock_logger
     )
     mock_logger.error.assert_not_called()
-    assert_frame_equal(result_df, expected_df)
+    assert_frame_equal(result_df, expected)
 
 
 @pytest.fixture
@@ -483,3 +582,36 @@ def test_that_remap_column_values_returns_expected(input_df, expected_os, expect
     result = cli_to_cbio.remap_column_values(input_df)
     np.testing.assert_equal(result["OS_STATUS"].tolist(), expected_os)
     np.testing.assert_equal(result["PFS_STATUS"].tolist(), expected_pfs)
+
+
+def test_that_rename_files_on_disk_removes_metadata_suffix(tmp_path):
+    # Arrange: create a dummy file with .metadata
+    original = tmp_path / "sample.txt.metadata"
+    original.write_text("dummy content")
+    expected = tmp_path / "sample.txt"
+
+    cli_to_cbio.rename_files_on_disk(str(original))
+
+    assert (
+        not original.exists()
+        and expected.exists()
+        and expected.read_text() == "dummy content"
+    )
+
+
+def test_that_rename_files_on_disk_overwrites_existing_file(tmp_path):
+    # Arrange: create two files: target and metadata
+    existing = tmp_path / "sample.txt"
+    existing.write_text("old content")
+
+    original = tmp_path / "sample.txt.metadata"
+    original.write_text("new content")
+
+    # Act: should overwrite existing file
+    cli_to_cbio.rename_files_on_disk(str(original))
+
+    assert (
+        not original.exists()
+        and existing.exists()
+        and existing.read_text() == "new content"
+    )

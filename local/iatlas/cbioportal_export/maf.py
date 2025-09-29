@@ -7,7 +7,6 @@ from typing import Dict
 
 import pandas as pd
 import synapseclient
-import synapseutils
 
 import utils
 
@@ -310,58 +309,6 @@ def postprocessing(input_df: pd.DataFrame) -> pd.DataFrame:
     return annotated_maf
 
 
-def save_to_synapse(
-    dataset_name: str,
-    datahub_tools_path: str,
-    output_folder_synid: str,
-    version_comment: str = None,
-) -> None:
-    """Saves the dataset's annotated maf file and error report file
-        to synapse
-
-    Args:
-        dataset_name (str): name of the iatlas dataset to save to
-            synapse
-        datahub_tools_path (str): Path to the datahub tools repo
-        output_folder_synid (str): Synapse id of the output folder
-        version_comment (str): Version comment for this iteration of files on synapse. Optional.
-            Defaults to None.
-    """
-    dataset_dir = os.path.join(datahub_tools_path, "add-clinical-header", dataset_name)
-    # see if dataset_folder exists
-    dataset_folder_exists = False
-    for _, directory_names, _ in synapseutils.walk(syn=syn, synId=output_folder_synid):
-        directories = directory_names  # top level directories
-        break
-
-    for dataset_folder in directories:
-        if dataset_name == dataset_folder[0]:
-            dataset_folder_exists = True
-            dataset_folder_id = dataset_folder[1]
-            break
-
-    if not dataset_folder_exists:
-        new_dataset_folder = synapseclient.Folder(
-            dataset_name, parent=output_folder_synid
-        )
-        dataset_folder_id = syn.store(new_dataset_folder).id
-
-    syn.store(
-        synapseclient.File(
-            f"{dataset_dir}/data_mutations.txt",
-            parent=dataset_folder_id,
-            version_comment=version_comment,
-        )
-    )
-    syn.store(
-        synapseclient.File(
-            f"{dataset_dir}/data_mutations_error_report.txt",
-            parent=dataset_folder_id,
-            version_comment=version_comment,
-        )
-    )
-
-
 def generate_meta_files(dataset_name: str, datahub_tools_path: str) -> None:
     """Generates the meta* files for the given dataset
 
@@ -469,11 +416,6 @@ def main():
         default=40000,
     )
     parser.add_argument(
-        "--output_folder_synid",
-        type=str,
-        help="Synapse id for output folder to store the export files",
-    )
-    parser.add_argument(
         "--datahub_tools_path",
         type=str,
         help="Path to datahub-study-curation-tools repo",
@@ -485,32 +427,21 @@ def main():
         help="Number of worker processes to run genome nexus in parallel. Optional. Defaults to 3.",
     )
     parser.add_argument(
-        "--dry_run",
-        action="store_true",
-        default=False,
-        help="Whether to run without saving to Synapse",
-    )
-    parser.add_argument(
         "--clear_workspace",
         action="store_true",
         default=False,
         help="Whether to clear local directory of files or not",
     )
-    parser.add_argument(
-        "--version_comment",
-        default=None,
-        type=str,
-        help="Version comment for the files on Synapse. Optional. Defaults to None.",
-    )
-
+    
     args = parser.parse_args()
     if args.clear_workspace:
         utils.clear_workspace(dir_path=f"{args.datahub_tools_path}/add-clinical-header")
-
+    dataset_flagger = utils.ErrorFlagHandler()
     dataset_logger = utils.create_logger(
         dataset_name=args.dataset,
         datahub_tools_path=args.datahub_tools_path,
         log_file_name="iatlas_maf_validation_log.txt",
+        flagger=dataset_flagger
     )
     maf_df = read_and_merge_maf_files(input_folder_synid=args.input_folder_synid)
     n_maf_chunks = split_into_chunks(
@@ -540,13 +471,8 @@ def main():
     generate_meta_files(
         dataset_name=args.dataset, datahub_tools_path=args.datahub_tools_path
     )
-    if not args.dry_run:
-        save_to_synapse(
-            dataset_name=args.dataset,
-            datahub_tools_path=args.datahub_tools_path,
-            output_folder_synid=args.output_folder_synid,
-            version_comment=args.version_comment,
-        )
+    if dataset_flagger.had_error:
+        dataset_logger.error("FAILED: Validation of study failed")
 
 
 if __name__ == "__main__":

@@ -2,12 +2,68 @@ import logging
 import os
 import shutil
 import sys
+import typing
 
 import pandas as pd
+import synapseclient
+
+
+REQUIRED_OUTPUT_FILES = [
+    "data_clinical_patient.txt",
+    "data_clinical_sample.txt",
+    "meta_clinical_patient.txt",
+    "meta_clinical_sample.txt",
+    "data_mutations.txt",
+    "meta_mutations.txt",
+    "data_gene_signatures.txt",
+    "meta_gene_signatures.txt",
+    "data_rna_seq_mrna.txt",
+    "meta_rna_seq_mrna.txt",
+    "cbioportal_validator_output.txt",
+]
+
+
+def synapse_login(debug: typing.Optional[bool] = False) -> synapseclient.Synapse:
+    """
+    Logs into Synapse if credentials are saved.
+    If not saved, then user is prompted username and auth token.
+
+    Args:
+        debug: Synapse debug feature. Defaults to False
+
+    Returns:
+        Synapseclient object
+    """
+    # If debug is True, then silent should be False
+    silent = False if debug else True
+    syn = synapseclient.Synapse(
+        debug=debug, silent=silent, user_agent=f"iatlas-cbioportal/0.0.0"
+    )
+    try:
+        syn.login()
+    except Exception as ex:
+        raise ValueError(
+            "Please view https://help.synapse.org/docs/Client-Configuration.1985446156.html"
+            "to configure authentication to the client.  Configure a ~/.synapseConfig"
+            "or set the SYNAPSE_AUTH_TOKEN environmental variable."
+        ) from ex
+    return syn
+
+
+class ErrorFlagHandler(logging.Handler):
+    def __init__(self):
+        super().__init__(level=logging.ERROR)
+        self.had_error = False
+
+    def emit(self, record):
+        self.had_error = True
 
 
 def create_logger(
-    dataset_name: str, datahub_tools_path: str, log_file_name: str
+    dataset_name: str,
+    datahub_tools_path: str,
+    log_file_name: str,
+    flagger: logging.Handler = None,
 ) -> logging.Logger:
     """This creates a logger for the current dataset and process
 
@@ -15,12 +71,15 @@ def create_logger(
         dataset_name (str): Name of the dataset
         datahub_tools_path (str): Path to the datahub tools path repo
         log_file_name (str): Name of the log file
+        flagger (logging.Handler): The error handler for the logger
 
     Returns:
         logging.Logger: logger for use in the processing functions
     """
     if dataset_name:
-        dataset_dir = get_local_dataset_output_folder_path(dataset_name, datahub_tools_path)
+        dataset_dir = get_local_dataset_output_folder_path(
+            dataset_name, datahub_tools_path
+        )
     else:
         dataset_dir = datahub_tools_path
     logger = logging.getLogger()
@@ -30,15 +89,16 @@ def create_logger(
     stdout_handler.setLevel(logging.INFO)
     stdout_handler.setFormatter(logging.Formatter("%(levelname)s: %(message)s"))
 
-    file_handler = logging.FileHandler(
-        f"{dataset_dir}/{log_file_name}", mode="w"
-    )
+    file_handler = logging.FileHandler(f"{dataset_dir}/{log_file_name}", mode="w")
     file_handler.setLevel(logging.INFO)
     file_handler.setFormatter(
         logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
     )
 
     logger.handlers = [stdout_handler, file_handler]
+    if flagger:
+        logger.addHandler(flagger)
+    logger.info(f"Log file saved to: {dataset_dir}/{log_file_name}")
     return logger
 
 
