@@ -552,6 +552,7 @@ def als_kp_dataset_dag():
                 "species": ", ".join(item["species"]) if isinstance(item["species"], list) else item["species"],
                 "sameAs": item["sameAs"],
                 "url": item["url"],
+                "contributor": item["contributor"] if isinstance(item["contributor"], list) else [item["collection"]]
             })
 
             # Store as new version
@@ -597,6 +598,7 @@ def als_kp_dataset_dag():
                     "sameAs": [item["sameAs"]],
                     "url": [item["url"]],
                     "title": item["title"],
+                    "contributor": item["contributor"] if isinstance(item["contributor"], list) else [item["collection"]]
                 }
                 # Create new dataset
                 dataset = Dataset(
@@ -674,6 +676,7 @@ def als_kp_dataset_dag():
                 "sameAs": dataset.annotations.get("sameAs", ""),
                 "source": dataset.annotations.get("source", "Critical Path Institute"),
                 "url": dataset.annotations.get("url", ""),
+                "contributor": dataset.annotations.get("contributor")
             }
 
             updated_rows.append(updated_row)
