@@ -28,7 +28,6 @@ from orca.services.synapse import SynapseHook
 
 from airflow.decorators import task, dag
 from airflow.models import Variable, Param
-from slack_sdk import WebClient
 
 
 dag_params = {
