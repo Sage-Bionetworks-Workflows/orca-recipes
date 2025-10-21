@@ -76,11 +76,14 @@ x-airflow-common:
     AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
     AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
     AWS_SESSION_TOKEN: ${AWS_SESSION_TOKEN:-}
+    # Add src/ to PYTHONPATH so modules can be imported directly
+    PYTHONPATH: /opt/airflow/src:${PYTHONPATH:-}
   volumes:
     - ${AIRFLOW_PROJ_DIR:-.}/dags:/opt/airflow/dags
     - ${AIRFLOW_PROJ_DIR:-.}/logs:/opt/airflow/logs
     - ${AIRFLOW_PROJ_DIR:-.}/plugins:/opt/airflow/plugins
     - ${AIRFLOW_PROJ_DIR:-.}/config/airflow.cfg:/opt/airflow/airflow.cfg #mounts airflow.cfg
+    - ${AIRFLOW_PROJ_DIR:-.}/src:/opt/airflow/src #mounts src/ for custom modules
   user: "${AIRFLOW_UID:-50000}:0"
   depends_on:
     &airflow-common-depends-on
