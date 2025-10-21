@@ -1,3 +1,6 @@
 fs-synapse >=2.0,<3.0
 s3fs ~=2023.5
 metaflow ~=2.9
+pytest ~=8.0
+pytest-mock ~=3.0
+requests ~=2.31
