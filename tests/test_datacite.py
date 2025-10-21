@@ -895,8 +895,7 @@ class TestWriteNdjsonGz:
             # Parent dirs don't exist yet
             assert not os.path.exists(os.path.dirname(nested_path))
             
-            # This should work thanks to gzip.open creating directories
-            # Actually, gzip.open doesn't create dirs, so we need to handle this
+            # gzip.open doesn't create dirs, so we need to handle this
             # Let's test that it raises if parent doesn't exist
             with pytest.raises(FileNotFoundError):
                 write_ndjson_gz([{"test": "data"}], nested_path)
