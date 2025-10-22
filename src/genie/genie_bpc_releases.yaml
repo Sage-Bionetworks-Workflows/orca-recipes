@@ -1,0 +1,151 @@
+# Valid Public Releases 
+- cohort: nsclc
+  version: public_02_2
+  clinical_synid: syn30358089
+  cbioportal_synid: syn30358098
+
+- cohort: crc
+  version: public_02_2
+  clinical_synid: syn39802567
+  cbioportal_synid: syn39802595
+
+# Valid Consortium Releases + Public Previews
+- cohort: bladder
+  version: consortium_01_1
+  clinical_synid: syn28495599
+  cbioportal_synid: syn26958249
+
+- cohort: bladder
+  version: consortium_01_2
+  clinical_synid: syn53018574
+  cbioportal_synid: syn53018728
+
+- cohort: brca
+  version: public_preview_01_0
+  clinical_synid: syn53507114
+  cbioportal_synid: null
+
+- cohort: brca
+  version: consortium_01_1
+  clinical_synid: syn26253353
+  cbioportal_synid: syn24981909
+
+- cohort: brca
+  version: consortium_01_2
+  clinical_synid: syn39802381
+  cbioportal_synid: syn32299078
+
+- cohort: crc
+  version: consortium_01_1
+  clinical_synid: syn24166685
+  cbioportal_synid: syn23561876
+
+- cohort: crc
+  version: consortium_01_2
+  clinical_synid: syn26046784
+  cbioportal_synid: syn25998993
+
+- cohort: crc
+  version: consortium_01_3
+  clinical_synid: syn53463635
+  cbioportal_synid: syn53463570
+
+- cohort: crc
+  version: consortium_03_1
+  clinical_synid: syn64370000
+  cbioportal_synid: syn64432566
+
+- cohort: crc
+  version: public_preview_02_0
+  clinical_synid: syn30421431
+  cbioportal_synid: syn30381296
+
+- cohort: crc2
+  version: consortium_01_1
+  clinical_synid: syn39802279
+  cbioportal_synid: syn30421596
+
+- cohort: esophago
+  version: consortium_01_1
+  clinical_synid: syn30421697
+  cbioportal_synid: syn30421694
+
+- cohort: melanoma
+  version: consortium_01_1
+  clinical_synid: syn30421715
+  cbioportal_synid: syn30421713
+
+- cohort: nsclc
+  version: consortium_01_1
+  clinical_synid: syn22418966
+  cbioportal_synid: syn22679734
+
+- cohort: nsclc
+  version: public_preview_02_0
+  clinical_synid: syn27245047
+  cbioportal_synid: syn27199149
+
+- cohort: nsclc
+  version: consortium_02_1
+  clinical_synid: syn25982471
+  cbioportal_synid: syn25471745
+
+- cohort: nsclc
+  version: consortium_02_2
+  clinical_synid: syn53463552
+  cbioportal_synid: syn53463494
+
+- cohort: nsclc
+  version: consortium_03_1
+  clinical_synid: syn54107384
+  cbioportal_synid: syn58597692
+
+- cohort: nsclc
+  version: consortium_03_1
+  clinical_synid: syn54107384
+  cbioportal_synid: syn58597692
+
+- cohort: nsclc2
+  version: consortium_01_1
+  clinical_synid: syn30421800
+  cbioportal_synid: syn30421797
+
+- cohort: ovarian
+  version: consortium_01_1
+  clinical_synid: syn30421806
+  cbioportal_synid: syn30421803
+
+- cohort: panc
+  version: consortium_01_1
+  clinical_synid: syn27244194
+  cbioportal_synid: syn26288998
+
+- cohort: panc
+  version: consortium_01_2
+  clinical_synid: syn50612197
+  cbioportal_synid: syn50697830
+
+- cohort: panc
+  version: public_preview_01_0
+  clinical_synid: syn57406936
+  cbioportal_synid: syn53433359
+
+- cohort: prostate
+  version: consortium_01_1
+  clinical_synid: syn28495574
+  cbioportal_synid: syn26471041
+
+- cohort: prostate
+  version: consortium_01_2
+  clinical_synid: syn50612196
+  cbioportal_synid: syn50697637
+
+- cohort: prostate
+  version: public_preview_01_0
+  clinical_synid: syn53507066
+  cbioportal_synid: null
+
+- cohort: renal
+  version: consortium_01_1
+  clinical_synid: syn30421812
+  cbioportal_synid: syn30421809
