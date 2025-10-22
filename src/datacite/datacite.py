@@ -61,10 +61,14 @@ Notes:
 """
 import gzip
 import json
+import logging
 import time
 from typing import Iterable, Dict, Any, Optional, List
 
 import requests
+
+# Configure module logger
+logger = logging.getLogger(__name__)
 
 DATACITE_API = "https://api.datacite.org/dois"
 
@@ -106,12 +110,16 @@ def _make_request_with_retry(
     params: Dict[str, Any],
     timeout: int = 60,
     initial_backoff: int = 2,
-    max_backoff: int = 60,
+    max_retries: int = 10
 ) -> requests.Response:
     """Make HTTP GET request with exponential backoff for retryable errors.
 
     Automatically retries requests on rate limiting (429) and server errors
-    (500, 502, 503, 504) using exponential backoff strategy.
+    (500, 502, 503, 504) using exponential backoff strategy. With default
+    parameter values `timeout`=60, `initial_backoff`=2, and `max_retries`=10,
+    the function will retry up to 10 times with exponential backoff (2, 4, 8, 16,
+    32, 64, 128, 256, 512, 1024 seconds), potentially taking up to ~34 minutes
+    in the worst case.
 
     Args:
         session: Requests session object for making HTTP calls.
@@ -119,7 +127,8 @@ def _make_request_with_retry(
         params: Query parameters to include in the request.
         timeout: Request timeout in seconds. Defaults to 60.
         initial_backoff: Initial backoff delay in seconds. Defaults to 2.
-        max_backoff: Maximum backoff delay in seconds. Defaults to 60.
+        max_retries: The maximum number of times to retry the request in
+            case of a retryable HTTP error code.
 
     Returns:
         Successful HTTP response object with status code 200.
@@ -128,14 +137,30 @@ def _make_request_with_retry(
         requests.HTTPError: For non-retryable HTTP errors (e.g., 400, 401, 404).
     """
     backoff = initial_backoff
+    retries = 0
+    
     while True:
         resp = session.get(url, params=params, timeout=timeout)
-        if resp.status_code == 200:
+        logger.debug(f"API request: {resp.url}")
+        if resp.ok:
+            logger.debug(f"Request successful on attempt {retries + 1}")
             return resp
         if resp.status_code in (429, 500, 502, 503, 504):
+            if retries >= max_retries:
+                logger.error(
+                    f"Max retries ({max_retries}) exceeded for {url}. "
+                    f"Last status: {resp.status_code}"
+                )
+                resp.raise_for_status()
+            logger.warning(
+                f"Retryable error {resp.status_code} on attempt {retries + 1}. "
+                f"Retrying in {backoff} seconds (retry {retries + 1}/{max_retries})"
+            )
             time.sleep(backoff)
-            backoff = min(backoff * 2, max_backoff)
+            backoff = backoff * 2
+            retries += 1
             continue
+        logger.error(f"Non-retryable error {resp.status_code} for {url}")
         resp.raise_for_status()
 
 
@@ -195,6 +220,36 @@ def _serialize_to_ndjson(obj: Dict[str, Any]) -> bytes:
     return line.encode("utf-8") + b"\n"
 
 
+def _validate_fetch_params(page_size: int, state: str) -> None:
+    """Validate fetch parameters are within acceptable bounds.
+
+    Args:
+        page_size: Number of results to return per page.
+        state: DOI state to filter by.
+
+    Raises:
+        ValueError: If page_size is less than 1 or greater than 1000,
+                   or if state is not one of the valid values.
+    """
+    # Validate page_size
+    if page_size < 1:
+        logger.error(f"Invalid page_size={page_size}, must be at least 1")
+        raise ValueError("page_size must be at least 1")
+    if page_size > 1000:
+        logger.error(f"Invalid page_size={page_size}, cannot exceed 1000")
+        raise ValueError("page_size cannot exceed 1000 (DataCite API maximum)")
+    
+    # Validate state
+    valid_states = ["findable", "registered", "draft"]
+    if state not in valid_states:
+        logger.error(
+            f"Invalid state='{state}', must be one of {valid_states}"
+        )
+        raise ValueError(
+            f"state must be one of {valid_states}, got '{state}'"
+        )
+
+
 def fetch_doi_page(
     session: requests.Session,
     prefixes: List[str],
@@ -218,11 +273,22 @@ def fetch_doi_page(
         of DOI objects and pagination metadata.
 
     Raises:
+        ValueError: If page_size is less than 1 or greater than 1000,
+                   or if state is not a valid DOI state.
         requests.HTTPError: If the API request fails with non-retryable error.
     """
+    _validate_fetch_params(page_size, state)
+    
+    logger.debug(
+        f"Fetching page {page_number} with page_size={page_size}, "
+        f"prefixes={prefixes}, state={state}"
+    )
     params = _build_query_params(prefixes, state, page_size, page_number, detail)
     resp = _make_request_with_retry(session, DATACITE_API, params)
-    return resp.json()
+    result = resp.json()
+    data_count = len(result.get("data", []))
+    logger.info(f"Fetched page {page_number}: {data_count} DOI records")
+    return result
 
 
 def fetch_doi(
@@ -251,17 +317,27 @@ def fetch_doi(
         Individual DOI objects as dictionaries, one at a time from all pages.
 
     Raises:
+        ValueError: If page_size is less than 1 or greater than 1000,
+                   or if state is not a valid DOI state.
         requests.HTTPError: If any API request fails with non-retryable error.
 
     Example:
         >>> for doi in fetch_doi(["10.7303"], user_agent_mailto="user@example.com"):
         ...     print(doi["id"])
     """
+    _validate_fetch_params(page_size, state)
+    
+    logger.info(
+        f"Starting DOI fetch: prefixes={prefixes}, state={state}, "
+        f"page_size={page_size}, start_page={start_page}"
+    )
     headers = _build_user_agent_headers(user_agent_mailto)
 
+    total_dois = 0
     with requests.Session() as s:
         if headers:
             s.headers.update(headers)
+            logger.debug(f"Using User-Agent with mailto: {user_agent_mailto}")
 
         page_number = start_page
         while True:
@@ -274,11 +350,17 @@ def fetch_doi(
                 detail=detail,
             )
             data = payload.get("data", [])
-            if not data:
-                break
-            yield from data
+
+            if data:
+                total_dois += len(data) 
+                yield from data
+            
             # Stop when we returned a short page
             if not _should_continue_pagination(data, page_size):
+                logger.info(
+                    f"Pagination complete: fetched {total_dois} total DOIs across "
+                    f"{page_number - start_page + 1} pages"
+                )
                 break
             page_number += 1
 
@@ -302,10 +384,17 @@ def write_ndjson_gz(objs: Iterable[Dict[str, Any]], out_path: str) -> int:
         >>> print(f"Wrote {count} objects")
         Wrote 2 objects
     """
+    logger.info(f"Writing DOI objects to {out_path}")
     count = 0
+    log_interval = 1000  # Log progress every 1000 objects
+    
     # Stream to gzip without holding all in memory
     with gzip.open(out_path, "wb") as gz:
         for obj in objs:
             gz.write(_serialize_to_ndjson(obj))
             count += 1
+            if count % log_interval == 0:
+                logger.debug(f"Written {count} objects so far...")
+    
+    logger.info(f"Successfully wrote {count} DOI objects to {out_path}")
     return count
