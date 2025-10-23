@@ -17,20 +17,6 @@ from unittest.mock import Mock, MagicMock, patch, call
 import pytest
 import requests
 
-# Import fixtures
-from tests.fixtures.datacite_fixtures import (
-    base_doi_attributes,
-    base_doi_relationships,
-    sample_doi_object,
-    sample_doi_objects,
-    mock_api_response_full_page,
-    mock_api_response_partial_page,
-    mock_api_response_empty,
-    prefixes,
-    multiple_prefixes,
-    create_mock_response,
-)
-
 # Import functions to test
 from src.datacite.datacite import (
     _build_query_params,
