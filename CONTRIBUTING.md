@@ -1,25 +1,123 @@
 # Contribution Guidelines
 
-## Infrastructure
-
-We have both dev and prod Airflow servers, although the dev server is not always running and there may not be feature parity between dev and prod (e.g., not all prod secrets have analogues in dev):
-
-* `airflow-dev`: Hosted in the `dnt-dev` AWS account.
-* `airflow-prod`: Hosted in the `dpe-prod` AWS account. Deployed using OpenTofu. Only accessible via [port forwarding](https://kubernetes.io/docs/tasks/access-application-cluster/port-forward-access-application-cluster/#forward-a-local-port-to-a-port-on-the-pod).
-	* Deployed from the `main` branch in this repository.
-
-Please see [Connecting to AWS EKS](https://sagebionetworks.jira.com/wiki/spaces/DPE/pages/3389325317/Connecting+to+AWS+EKS+Kubernetes+K8s+cluster) on Confluence if you want to interface with the EKS/Kubernetes cluster. Otherwise, for local development you will likely only be interested in using AWS Secrets Manager as a backend for Airflow Secrets.
-
-There is a helper script in this repository for accessing this Airflow server.
-
 ## Development
 
-See the [README](./README.md) for instructions on how to set up the development environment.
+### Environment
+
+The development environment breaks down into two categories: Infrastructure and Code. This is because the repo contains both:
+
+* Airflow DAG **code** (the workflows), which need appropriate Python environments.
+* Configuration files which construct the services that make up Airflow (the **infrastructure** which these workflows run upon).
+
+#### Infrastructure
+
+The Airflow infrastructure is containerized and orchestrated using Docker Compose for local development. See the [README](./README.md) for instructions on how to set up the development environment. The following files define and configure the Airflow environment:
+
+##### Core Infrastructure Files
+
+* `docker-compose.yaml` - Orchestrates the multi-container Airflow setup, including:
+   * Airflow webserver, scheduler, and workers
+   * PostgreSQL database (metadata storage)
+   * Redis (message broker for CeleryExecutor)
+   * Container networking, volumes, and health checks
+
+* `Dockerfile` - Builds the custom Airflow Docker image:
+   * All Python DAGs run within this environment 
+
+* `config/airflow.cfg` - Airflow configuration file that controls:
+   * Scheduler behavior and intervals
+   * Executor settings (CeleryExecutor)
+   * Secrets backend configuration (AWS Secrets Manager)
+   * Logging, security, and other operational settings
+
+##### Development Environment Files
+
+* `.devcontainer/devcontainer.json` - VS Code Dev Container configuration for GitHub Codespaces and local development:
+   * Configures the development environment, defines VS Code extensions to install, and sets up port forwarding and environment variables.
+
+* `.env.example` - Template for environment variables used by Docker Compose:
+   * Note that this is not necessarily the preferred way to pass runtime configuration settings
+   * Can include Airflow connection strings, AWS credentials for secrets backend, etc.
+
+When making changes to infrastructure files (Dockerfile, docker-compose.yaml, config files), you'll need to rebuild the containers to see your changes take effect. (See code example in "Integration Testing" section).
+
+#### Code
+
+Python dependencies are managed in requirement files.
+
+Any python packages needed for DAG tasks or the DAGs themselves belongs in [requirements-airflow.txt](./requirements-airflow.txt).
+
+Any python packages needed for development, including running tests, belongs in [requirements-dev.txt](./requirements-dev.txt).
+
+### Structure
+
+We have structured this repo such that DAG _task_ logic ought to be separate from DAG logic. This makes testing of DAGs as a whole easier, since we can separately test task logic and DAG logic. This breaks down into three directories:
+
+- `src/` - This is where DAG task logic belongs. Code is organized as packages that can be imported by DAGs as needed.
+- `dags/` - This is where DAG logic belongs.
+- `tests/` - Unit tests for both the DAG task logic (packages in `src/`) and the DAGs themselves (`dags/`) belongs here. See the "Testing" Section below for more information.
+
+There is one additional directory where workflows can be found, although it is not part of the current framework for managing DAGs and their task logic.
+
+- `local/` - (DEPRECATED). Project-specific scripts and utilities.
+
+### Testing
+
+Testing breaks down into two categories: formal testing via unit tests and relatively informal testing via integration tests.
+
+#### Unit Testing
+
+Unit tests can be found in `tests/`. We use `pytest` as part of a Github actions workflow to automatically run tests when new commits are pushed to a branch. Tests can also be run locally, provided you are working in the appropriate development environment (See [README.md](./README.md) for instruction on how to set up the dev environment).
+
+```
+python -m pytest tests/ -v --tb=short
+```
+
+Because of the wide variety of use-cases which this repo supports, we further divide tests into subdirectories within `tests/` depending on their domain. For example, the `tests/datacite/` directory contains tests for everything in the `src/datacite/` directory. 
+
+DAG unit tests belong in the `tests/dags/` directory. Unlike DAG task logic, which is much more diverse, DAG logic is homogenous enough that we can organize all DAG unit tests in a single directory.  
+
+You are welcome to write tests in any form which `pytest` supports, although it is recommended that you make use of fixtures to keep tests easy to maintain and organize unit tests into classes for ease of testing.
+
+The below directory structure demonstrates a typical way to keep things organized:
+```
+tests/
+├── mypackage/
+│   ├── __init__.py           # Package marker
+│   ├── conftest.py           # Pytest fixtures (auto-discovered)
+│   └── test_mypackage.py     # Test suite
+├── dags/
+│   ├── __init__.py           # Package marker
+│   └── test_mydag.py         # Test suite
+```
+
+#### Integration Testing
+
+Presently, integration testing means triggering your DAG in Airflow and manually inspecting the results. See the [README.md](README.md) on how to deploy and connect to Airflow.
+
+##### DAG Set Up
 
 Any edits to your DAG should automatically be picked up by the Airflow scheduler/webserver after a short time interval (see `scheduler.min_file_process_interval` in [airflow.cfg](config/airflow.cfg)). New DAGs are picked up by the scheduler/webserver according to a different interval (see `scheduler.dag_dir_list_interval`). You can force a "hard refresh" by restarting the containers:
 
 ```console
 docker compose restart
+```
+
+##### DAG Testing
+
+Integration testing can be performed by triggering a DAG via the Airflow command-line or web UI. Note that for testing of the DAGs directly on Airflow locally via Dev Containers, it's best to leave the DAG **unpaused** when triggering the DAG with various updates, otherwise you might be triggering the DAG twice and/or triggering it in its original state that had its parameters set to production mode.
+
+> [!NOTE]
+> Some DAGs use runtime configuration in the form of Params or Connections and Secrets. It's not always well-documented in the DAG itself how the runtime configuration is set up, so if your DAG uses runtime configuration, yet it's not clear how these values are passed through to the DAG itself, it's generally better to test the DAG in GitHub Codespaces. 
+
+Logs can be inspected with docker compose:
+```console
+# All logs
+docker compose logs -f
+
+# Logs for a specific service(s)
+docker compose ps --services
+docker compose logs -f airflow-webserver airflow-scheduler
 ```
 
 If you edit `Dockerfile`, `docker-compose.yaml`, `requirements-*.txt`, or configuration files, or otherwise want to redo the build process, rebuild the containers:
@@ -32,19 +130,17 @@ docker compose up --build --detach
 # docker compose up --no-cache --build --detach 
 ```
 
-## Testing
+## Deployment Infrastructure
 
-Testing should be done via the Dev Containers setup online using GitHub Codespaces. Note that for testing of the DAGs directly on Airflow locally via Dev Containers, it's best to leave the DAG **unpaused** when triggering the DAG with various updates, otherwise you might be triggering the DAG twice and/or triggering it in its original state that had its parameters set to production mode.
+We have both dev and prod Airflow servers, although the dev server is not always running and there may not be feature parity between dev and prod (e.g., not all prod secrets have analogues in dev):
 
-Logs can be inspected with docker compose:
-```console
-# All logs
-docker compose logs -f
+* `airflow-dev`: Hosted in the `dnt-dev` AWS account.
+* `airflow-prod`: Hosted in the `dpe-prod` AWS account. Deployed using OpenTofu. Only accessible via [port forwarding](https://kubernetes.io/docs/tasks/access-application-cluster/port-forward-access-application-cluster/#forward-a-local-port-to-a-port-on-the-pod).
+	* Deployed from the `main` branch in this repository.
 
-# Logs for a specific service(s)
-docker compose ps --services
-docker compose logs -f airflow-webserver airflow-scheduler
-```
+Please see [Connecting to AWS EKS](https://sagebionetworks.jira.com/wiki/spaces/DPE/pages/3389325317/Connecting+to+AWS+EKS+Kubernetes+K8s+cluster) on Confluence if you want to interface with the EKS/Kubernetes cluster. Otherwise, for local development you will likely only be interested in using AWS Secrets Manager as a backend for Airflow Secrets.
+
+There is a helper script in this repository for accessing this Airflow server.
 
 ## DAG Development Best Practices
 

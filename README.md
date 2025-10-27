@@ -1,13 +1,13 @@
 # ORCA Recipes
 
-This repository contains Airflow recipes (DAGs) for data processing and engineering at Sage Bionetworks.
+This repository contains Airflow recipes (DAGs) for data processing and engineering at Sage Bionetworks. If you want to develop a workflow to process data, you've come to the right place.
 
-## Key Features
+## Example Workflows
 
-- **Challenge Automation**: Dynamic DAG factory for Synapse-hosted challenges using configurable YAML profiles
-- **Data Analytics**: DAGs for Synapse project analytics, trending data, and metrics collection
-- **Dataset Management**: Automated dataset creation, annotation, and metadata processing
-- **Integration Workflows**: Data pipelines connecting Synapse, Snowflake, and other platforms
+- **Challenge Automation** - Automatically evaluate challenge submissions by fetching entries from Synapse and orchestrating Nextflow workflows via Seqera Platform.
+- **Dataset Discovery** - Generate Croissant-format metadata for Synapse datasets and publish to public S3 for improved discoverability.
+- **Analytics Pipelines** - Sync Synapse Portal data to Snowflake and generate platform usage reports tracking downloads, users, and storage.
+- **Bioinformatics QC** - Launch and monitor data quality control workflows for genomics projects (GENIE, HTAN).
 
 ## Airflow Development
 
@@ -121,14 +121,7 @@ source venv/bin/activate
 
 ## Contributing
 
-For detailed contribution guidelines, including DAG development best practices and how to contribute challenge DAGs, see [CONTRIBUTING.md](CONTRIBUTING.md).
-
-## Repository Structure
-
-- `dags/` - Production Airflow DAGs and challenge configurations
-- `config/` - Airflow configuration files
-- `local/` - Project-specific scripts and utilities
-- `requirements-*.txt` - Python dependencies for different environments
+For detailed contribution guidelines, repository structure, and testing instructions, see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Releases
 
