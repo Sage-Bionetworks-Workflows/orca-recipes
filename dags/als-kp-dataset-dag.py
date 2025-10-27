@@ -333,7 +333,7 @@ def als_kp_dataset_dag():
     @task
     def find_duplicated_datasets(
     transformed_items: List[Dict[str, Any]], **context
-    ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+    ) -> Dict[str, List[Dict[str, Any]]]:
         """Apply latest and greatest version selection for ALS datasets.
 
         This task:
@@ -388,9 +388,8 @@ def als_kp_dataset_dag():
         print(f"Selected {len(selected_items)} datasets from {len(new_items)} new items")
 
         # Return selected items and empty duplicates list (no manual review needed)
-        return selected_items, []
+        return {"selected_items": selected_items, "duplicates": []}
     
-    @task
     def get_existing_als_datasets(syn_hook, collection_id: str) -> Dict[str, Dict[str, Any]]:
         """Get all existing ALS datasets from the collection, grouped by ALS number.
         Returns:
@@ -429,7 +428,7 @@ def als_kp_dataset_dag():
     @task
     def identify_dataset_actions(
         selected_items: List[Dict[str, Any]], **context
-    ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+    ) -> Dict[str, List[Dict[str, Any]]]:
         """Identify which datasets need new versions vs new creation."""
 
         syn_hook = SynapseHook(context["params"]["synapse_conn_id"])
@@ -483,7 +482,7 @@ def als_kp_dataset_dag():
                 print(f"Skipping invalid dataset code {dataset_code}: {e}")
                 continue
 
-        return datasets_to_create, datasets_to_update
+        return {"datasets_to_create": datasets_to_create, "datasets_to_update": datasets_to_update}
 
     @task
     def find_ignored_datasets(**context) -> List[str]:
@@ -697,21 +696,21 @@ def als_kp_dataset_dag():
     # Define task dependencies
     data = fetch_cpath_data()
     transformed_items = transform_data(data)
-    selected_items, duplicates = find_duplicated_datasets(transformed_items)
-    datasets_to_create, datasets_to_update = identify_dataset_actions(selected_items)
+    find_duplicates_results = find_duplicated_datasets(transformed_items)
+    selected_items = find_duplicates_results["selected_items"]
+    duplicates = find_duplicates_results["duplicates"]
+    dataset_actions = identify_dataset_actions(selected_items)
+    datasets_to_create = dataset_actions["datasets_to_create"]
+    datasets_to_update = dataset_actions["datasets_to_update"]
     ignored_datasets = find_ignored_datasets()
 
     # Handle updates first (versioning existing datasets)
     updated_ids = update_existing_datasets(datasets_to_update)
 
     # Create completely new datasets
-    collection_id = create_new_datasets(datasets_to_create, ignored_datasets)
+    collection_id_created = create_new_datasets(datasets_to_create, ignored_datasets)
 
     # Refresh collection table with latest annotations
-    refresh_collection_annotations(collection_id, updated_ids)
-
-    transformed_items >> selected_items >> datasets_to_create
-    datasets_to_create >> updated_ids >> collection_id >> refresh_collection_annotations.override(task_id="refresh_annotations")
-
+    refresh_collection_annotations(collection_id_created, updated_ids)
 
 als_kp_dataset_dag()
