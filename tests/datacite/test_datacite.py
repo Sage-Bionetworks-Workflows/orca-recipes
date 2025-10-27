@@ -24,7 +24,7 @@ from src.datacite.datacite import (
     _build_user_agent_headers,
     _should_continue_pagination,
     _serialize_to_ndjson,
-    fetch_doi_page,
+    _fetch_doi_page,
     fetch_doi,
     write_ndjson_gz,
 )
@@ -517,7 +517,7 @@ class TestSerializeToNdjson:
 
 
 class TestFetchDoiPage:
-    """Tests for fetch_doi_page function.
+    """Tests for _fetch_doi_page function.
     
     Tests single page fetching with mocked HTTP calls.
     """
@@ -531,7 +531,7 @@ class TestFetchDoiPage:
         )
         mock_session.get.return_value = mock_response
         
-        result = fetch_doi_page(
+        result = _fetch_doi_page(
             session=mock_session,
             prefixes=prefixes,
             state="findable",
@@ -553,7 +553,7 @@ class TestFetchDoiPage:
         )
         mock_session.get.return_value = mock_response
         
-        fetch_doi_page(
+        _fetch_doi_page(
             session=mock_session,
             prefixes=prefixes,
             state="registered",
@@ -582,7 +582,7 @@ class TestFetchDoiPage:
         mock_session.get.return_value = mock_response
         
         with pytest.raises(requests.HTTPError):
-            fetch_doi_page(
+            _fetch_doi_page(
                 session=mock_session,
                 prefixes=prefixes,
                 state="findable",
@@ -599,7 +599,7 @@ class TestFetchDoiPage:
         mock_session.get.return_value = mock_response
         
         with pytest.raises(json.JSONDecodeError):
-            fetch_doi_page(
+            _fetch_doi_page(
                 session=mock_session,
                 prefixes=prefixes,
                 state="findable",
@@ -617,7 +617,7 @@ class TestFetchDoiPage:
         )
         mock_session.get.return_value = mock_response
         
-        result = fetch_doi_page(
+        result = _fetch_doi_page(
             session=mock_session,
             prefixes=prefixes,
             state="findable",
@@ -635,7 +635,7 @@ class TestFetchDoiPage:
         mock_session = Mock(spec=requests.Session)
         
         with pytest.raises(ValueError, match="page_size must be at least 1"):
-            fetch_doi_page(
+            _fetch_doi_page(
                 session=mock_session,
                 prefixes=prefixes,
                 state="findable",
@@ -649,7 +649,7 @@ class TestFetchDoiPage:
         mock_session = Mock(spec=requests.Session)
         
         with pytest.raises(ValueError, match="page_size must be at least 1"):
-            fetch_doi_page(
+            _fetch_doi_page(
                 session=mock_session,
                 prefixes=prefixes,
                 state="findable",
@@ -663,7 +663,7 @@ class TestFetchDoiPage:
         mock_session = Mock(spec=requests.Session)
         
         with pytest.raises(ValueError, match="page_size cannot exceed 1000"):
-            fetch_doi_page(
+            _fetch_doi_page(
                 session=mock_session,
                 prefixes=prefixes,
                 state="findable",
@@ -677,7 +677,7 @@ class TestFetchDoiPage:
         mock_session = Mock(spec=requests.Session)
         
         with pytest.raises(ValueError, match="state must be one of"):
-            fetch_doi_page(
+            _fetch_doi_page(
                 session=mock_session,
                 prefixes=prefixes,
                 state="invalid_state",
@@ -697,7 +697,7 @@ class TestFetchDoiPage:
         mock_session.get.return_value = mock_response
         
         # Should not raise ValueError
-        result = fetch_doi_page(
+        result = _fetch_doi_page(
             session=mock_session,
             prefixes=prefixes,
             state=state,
@@ -717,7 +717,7 @@ class TestFetchDoi:
 
     def test_single_full_page(self, prefixes, sample_doi_objects, mocker):
         """Test fetching a single full page."""
-        mock_fetch_page = mocker.patch("src.datacite.datacite.fetch_doi_page")
+        mock_fetch_page = mocker.patch("src.datacite.datacite._fetch_doi_page")
         mock_fetch_page.side_effect = [
             {"data": sample_doi_objects},
             {"data": []}  # Empty next page
@@ -742,7 +742,7 @@ class TestFetchDoi:
         page2_data = [{"id": f"10.7303/syn{i:05d}"} for i in range(11, 21)]
         page3_data = [{"id": f"10.7303/syn{i:05d}"} for i in range(21, 25)]
         
-        mock_fetch_page = mocker.patch("src.datacite.datacite.fetch_doi_page")
+        mock_fetch_page = mocker.patch("src.datacite.datacite._fetch_doi_page")
         mock_fetch_page.side_effect = [
             {"data": page1_data},
             {"data": page2_data},
@@ -762,7 +762,7 @@ class TestFetchDoi:
 
     def test_empty_results(self, prefixes, mocker):
         """Test handling of no results."""
-        mock_fetch_page = mocker.patch("src.datacite.datacite.fetch_doi_page")
+        mock_fetch_page = mocker.patch("src.datacite.datacite._fetch_doi_page")
         mock_fetch_page.return_value = {"data": []}
         
         results = list(fetch_doi(
@@ -778,7 +778,7 @@ class TestFetchDoi:
 
     def test_user_agent_header_set(self, prefixes, mocker):
         """Test that User-Agent header is set when email provided."""
-        mock_fetch_page = mocker.patch("src.datacite.datacite.fetch_doi_page")
+        mock_fetch_page = mocker.patch("src.datacite.datacite._fetch_doi_page")
         mock_fetch_page.return_value = {"data": []}
         
         # Mock Session to capture headers
@@ -804,7 +804,7 @@ class TestFetchDoi:
 
     def test_start_page_parameter(self, prefixes, mocker):
         """Test that start_page parameter is respected."""
-        mock_fetch_page = mocker.patch("src.datacite.datacite.fetch_doi_page")
+        mock_fetch_page = mocker.patch("src.datacite.datacite._fetch_doi_page")
         mock_fetch_page.return_value = {"data": [{"id": "test"}]}
         
         list(fetch_doi(
@@ -824,7 +824,7 @@ class TestFetchDoi:
         page1_data = [{"id": f"id{i}"} for i in range(10)]  # Full page
         page2_data = [{"id": "last"}]  # Partial page
         
-        mock_fetch_page = mocker.patch("src.datacite.datacite.fetch_doi_page")
+        mock_fetch_page = mocker.patch("src.datacite.datacite._fetch_doi_page")
         mock_fetch_page.side_effect = [
             {"data": page1_data},
             {"data": page2_data}
@@ -843,7 +843,7 @@ class TestFetchDoi:
         """Test that API errors during pagination are propagated."""
         page1_data = [{"id": f"id{i}"} for i in range(10)]
         
-        mock_fetch_page = mocker.patch("src.datacite.datacite.fetch_doi_page")
+        mock_fetch_page = mocker.patch("src.datacite.datacite._fetch_doi_page")
         mock_fetch_page.side_effect = [
             {"data": page1_data},
             requests.HTTPError("500 Server Error")  # Error on second page
@@ -857,7 +857,7 @@ class TestFetchDoi:
 
     def test_response_with_missing_data_key(self, prefixes, mocker):
         """Test pagination when response is missing 'data' key."""
-        mock_fetch_page = mocker.patch("src.datacite.datacite.fetch_doi_page")
+        mock_fetch_page = mocker.patch("src.datacite.datacite._fetch_doi_page")
         # API returns response without 'data' key
         mock_fetch_page.return_value = {"meta": {"total": 0}, "links": {}}
         
@@ -872,7 +872,7 @@ class TestFetchDoi:
 
     def test_no_user_agent_when_mailto_none(self, prefixes, mocker):
         """Test that no User-Agent header is set when mailto is None."""
-        mock_fetch_page = mocker.patch("src.datacite.datacite.fetch_doi_page")
+        mock_fetch_page = mocker.patch("src.datacite.datacite._fetch_doi_page")
         mock_fetch_page.return_value = {"data": []}
         
         with patch("src.datacite.datacite.requests.Session") as mock_session_class:
@@ -896,7 +896,7 @@ class TestFetchDoi:
         # Simulate API returning exactly 1000 items
         page_data = [{"id": f"id{i}"} for i in range(1000)]
         
-        mock_fetch_page = mocker.patch("src.datacite.datacite.fetch_doi_page")
+        mock_fetch_page = mocker.patch("src.datacite.datacite._fetch_doi_page")
         mock_fetch_page.side_effect = [
             {"data": page_data},
             {"data": []}  # No more data
@@ -937,7 +937,7 @@ class TestFetchDoi:
 
     def test_page_size_boundary_values(self, prefixes, mocker):
         """Test that boundary values 1 and 1000 are accepted."""
-        mock_fetch_page = mocker.patch("src.datacite.datacite.fetch_doi_page")
+        mock_fetch_page = mocker.patch("src.datacite.datacite._fetch_doi_page")
         mock_fetch_page.return_value = {"data": []}
         
         # page_size=1 should work
@@ -961,7 +961,7 @@ class TestFetchDoi:
     @pytest.mark.parametrize("state", ["findable", "registered", "draft"])
     def test_valid_states(self, prefixes, state, mocker):
         """Test that all valid states are accepted."""
-        mock_fetch_page = mocker.patch("src.datacite.datacite.fetch_doi_page")
+        mock_fetch_page = mocker.patch("src.datacite.datacite._fetch_doi_page")
         mock_fetch_page.return_value = {"data": []}
         
         # Should not raise ValueError

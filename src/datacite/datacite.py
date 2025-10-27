@@ -13,9 +13,6 @@ Public Functions:
         Returns an iterator yielding individual DOI objects. Handles session
         management and pagination transparently.
 
-    fetch_doi_page: Fetch a single page of DOI objects. Useful for manual
-        pagination control or when you only need a specific page of results.
-
     write_ndjson_gz: Write an iterable of objects to a gzipped newline-delimited
         JSON file. Streams data to disk without loading everything into memory.
 
@@ -34,23 +31,6 @@ Example:
         >>> # Save to compressed NDJSON file
         >>> count = write_ndjson_gz(dois, "synapse_dois.ndjson.gz")
         >>> print(f"Saved {count} DOI records")
-
-    Advanced usage with custom pagination:
-
-        >>> import requests
-        >>> from datacite import fetch_doi_page
-        >>> 
-        >>> with requests.Session() as session:
-        ...     # Fetch only the first page
-        ...     result = fetch_doi_page(
-        ...         session=session,
-        ...         prefixes=["10.7303"],
-        ...         state="findable",
-        ...         page_size=100,
-        ...         page_number=0,
-        ...         detail=True
-        ...     )
-        ...     print(f"Got {len(result['data'])} DOIs")
 
 Notes:
     - DataCite provides higher rate limits (1000 requests per 5 minutes) when
@@ -250,7 +230,7 @@ def _validate_fetch_params(page_size: int, state: str) -> None:
         )
 
 
-def fetch_doi_page(
+def _fetch_doi_page(
     session: requests.Session,
     prefixes: List[str],
     state: str,
@@ -341,7 +321,7 @@ def fetch_doi(
 
         page_number = start_page
         while True:
-            payload = fetch_doi_page(
+            payload = _fetch_doi_page(
                 s,
                 prefixes=prefixes,
                 state=state,
