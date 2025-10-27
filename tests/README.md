@@ -98,16 +98,16 @@ All fixtures are in `tests/fixtures/datacite_fixtures.py`.
 
 ```bash
 # Run all DataCite tests
-pytest tests/test_datacite.py -v
+pytest tests/datacite/test_datacite.py -v
 
 # Run specific test class
-pytest tests/test_datacite.py::TestBuildQueryParams -v
+pytest tests/datacite/test_datacite.py::TestBuildQueryParams -v
 
 # Run specific test
-pytest tests/test_datacite.py::TestBuildQueryParams::test_basic_params -v
+pytest tests/datacite/test_datacite.py::TestBuildQueryParams::test_basic_params -v
 
 # Run with coverage
-pytest tests/test_datacite.py --cov=src.datacite --cov-report=term-missing
+pytest tests/datacite/test_datacite.py --cov=src.datacite --cov-report=term-missing
 ```
 </details>
 
