@@ -11,7 +11,7 @@ This repository contains Airflow recipes (DAGs) for data processing and engineer
 
 ## Airflow Development
 
-For instructions on how to set up the development environment and interface with Airflow, see below. For a detailed guide on how to add or update DAGs and make changes to the Airflow infrastucture or environment, see [CONTRIBUTING.md](./CONTRIBUTING.md).
+For instructions on how to set up the development environment and interface with Airflow, see below. For a detailed guide on how to add or update DAGs and make changes to the Airflow infrastructure or environment, see [CONTRIBUTING.md](./CONTRIBUTING.md).
 
 ### Setting up the Dev Environment 
 
