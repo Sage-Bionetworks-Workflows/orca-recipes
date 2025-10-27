@@ -5,11 +5,11 @@ metadata from the DataCite REST API and saving it to compressed NDJSON files.
 It handles pagination, retry logic, and efficient streaming to minimize memory usage.
 
 Primary Entrypoint:
-    fetch_doi: Iterator that automatically fetches all DOI objects matching the
+    fetch_doi_prefix: Iterator that automatically fetches all DOI objects matching the
         specified criteria. This is the main function most users will need.
 
 Public Functions:
-    fetch_doi: Fetch all DOI objects from DataCite API with automatic pagination.
+    fetch_doi_prefix: Fetch all DOI objects from DataCite API with automatic pagination.
         Returns an iterator yielding individual DOI objects. Handles session
         management and pagination transparently.
 
@@ -19,10 +19,10 @@ Public Functions:
 Example:
     Basic usage to fetch and save Synapse DOIs:
 
-        >>> from datacite import fetch_doi, write_ndjson_gz
+        >>> from datacite import fetch_doi_prefix, write_ndjson_gz
         >>> 
         >>> # Fetch all findable DOIs with prefix 10.7303
-        >>> dois = fetch_doi(
+        >>> dois = fetch_doi_prefix(
         ...     prefixes=["10.7303"],
         ...     state="findable",
         ...     user_agent_mailto="user@example.com"
@@ -271,7 +271,7 @@ def _fetch_doi_page(
     return result
 
 
-def fetch_doi(
+def fetch_doi_prefix(
     prefixes: List[str],
     state: str = "findable",
     page_size: int = 1000,
@@ -302,7 +302,7 @@ def fetch_doi(
         requests.HTTPError: If any API request fails with non-retryable error.
 
     Example:
-        >>> for doi in fetch_doi(["10.7303"], user_agent_mailto="user@example.com"):
+        >>> for doi in fetch_doi_prefix(["10.7303"], user_agent_mailto="user@example.com"):
         ...     print(doi["id"])
     """
     _validate_fetch_params(page_size, state)

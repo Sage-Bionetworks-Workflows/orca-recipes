@@ -25,7 +25,7 @@ from src.datacite.datacite import (
     _should_continue_pagination,
     _serialize_to_ndjson,
     _fetch_doi_page,
-    fetch_doi,
+    fetch_doi_prefix,
     write_ndjson_gz,
 )
 
@@ -710,7 +710,7 @@ class TestFetchDoiPage:
 
 
 class TestFetchDoi:
-    """Tests for fetch_doi function.
+    """Tests for fetch_doi_prefix function.
     
     Tests full pagination flow with generator behavior.
     """
@@ -723,7 +723,7 @@ class TestFetchDoi:
             {"data": []}  # Empty next page
         ]
         
-        results = list(fetch_doi(
+        results = list(fetch_doi_prefix(
             prefixes=prefixes,
             state="findable",
             page_size=10,
@@ -749,7 +749,7 @@ class TestFetchDoi:
             {"data": page3_data},  # Partial page - should stop
         ]
         
-        results = list(fetch_doi(
+        results = list(fetch_doi_prefix(
             prefixes=prefixes,
             state="findable",
             page_size=10,
@@ -765,7 +765,7 @@ class TestFetchDoi:
         mock_fetch_page = mocker.patch("src.datacite.datacite._fetch_doi_page")
         mock_fetch_page.return_value = {"data": []}
         
-        results = list(fetch_doi(
+        results = list(fetch_doi_prefix(
             prefixes=prefixes,
             state="findable",
             page_size=10,
@@ -789,7 +789,7 @@ class TestFetchDoi:
             mock_update = MagicMock()
             mock_session.headers.update = mock_update
             
-            list(fetch_doi(
+            list(fetch_doi_prefix(
                 prefixes=prefixes,
                 state="findable",
                 page_size=10,
@@ -807,7 +807,7 @@ class TestFetchDoi:
         mock_fetch_page = mocker.patch("src.datacite.datacite._fetch_doi_page")
         mock_fetch_page.return_value = {"data": [{"id": "test"}]}
         
-        list(fetch_doi(
+        list(fetch_doi_prefix(
             prefixes=prefixes,
             state="findable",
             page_size=10,
@@ -830,7 +830,7 @@ class TestFetchDoi:
             {"data": page2_data}
         ]
         
-        results = list(fetch_doi(
+        results = list(fetch_doi_prefix(
             prefixes=prefixes,
             page_size=10
         ))
@@ -850,7 +850,7 @@ class TestFetchDoi:
         ]
         
         with pytest.raises(requests.HTTPError):
-            list(fetch_doi(
+            list(fetch_doi_prefix(
                 prefixes=prefixes,
                 page_size=10
             ))
@@ -861,7 +861,7 @@ class TestFetchDoi:
         # API returns response without 'data' key
         mock_fetch_page.return_value = {"meta": {"total": 0}, "links": {}}
         
-        results = list(fetch_doi(
+        results = list(fetch_doi_prefix(
             prefixes=prefixes,
             page_size=10
         ))
@@ -881,7 +881,7 @@ class TestFetchDoi:
             mock_update = MagicMock()
             mock_session.headers.update = mock_update
             
-            list(fetch_doi(
+            list(fetch_doi_prefix(
                 prefixes=prefixes,
                 state="findable",
                 page_size=10,
@@ -902,7 +902,7 @@ class TestFetchDoi:
             {"data": []}  # No more data
         ]
         
-        results = list(fetch_doi(
+        results = list(fetch_doi_prefix(
             prefixes=prefixes,
             page_size=1000  # Maximum page size
         ))
@@ -914,7 +914,7 @@ class TestFetchDoi:
     def test_invalid_page_size_zero(self, prefixes):
         """Test that page_size=0 raises ValueError."""
         with pytest.raises(ValueError, match="page_size must be at least 1"):
-            list(fetch_doi(
+            list(fetch_doi_prefix(
                 prefixes=prefixes,
                 page_size=0
             ))
@@ -922,7 +922,7 @@ class TestFetchDoi:
     def test_invalid_page_size_negative(self, prefixes):
         """Test that negative page_size raises ValueError."""
         with pytest.raises(ValueError, match="page_size must be at least 1"):
-            list(fetch_doi(
+            list(fetch_doi_prefix(
                 prefixes=prefixes,
                 page_size=-5
             ))
@@ -930,7 +930,7 @@ class TestFetchDoi:
     def test_invalid_page_size_exceeds_maximum(self, prefixes):
         """Test that page_size > 1000 raises ValueError."""
         with pytest.raises(ValueError, match="page_size cannot exceed 1000"):
-            list(fetch_doi(
+            list(fetch_doi_prefix(
                 prefixes=prefixes,
                 page_size=2000
             ))
@@ -941,19 +941,19 @@ class TestFetchDoi:
         mock_fetch_page.return_value = {"data": []}
         
         # page_size=1 should work
-        list(fetch_doi(prefixes=prefixes, page_size=1))
+        list(fetch_doi_prefix(prefixes=prefixes, page_size=1))
         assert mock_fetch_page.called
         
         mock_fetch_page.reset_mock()
         
         # page_size=1000 should work
-        list(fetch_doi(prefixes=prefixes, page_size=1000))
+        list(fetch_doi_prefix(prefixes=prefixes, page_size=1000))
         assert mock_fetch_page.called
 
     def test_invalid_state(self, prefixes):
         """Test that invalid state raises ValueError."""
         with pytest.raises(ValueError, match="state must be one of"):
-            list(fetch_doi(
+            list(fetch_doi_prefix(
                 prefixes=prefixes,
                 state="invalid_state"
             ))
@@ -965,7 +965,7 @@ class TestFetchDoi:
         mock_fetch_page.return_value = {"data": []}
         
         # Should not raise ValueError
-        list(fetch_doi(prefixes=prefixes, state=state))
+        list(fetch_doi_prefix(prefixes=prefixes, state=state))
         assert mock_fetch_page.called
 
 
