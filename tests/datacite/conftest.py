@@ -1,6 +1,8 @@
 """Fixtures for datacite module tests."""
 import pytest
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Callable, Optional
+from unittest.mock import Mock
+import requests
 
 
 @pytest.fixture
@@ -260,3 +262,61 @@ def multiple_prefixes() -> List[str]:
         List of multiple DataCite DOI prefixes.
     """
     return ["10.7303", "10.5281"]
+
+
+@pytest.fixture
+def create_mock_response() -> Callable:
+    """Factory fixture for creating mock Response objects with url attribute.
+    
+    Returns:
+        Function that creates properly configured mock Response objects.
+    """
+    def _create_mock_response(
+        status_code: int = 200,
+        url: str = "https://api.datacite.org/dois",
+        json_data: Optional[Dict[str, Any]] = None,
+        raise_for_status_error: Optional[Exception] = None,
+        **kwargs: Any
+    ) -> Mock:
+        """Create a mock Response object with url attribute.
+        
+        Args:
+            status_code: HTTP status code to return.
+            url: URL to assign to the response.
+            json_data: Optional data to return from .json() call.
+            raise_for_status_error: Optional exception to raise from raise_for_status().
+            **kwargs: Additional attributes to set on the mock Response object.
+            
+        Returns:
+            Mock Response object with url attribute and configured behavior.
+        
+        Example:
+            # Add custom attributes like headers, text, content, etc.
+            mock_response = create_mock_response(
+                status_code=200,
+                headers={"Content-Type": "application/json"},
+                text="response text",
+                elapsed=timedelta(seconds=1.5)
+            )
+        """
+        mock_response = Mock(spec=requests.Response)
+        mock_response.status_code = status_code
+        if mock_response.status_code >= 200 and mock_response.status_code < 400:
+            mock_response.ok = True
+        else:
+            mock_response.ok = False
+        mock_response.url = url
+        
+        if json_data is not None:
+            mock_response.json.return_value = json_data
+            
+        if raise_for_status_error is not None:
+            mock_response.raise_for_status.side_effect = raise_for_status_error
+        
+        # Set any additional attributes passed via kwargs
+        for key, value in kwargs.items():
+            setattr(mock_response, key, value)
+        
+        return mock_response
+    
+    return _create_mock_response

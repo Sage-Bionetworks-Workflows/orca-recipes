@@ -17,19 +17,6 @@ from unittest.mock import Mock, MagicMock, patch, call
 import pytest
 import requests
 
-# Import fixtures
-from tests.fixtures.datacite_fixtures import (
-    base_doi_attributes,
-    base_doi_relationships,
-    sample_doi_object,
-    sample_doi_objects,
-    mock_api_response_full_page,
-    mock_api_response_partial_page,
-    mock_api_response_empty,
-    prefixes,
-    multiple_prefixes,
-)
-
 # Import functions to test
 from src.datacite.datacite import (
     _build_query_params,
@@ -37,8 +24,8 @@ from src.datacite.datacite import (
     _build_user_agent_headers,
     _should_continue_pagination,
     _serialize_to_ndjson,
-    fetch_doi_page,
-    fetch_doi,
+    _fetch_doi_page,
+    fetch_doi_prefix,
     write_ndjson_gz,
 )
 
@@ -135,11 +122,10 @@ class TestMakeRequestWithRetry:
     Uses mocking for requests.Session and time.sleep to avoid actual HTTP calls.
     """
 
-    def test_successful_request_first_try(self):
+    def test_successful_request_first_try(self, create_mock_response):
         """Test successful response on first attempt."""
         mock_session = Mock(spec=requests.Session)
-        mock_response = Mock(spec=requests.Response)
-        mock_response.status_code = 200
+        mock_response = create_mock_response(status_code=200)
         mock_session.get.return_value = mock_response
         
         result = _make_request_with_retry(
@@ -157,15 +143,13 @@ class TestMakeRequestWithRetry:
         )
 
     @pytest.mark.parametrize("status_code", [429, 500, 502, 503, 504])
-    def test_retry_on_retryable_errors(self, mocker, status_code):
+    def test_retry_on_retryable_errors(self, mocker, status_code, create_mock_response):
         """Test that retryable errors trigger exponential backoff."""
         mock_sleep = mocker.patch("src.datacite.datacite.time.sleep")
         
         mock_session = Mock(spec=requests.Session)
-        mock_response_fail = Mock(spec=requests.Response)
-        mock_response_fail.status_code = status_code
-        mock_response_success = Mock(spec=requests.Response)
-        mock_response_success.status_code = 200
+        mock_response_fail = create_mock_response(status_code=status_code)
+        mock_response_success = create_mock_response(status_code=200)
         
         # Fail twice, then succeed
         mock_session.get.side_effect = [
@@ -179,7 +163,7 @@ class TestMakeRequestWithRetry:
             url="https://api.datacite.org/dois",
             params={"test": "value"},
             initial_backoff=2,
-            max_backoff=60
+            max_retries=5
         )
         
         assert result == mock_response_success
@@ -189,40 +173,119 @@ class TestMakeRequestWithRetry:
         mock_sleep.assert_any_call(2)
         mock_sleep.assert_any_call(4)
 
-    def test_exponential_backoff_respects_max(self, mocker):
-        """Test that backoff doesn't exceed max_backoff."""
+    def test_max_retries_raises_after_limit(self, mocker, create_mock_response):
+        """Test that max_retries is respected and raises after limit."""
         mock_sleep = mocker.patch("src.datacite.datacite.time.sleep")
         
         mock_session = Mock(spec=requests.Session)
-        mock_response_fail = Mock(spec=requests.Response)
-        mock_response_fail.status_code = 503
-        mock_response_success = Mock(spec=requests.Response)
-        mock_response_success.status_code = 200
+        mock_response_fail = create_mock_response(
+            status_code=503,
+            raise_for_status_error=requests.HTTPError("503 Server Error")
+        )
         
-        # Fail many times to hit max backoff
-        mock_session.get.side_effect = [mock_response_fail] * 10 + [mock_response_success]
+        # Always fail with retryable error
+        mock_session.get.return_value = mock_response_fail
+        
+        # Should raise after max_retries attempts
+        with pytest.raises(requests.HTTPError):
+            _make_request_with_retry(
+                session=mock_session,
+                url="https://api.datacite.org/dois",
+                params={"test": "value"},
+                initial_backoff=1,
+                max_retries=3
+            )
+        
+        # Should have tried: initial + 3 retries = 4 total attempts
+        assert mock_session.get.call_count == 4
+        # Should have slept 3 times (after each retry)
+        assert mock_sleep.call_count == 3
+
+    def test_max_retries_default_value(self, mocker, create_mock_response):
+        """Test that default max_retries value is used correctly."""
+        mock_sleep = mocker.patch("src.datacite.datacite.time.sleep")
+        
+        mock_session = Mock(spec=requests.Session)
+        mock_response_fail = create_mock_response(
+            status_code=429,
+            raise_for_status_error=requests.HTTPError("429 Too Many Requests")
+        )
+        
+        # Always fail
+        mock_session.get.return_value = mock_response_fail
+        
+        # Should use default max_retries (hardcoded to 10 in implementation)
+        with pytest.raises(requests.HTTPError):
+            _make_request_with_retry(
+                session=mock_session,
+                url="https://api.datacite.org/dois",
+                params={"test": "value"}
+            )
+        
+        # Should have tried: initial + 10 retries = 11 total attempts
+        assert mock_session.get.call_count == 11
+        assert mock_sleep.call_count == 10
+
+    def test_exponential_backoff_calculation(self, mocker, create_mock_response):
+        """Test that exponential backoff doubles each time."""
+        mock_sleep = mocker.patch("src.datacite.datacite.time.sleep")
+        
+        mock_session = Mock(spec=requests.Session)
+        mock_response_fail = create_mock_response(status_code=503)
+        mock_response_success = create_mock_response(status_code=200)
+        
+        # Fail 4 times, then succeed
+        mock_session.get.side_effect = [mock_response_fail] * 4 + [mock_response_success]
         
         result = _make_request_with_retry(
             session=mock_session,
             url="https://api.datacite.org/dois",
             params={"test": "value"},
             initial_backoff=2,
-            max_backoff=10
+            max_retries=5
         )
         
         assert result == mock_response_success
-        # Check that we never sleep longer than max_backoff
-        for call_args in mock_sleep.call_args_list:
-            assert call_args[0][0] <= 10
+        # Should have slept: 2, 4, 8, 16 seconds
+        assert mock_sleep.call_count == 4
+        mock_sleep.assert_any_call(2)
+        mock_sleep.assert_any_call(4)
+        mock_sleep.assert_any_call(8)
+        mock_sleep.assert_any_call(16)
+
+    def test_max_retries_zero_no_retry(self, mocker, create_mock_response):
+        """Test that max_retries=0 means no retries on failure."""
+        mock_sleep = mocker.patch("src.datacite.datacite.time.sleep")
+        
+        mock_session = Mock(spec=requests.Session)
+        mock_response_fail = create_mock_response(
+            status_code=503,
+            raise_for_status_error=requests.HTTPError("503 Server Error")
+        )
+        
+        mock_session.get.return_value = mock_response_fail
+        
+        # Should raise immediately without retrying
+        with pytest.raises(requests.HTTPError):
+            _make_request_with_retry(
+                session=mock_session,
+                url="https://api.datacite.org/dois",
+                params={"test": "value"},
+                max_retries=0
+            )
+        
+        # Should only try once (no retries)
+        assert mock_session.get.call_count == 1
+        # Should not sleep at all
+        assert mock_sleep.call_count == 0
 
     @pytest.mark.parametrize("status_code", [400, 401, 403, 404])
-    def test_raises_on_non_retryable_errors(self, status_code):
+    def test_raises_on_non_retryable_errors(self, status_code, create_mock_response):
         """Test that non-retryable errors raise immediately."""
         mock_session = Mock(spec=requests.Session)
-        mock_response = Mock(spec=requests.Response)
-        mock_response.status_code = status_code
-        mock_response.raise_for_status.side_effect = requests.HTTPError(
-            f"{status_code} Client Error"
+        mock_response = create_mock_response(
+            status_code=status_code,
+            raise_for_status_error=requests.HTTPError(f"{status_code} Client Error")
         )
         mock_session.get.return_value = mock_response
         
@@ -236,11 +299,10 @@ class TestMakeRequestWithRetry:
         # Should only try once for non-retryable errors
         assert mock_session.get.call_count == 1
 
-    def test_custom_timeout(self):
+    def test_custom_timeout(self, create_mock_response):
         """Test that custom timeout is passed to request."""
         mock_session = Mock(spec=requests.Session)
-        mock_response = Mock(spec=requests.Response)
-        mock_response.status_code = 200
+        mock_response = create_mock_response(status_code=200)
         mock_session.get.return_value = mock_response
         
         _make_request_with_retry(
@@ -288,7 +350,7 @@ class TestMakeRequestWithRetry:
         # Should not retry on connection error
         assert mock_session.get.call_count == 1
 
-    def test_mixed_retryable_errors(self, mocker):
+    def test_mixed_retryable_errors(self, mocker, create_mock_response):
         """Test recovery from different retryable error codes."""
         mock_sleep = mocker.patch("src.datacite.datacite.time.sleep")
         mock_session = Mock(spec=requests.Session)
@@ -296,10 +358,8 @@ class TestMakeRequestWithRetry:
         # Mix of 429, 503, 500 then success
         responses = []
         for status_code in [429, 503, 500, 200]:
-            mock_response = Mock(spec=requests.Response)
-            mock_response.status_code = status_code
-            if status_code == 200:
-                mock_response.json.return_value = {"data": []}
+            json_data = {"data": []} if status_code == 200 else None
+            mock_response = create_mock_response(status_code=status_code, json_data=json_data)
             responses.append(mock_response)
         
         mock_session.get.side_effect = responses
@@ -457,20 +517,21 @@ class TestSerializeToNdjson:
 
 
 class TestFetchDoiPage:
-    """Tests for fetch_doi_page function.
+    """Tests for _fetch_doi_page function.
     
     Tests single page fetching with mocked HTTP calls.
     """
 
-    def test_successful_fetch(self, prefixes, mock_api_response_full_page):
+    def test_successful_fetch(self, prefixes, mock_api_response_full_page, create_mock_response):
         """Test successful page fetch."""
         mock_session = Mock(spec=requests.Session)
-        mock_response = Mock(spec=requests.Response)
-        mock_response.status_code = 200
-        mock_response.json.return_value = mock_api_response_full_page
+        mock_response = create_mock_response(
+            status_code=200,
+            json_data=mock_api_response_full_page
+        )
         mock_session.get.return_value = mock_response
         
-        result = fetch_doi_page(
+        result = _fetch_doi_page(
             session=mock_session,
             prefixes=prefixes,
             state="findable",
@@ -483,15 +544,16 @@ class TestFetchDoiPage:
         assert len(result["data"]) == 10
         mock_session.get.assert_called_once()
 
-    def test_passes_correct_parameters(self, prefixes):
+    def test_passes_correct_parameters(self, prefixes, create_mock_response):
         """Test that correct parameters are passed to request."""
         mock_session = Mock(spec=requests.Session)
-        mock_response = Mock(spec=requests.Response)
-        mock_response.status_code = 200
-        mock_response.json.return_value = {"data": []}
+        mock_response = create_mock_response(
+            status_code=200,
+            json_data={"data": []}
+        )
         mock_session.get.return_value = mock_response
         
-        fetch_doi_page(
+        _fetch_doi_page(
             session=mock_session,
             prefixes=prefixes,
             state="registered",
@@ -510,16 +572,17 @@ class TestFetchDoiPage:
         assert params["page[number]"] == 5
         assert "detail" not in params
 
-    def test_handles_http_error(self, prefixes):
+    def test_handles_http_error(self, prefixes, create_mock_response):
         """Test that HTTP errors are propagated."""
         mock_session = Mock(spec=requests.Session)
-        mock_response = Mock(spec=requests.Response)
-        mock_response.status_code = 404
-        mock_response.raise_for_status.side_effect = requests.HTTPError("404 Not Found")
+        mock_response = create_mock_response(
+            status_code=404,
+            raise_for_status_error=requests.HTTPError("404 Not Found")
+        )
         mock_session.get.return_value = mock_response
         
         with pytest.raises(requests.HTTPError):
-            fetch_doi_page(
+            _fetch_doi_page(
                 session=mock_session,
                 prefixes=prefixes,
                 state="findable",
@@ -528,16 +591,15 @@ class TestFetchDoiPage:
                 detail=True
             )
 
-    def test_malformed_json_response(self, prefixes):
+    def test_malformed_json_response(self, prefixes, create_mock_response):
         """Test handling of malformed JSON in API response."""
         mock_session = Mock(spec=requests.Session)
-        mock_response = Mock(spec=requests.Response)
-        mock_response.status_code = 200
+        mock_response = create_mock_response(status_code=200)
         mock_response.json.side_effect = json.JSONDecodeError("Expecting value", "", 0)
         mock_session.get.return_value = mock_response
         
         with pytest.raises(json.JSONDecodeError):
-            fetch_doi_page(
+            _fetch_doi_page(
                 session=mock_session,
                 prefixes=prefixes,
                 state="findable",
@@ -546,16 +608,16 @@ class TestFetchDoiPage:
                 detail=True
             )
 
-    def test_response_missing_data_key(self, prefixes):
+    def test_response_missing_data_key(self, prefixes, create_mock_response):
         """Test handling when API response is missing expected 'data' key."""
         mock_session = Mock(spec=requests.Session)
-        mock_response = Mock(spec=requests.Response)
-        mock_response.status_code = 200
-        # Response without 'data' key - could happen if API changes
-        mock_response.json.return_value = {"meta": {"total": 0}}
+        mock_response = create_mock_response(
+            status_code=200,
+            json_data={"meta": {"total": 0}}
+        )
         mock_session.get.return_value = mock_response
         
-        result = fetch_doi_page(
+        result = _fetch_doi_page(
             session=mock_session,
             prefixes=prefixes,
             state="findable",
@@ -568,22 +630,100 @@ class TestFetchDoiPage:
         assert "data" not in result
         assert result["meta"]["total"] == 0
 
+    def test_invalid_page_size_zero(self, prefixes):
+        """Test that page_size=0 raises ValueError."""
+        mock_session = Mock(spec=requests.Session)
+        
+        with pytest.raises(ValueError, match="page_size must be at least 1"):
+            _fetch_doi_page(
+                session=mock_session,
+                prefixes=prefixes,
+                state="findable",
+                page_size=0,
+                page_number=0,
+                detail=True
+            )
+
+    def test_invalid_page_size_negative(self, prefixes):
+        """Test that negative page_size raises ValueError."""
+        mock_session = Mock(spec=requests.Session)
+        
+        with pytest.raises(ValueError, match="page_size must be at least 1"):
+            _fetch_doi_page(
+                session=mock_session,
+                prefixes=prefixes,
+                state="findable",
+                page_size=-10,
+                page_number=0,
+                detail=True
+            )
+
+    def test_invalid_page_size_exceeds_maximum(self, prefixes):
+        """Test that page_size > 1000 raises ValueError."""
+        mock_session = Mock(spec=requests.Session)
+        
+        with pytest.raises(ValueError, match="page_size cannot exceed 1000"):
+            _fetch_doi_page(
+                session=mock_session,
+                prefixes=prefixes,
+                state="findable",
+                page_size=1001,
+                page_number=0,
+                detail=True
+            )
+
+    def test_invalid_state(self, prefixes):
+        """Test that invalid state raises ValueError."""
+        mock_session = Mock(spec=requests.Session)
+        
+        with pytest.raises(ValueError, match="state must be one of"):
+            _fetch_doi_page(
+                session=mock_session,
+                prefixes=prefixes,
+                state="invalid_state",
+                page_size=100,
+                page_number=0,
+                detail=True
+            )
+
+    @pytest.mark.parametrize("state", ["findable", "registered", "draft"])
+    def test_valid_states(self, prefixes, state, create_mock_response):
+        """Test that all valid states are accepted."""
+        mock_session = Mock(spec=requests.Session)
+        mock_response = create_mock_response(
+            status_code=200,
+            json_data={"data": []}
+        )
+        mock_session.get.return_value = mock_response
+        
+        # Should not raise ValueError
+        result = _fetch_doi_page(
+            session=mock_session,
+            prefixes=prefixes,
+            state=state,
+            page_size=100,
+            page_number=0,
+            detail=True
+        )
+        
+        assert result == {"data": []}
+
 
 class TestFetchDoi:
-    """Tests for fetch_doi function.
+    """Tests for fetch_doi_prefix function.
     
     Tests full pagination flow with generator behavior.
     """
 
     def test_single_full_page(self, prefixes, sample_doi_objects, mocker):
         """Test fetching a single full page."""
-        mock_fetch_page = mocker.patch("src.datacite.datacite.fetch_doi_page")
+        mock_fetch_page = mocker.patch("src.datacite.datacite._fetch_doi_page")
         mock_fetch_page.side_effect = [
             {"data": sample_doi_objects},
             {"data": []}  # Empty next page
         ]
         
-        results = list(fetch_doi(
+        results = list(fetch_doi_prefix(
             prefixes=prefixes,
             state="findable",
             page_size=10,
@@ -602,14 +742,14 @@ class TestFetchDoi:
         page2_data = [{"id": f"10.7303/syn{i:05d}"} for i in range(11, 21)]
         page3_data = [{"id": f"10.7303/syn{i:05d}"} for i in range(21, 25)]
         
-        mock_fetch_page = mocker.patch("src.datacite.datacite.fetch_doi_page")
+        mock_fetch_page = mocker.patch("src.datacite.datacite._fetch_doi_page")
         mock_fetch_page.side_effect = [
             {"data": page1_data},
             {"data": page2_data},
             {"data": page3_data},  # Partial page - should stop
         ]
         
-        results = list(fetch_doi(
+        results = list(fetch_doi_prefix(
             prefixes=prefixes,
             state="findable",
             page_size=10,
@@ -622,10 +762,10 @@ class TestFetchDoi:
 
     def test_empty_results(self, prefixes, mocker):
         """Test handling of no results."""
-        mock_fetch_page = mocker.patch("src.datacite.datacite.fetch_doi_page")
+        mock_fetch_page = mocker.patch("src.datacite.datacite._fetch_doi_page")
         mock_fetch_page.return_value = {"data": []}
         
-        results = list(fetch_doi(
+        results = list(fetch_doi_prefix(
             prefixes=prefixes,
             state="findable",
             page_size=10,
@@ -638,7 +778,7 @@ class TestFetchDoi:
 
     def test_user_agent_header_set(self, prefixes, mocker):
         """Test that User-Agent header is set when email provided."""
-        mock_fetch_page = mocker.patch("src.datacite.datacite.fetch_doi_page")
+        mock_fetch_page = mocker.patch("src.datacite.datacite._fetch_doi_page")
         mock_fetch_page.return_value = {"data": []}
         
         # Mock Session to capture headers
@@ -649,7 +789,7 @@ class TestFetchDoi:
             mock_update = MagicMock()
             mock_session.headers.update = mock_update
             
-            list(fetch_doi(
+            list(fetch_doi_prefix(
                 prefixes=prefixes,
                 state="findable",
                 page_size=10,
@@ -664,10 +804,10 @@ class TestFetchDoi:
 
     def test_start_page_parameter(self, prefixes, mocker):
         """Test that start_page parameter is respected."""
-        mock_fetch_page = mocker.patch("src.datacite.datacite.fetch_doi_page")
+        mock_fetch_page = mocker.patch("src.datacite.datacite._fetch_doi_page")
         mock_fetch_page.return_value = {"data": [{"id": "test"}]}
         
-        list(fetch_doi(
+        list(fetch_doi_prefix(
             prefixes=prefixes,
             state="findable",
             page_size=10,
@@ -684,13 +824,13 @@ class TestFetchDoi:
         page1_data = [{"id": f"id{i}"} for i in range(10)]  # Full page
         page2_data = [{"id": "last"}]  # Partial page
         
-        mock_fetch_page = mocker.patch("src.datacite.datacite.fetch_doi_page")
+        mock_fetch_page = mocker.patch("src.datacite.datacite._fetch_doi_page")
         mock_fetch_page.side_effect = [
             {"data": page1_data},
             {"data": page2_data}
         ]
         
-        results = list(fetch_doi(
+        results = list(fetch_doi_prefix(
             prefixes=prefixes,
             page_size=10
         ))
@@ -703,25 +843,25 @@ class TestFetchDoi:
         """Test that API errors during pagination are propagated."""
         page1_data = [{"id": f"id{i}"} for i in range(10)]
         
-        mock_fetch_page = mocker.patch("src.datacite.datacite.fetch_doi_page")
+        mock_fetch_page = mocker.patch("src.datacite.datacite._fetch_doi_page")
         mock_fetch_page.side_effect = [
             {"data": page1_data},
             requests.HTTPError("500 Server Error")  # Error on second page
         ]
         
         with pytest.raises(requests.HTTPError):
-            list(fetch_doi(
+            list(fetch_doi_prefix(
                 prefixes=prefixes,
                 page_size=10
             ))
 
     def test_response_with_missing_data_key(self, prefixes, mocker):
         """Test pagination when response is missing 'data' key."""
-        mock_fetch_page = mocker.patch("src.datacite.datacite.fetch_doi_page")
+        mock_fetch_page = mocker.patch("src.datacite.datacite._fetch_doi_page")
         # API returns response without 'data' key
         mock_fetch_page.return_value = {"meta": {"total": 0}, "links": {}}
         
-        results = list(fetch_doi(
+        results = list(fetch_doi_prefix(
             prefixes=prefixes,
             page_size=10
         ))
@@ -732,7 +872,7 @@ class TestFetchDoi:
 
     def test_no_user_agent_when_mailto_none(self, prefixes, mocker):
         """Test that no User-Agent header is set when mailto is None."""
-        mock_fetch_page = mocker.patch("src.datacite.datacite.fetch_doi_page")
+        mock_fetch_page = mocker.patch("src.datacite.datacite._fetch_doi_page")
         mock_fetch_page.return_value = {"data": []}
         
         with patch("src.datacite.datacite.requests.Session") as mock_session_class:
@@ -741,7 +881,7 @@ class TestFetchDoi:
             mock_update = MagicMock()
             mock_session.headers.update = mock_update
             
-            list(fetch_doi(
+            list(fetch_doi_prefix(
                 prefixes=prefixes,
                 state="findable",
                 page_size=10,
@@ -756,13 +896,13 @@ class TestFetchDoi:
         # Simulate API returning exactly 1000 items
         page_data = [{"id": f"id{i}"} for i in range(1000)]
         
-        mock_fetch_page = mocker.patch("src.datacite.datacite.fetch_doi_page")
+        mock_fetch_page = mocker.patch("src.datacite.datacite._fetch_doi_page")
         mock_fetch_page.side_effect = [
             {"data": page_data},
             {"data": []}  # No more data
         ]
         
-        results = list(fetch_doi(
+        results = list(fetch_doi_prefix(
             prefixes=prefixes,
             page_size=1000  # Maximum page size
         ))
@@ -770,6 +910,63 @@ class TestFetchDoi:
         assert len(results) == 1000
         # Should fetch next page since we got full page
         assert mock_fetch_page.call_count == 2
+
+    def test_invalid_page_size_zero(self, prefixes):
+        """Test that page_size=0 raises ValueError."""
+        with pytest.raises(ValueError, match="page_size must be at least 1"):
+            list(fetch_doi_prefix(
+                prefixes=prefixes,
+                page_size=0
+            ))
+
+    def test_invalid_page_size_negative(self, prefixes):
+        """Test that negative page_size raises ValueError."""
+        with pytest.raises(ValueError, match="page_size must be at least 1"):
+            list(fetch_doi_prefix(
+                prefixes=prefixes,
+                page_size=-5
+            ))
+
+    def test_invalid_page_size_exceeds_maximum(self, prefixes):
+        """Test that page_size > 1000 raises ValueError."""
+        with pytest.raises(ValueError, match="page_size cannot exceed 1000"):
+            list(fetch_doi_prefix(
+                prefixes=prefixes,
+                page_size=2000
+            ))
+
+    def test_page_size_boundary_values(self, prefixes, mocker):
+        """Test that boundary values 1 and 1000 are accepted."""
+        mock_fetch_page = mocker.patch("src.datacite.datacite._fetch_doi_page")
+        mock_fetch_page.return_value = {"data": []}
+        
+        # page_size=1 should work
+        list(fetch_doi_prefix(prefixes=prefixes, page_size=1))
+        assert mock_fetch_page.called
+        
+        mock_fetch_page.reset_mock()
+        
+        # page_size=1000 should work
+        list(fetch_doi_prefix(prefixes=prefixes, page_size=1000))
+        assert mock_fetch_page.called
+
+    def test_invalid_state(self, prefixes):
+        """Test that invalid state raises ValueError."""
+        with pytest.raises(ValueError, match="state must be one of"):
+            list(fetch_doi_prefix(
+                prefixes=prefixes,
+                state="invalid_state"
+            ))
+
+    @pytest.mark.parametrize("state", ["findable", "registered", "draft"])
+    def test_valid_states(self, prefixes, state, mocker):
+        """Test that all valid states are accepted."""
+        mock_fetch_page = mocker.patch("src.datacite.datacite._fetch_doi_page")
+        mock_fetch_page.return_value = {"data": []}
+        
+        # Should not raise ValueError
+        list(fetch_doi_prefix(prefixes=prefixes, state=state))
+        assert mock_fetch_page.called
 
 
 class TestWriteNdjsonGz:
