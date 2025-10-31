@@ -2,6 +2,12 @@
 
 ## Development
 
+The following section is divided into three parts:
+
+1. **Environment** – Development information related to the infrastructure or environment in which DAGs run.
+2. **Structure** – Development information related to DAG logic/code.
+3. **Testing** – Testing DAGs
+
 ### Environment
 
 The development environment breaks down into two categories: Infrastructure and Code. This is because the repo contains both:
