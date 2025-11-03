@@ -181,6 +181,12 @@ def parse_dataset_code(dataset_code: str) -> Tuple[str, str, str]:
     match = re.match(pattern, dataset_code)
 
     if not match:
+        als_match = re.search(r'(als\d+)', dataset_code)
+        if als_match:
+            als_number = als_match.group(1)
+            print(f"Warning: Dataset code '{dataset_code}' has an unexpected format. "
+                  f"Using '{als_number}' with default prefix and date.")
+            return als_number, 'unknown', '1970_01_01'
         raise ValueError(f"Invalid dataset code format: {dataset_code}")
 
     prefix = match.group(1).rstrip('_')  # Remove trailing underscore
