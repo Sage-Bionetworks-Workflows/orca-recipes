@@ -1,6 +1,7 @@
 import pandas as pd
 from unittest.mock import patch, MagicMock
-import genie_bpc_elt
+
+from genie import genie_bpc_elt
 
 
 def test_read_synapse_table():

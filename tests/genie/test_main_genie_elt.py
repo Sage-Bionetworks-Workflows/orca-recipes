@@ -1,6 +1,7 @@
 import pytest
 from unittest.mock import patch, MagicMock
-import main_genie_elt
+
+from genie import main_genie_elt
 
 
 def test_get_table_schema_name_valid():

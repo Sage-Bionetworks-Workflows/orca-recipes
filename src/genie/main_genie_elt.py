@@ -1,12 +1,11 @@
 """MAIN GENIE ELT pipeline"""
 import argparse
 from typing import Dict
-from dotenv import load_dotenv
 import pandas as pd
 import synapseclient
 import synapseutils as synu
 
-from snowflake import get_connection, logger, write_to_snowflake
+from snowflake_utils import get_connection, logger, write_to_snowflake
 
 STRUCTURED_DATA = (
     "data_clinical",
@@ -96,7 +95,7 @@ def get_cbio_file_map(syn : synapseclient.Synapse, synid : str) -> Dict[str, syn
 
 
 def push_cbio_files_to_snowflake(syn: synapseclient.Synapse,
-    conn: snowflake.connector.connect,
+    conn: "snowflake.connector.SnowflakeConnection",
     synid: str,
     overwrite : bool,
 ) -> None:
@@ -132,7 +131,6 @@ def push_cbio_files_to_snowflake(syn: synapseclient.Synapse,
 
 def main(args):
     syn = synapseclient.login()
-    load_dotenv("../.env")
 
     with get_connection() as conn:
         logger.info("Connected to Snowflake.")

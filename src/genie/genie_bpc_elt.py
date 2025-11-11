@@ -1,12 +1,11 @@
 """GENIE BPC ELT pipeline"""
 
 import argparse
-from dotenv import load_dotenv
 import pandas as pd
 import synapseclient
 import yaml
 
-from snowflake import get_connection, logger, write_to_snowflake
+from snowflake_utils import get_connection, logger, write_to_snowflake
 
 
 def _read_synapse_table(syn: synapseclient.Synapse, synid: str, sep: str = ",") -> pd.DataFrame:
@@ -100,8 +99,7 @@ def _upload_cbioportal_tables(
 def main(args):
     """Main entrypoint for GENIE BPC ELT pipeline."""
     syn = synapseclient.login()
-    load_dotenv("../.env")  # loads SNOWFLAKE_* env vars
-
+    
     with get_connection() as conn:
         logger.info("Connected to Snowflake.")
 
