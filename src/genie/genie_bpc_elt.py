@@ -1,6 +1,7 @@
 """GENIE BPC ELT pipeline"""
-
 import argparse
+import os
+
 import pandas as pd
 import synapseclient
 import yaml
@@ -30,12 +31,14 @@ def create_snowflake_resources(
     clinical_synid: str,
     cbioportal_synid: str,
     overwrite: bool,
+    database: str,
 ) -> None:
     """Create Snowflake schema and upload clinical + cBioPortal tables for one cohort."""
     schema_name = f"{cohort}_{version}"
     logger.info(f"Creating/using schema: {schema_name}")
 
     with conn.cursor() as cs:
+        cs.execute(f"USE DATABASE {database};")
         cs.execute(f"CREATE SCHEMA IF NOT EXISTS {schema_name} WITH MANAGED ACCESS;")
         cs.execute(f"USE SCHEMA {schema_name}")
 
@@ -99,11 +102,12 @@ def _upload_cbioportal_tables(
 def main(args):
     """Main entrypoint for GENIE BPC ELT pipeline."""
     syn = synapseclient.login()
-    
+    script_dir = os.path.dirname(__file__)
+    yaml_path = os.path.join(script_dir, "genie_bpc_releases.yaml")
     with get_connection() as conn:
         logger.info("Connected to Snowflake.")
 
-        with open("genie_bpc_releases.yaml", "r") as f:
+        with open(yaml_path, "r") as f:
             cohorts = yaml.safe_load(f)
 
         for cohort_info in cohorts:
@@ -121,6 +125,7 @@ def main(args):
                 clinical_synid=clinical_synid,
                 cbioportal_synid=cbioportal_synid,
                 overwrite=args.overwrite,
+                database=args.database,
             )
 
         logger.info("All cohorts processed successfully.")
@@ -132,6 +137,12 @@ if __name__ == "__main__":
         "--overwrite",
         action="store_true",
         help="Overwrite table data if present.",
+    )
+    parser.add_argument(
+        "--database", 
+        type=str, 
+        default = "GENIE_DEV", 
+        help="Database to run ELT script in."
     )
     args = parser.parse_args()
     main(args)

@@ -21,5 +21,5 @@ def test_push_cbio_files_to_snowflake():
          patch.object(main_genie_elt.pd, "read_csv", return_value=MagicMock()), \
          patch.object(main_genie_elt, "write_to_snowflake") as mock_write:
 
-        main_genie_elt.push_cbio_files_to_snowflake(mock_syn, mock_conn, "syn1", overwrite=True)
+        main_genie_elt.push_cbio_files_to_snowflake(mock_syn, mock_conn, "syn1", overwrite=True, database = "test")
         mock_write.assert_called_once()

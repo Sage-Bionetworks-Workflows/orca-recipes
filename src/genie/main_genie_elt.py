@@ -7,6 +7,15 @@ import synapseutils as synu
 
 from snowflake_utils import get_connection, logger, write_to_snowflake
 
+# these are releases too old and not 
+# categorized into public vs consortium
+RELEASES_TO_SKIP = [
+    'Release 00',
+    'Release 01',
+    'Release 02',
+    'Release 03'
+]
+
 STRUCTURED_DATA = (
     "data_clinical",
     "data_mutations",
@@ -41,8 +50,7 @@ def get_table_schema_name(syn: synapseclient.Synapse, synid: str) -> str:
     folder_ent = syn.get(synid)
     release_name_meta = folder_ent.name.split("-")
     if len(release_name_meta) < 2:
-        raise ValueError(f"Unexpected folder name format: {folder_ent.name}")
-
+        raise ValueError(f"Unexpected folder name format: {folder_ent.name}.")
     release_name = release_name_meta[0].replace(".", "_")
     release_type = release_name_meta[1]
     return f"{release_type}_{release_name}"
@@ -98,6 +106,7 @@ def push_cbio_files_to_snowflake(syn: synapseclient.Synapse,
     conn: "snowflake.connector.SnowflakeConnection",
     synid: str,
     overwrite : bool,
+    database : str,
 ) -> None:
     """Fetch cbioportal files from Synapse and push them into Snowflake.
 
@@ -106,11 +115,12 @@ def push_cbio_files_to_snowflake(syn: synapseclient.Synapse,
         conn (snowflake.connector.connect): Snowflake connection
         synid (str): Synapse id of the release folder
         overwrite (bool): Whether to overwrite table data or not
-     """
+        databaset (str): Database table to run ELT commands in
+    """
     release_schema_name = get_table_schema_name(syn=syn, synid=synid)
     release_file_map = get_cbio_file_map(syn=syn, synid=synid)
-
     with conn.cursor() as cs:
+        cs.execute(f"USE DATABASE {database};")
         cs.execute(f"CREATE SCHEMA IF NOT EXISTS {release_schema_name} WITH MANAGED ACCESS;")
         cs.execute(f"USE SCHEMA {release_schema_name}")
         logger.info(f"Using schema: {release_schema_name}")
@@ -135,12 +145,20 @@ def main(args):
     with get_connection() as conn:
         logger.info("Connected to Snowflake.")
         for dirpath, dirnames, _ in synu.walk(syn, PROJECT_SYNID):
-            if len(dirpath[0].split("/")) != 2:
+            release_path_list = dirpath[0].split("/")
+            if len(release_path_list) != 2:
+                continue
+            if release_path_list[1] in RELEASES_TO_SKIP:
+                logger.info(f"Skipping release series: {release_path_list[1]}. Nonstandard release series.")
                 continue
             for dirname, dir_synid in dirnames:
                 logger.info(f"Processing release: {dirname}")
                 push_cbio_files_to_snowflake(
-                    syn=syn, conn=conn, synid=dir_synid, overwrite=args.overwrite
+                    syn=syn, 
+                    conn=conn, 
+                    synid=dir_synid, 
+                    overwrite=args.overwrite, 
+                    database = args.database
                 )
         logger.info("ELT completed successfully.")
 
@@ -148,5 +166,6 @@ def main(args):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run the Main GENIE ELT pipeline.")
     parser.add_argument("--overwrite", action="store_true", help="Overwrite table data if present.")
+    parser.add_argument("--database", type=str, default = "GENIE_DEV", help="Database to run ELT script in.")
     args = parser.parse_args()
     main(args)
