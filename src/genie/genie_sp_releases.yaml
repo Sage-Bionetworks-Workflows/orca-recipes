@@ -1,0 +1,47 @@
+# Current sponsored project clinical data releases
+- cohort: akt1
+  patient_id_key: PATIENT_ID
+  sample_id_key: SAMPLE_ID
+  table_name: cbioportal_clinical_sample
+  folder_synid: syn8477152
+
+- cohort: brca_ddr
+  patient_id_key: patient_id
+  sample_id_key: sample_id
+  table_name: redcap_export
+  folder_synid: 
+    - syn26117747
+    - syn26117749
+    - syn26161920
+
+- cohort: erbb2
+  patient_id_key: PATIENT_ID
+  sample_id_key: SAMPLE_ID
+  table_name: cbioportal_clinical_sample
+  folder_synid: syn8384869
+
+- cohort: fgfe4
+  patient_id_key: PATIENT_ID
+  sample_id_key: SAMPLE_ID
+  table_name: cbioportal_clinical_sample
+  folder_synid: syn17011485
+
+- cohort: kras
+  patient_id_key: genie_patient_id
+  sample_id_key: sample_id
+  table_name: redcap_export
+  folder_synid: syn21441768
+
+- cohort: ntrk
+  patient_id_key: record_id
+  sample_id_key: cpt_genie_sample_id
+  table_name: cancer_panel_test
+  folder_synid: 
+    - syn51224003
+    - syn49771268
+    - syn50994574
+    - syn49498194
+    - syn49498203
+    - syn49498213
+
+
