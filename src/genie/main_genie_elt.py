@@ -140,7 +140,7 @@ def push_cbio_files_to_snowflake(
         except Exception as e:
             logger.error(f"Failed to read {release_file_ent.path}: {e}")
             continue
-
+        
         write_to_snowflake(
             conn=conn, table_df=df, table_name=table_name, overwrite=overwrite
         )
@@ -172,18 +172,33 @@ def is_valid_release_path(release_path: str) -> bool:
         return True
 
 
-def main(args):
-    """Main function - loops through the
+def main(
+    database: str,
+    overwrite: bool,
+    conn: "snowflake.connector.SnowflakeConnection" = None,
+):
+    """
+    Main function -loops through the
         top level releases project folder, checks for
         valid release paths and runs the function to
         ingest those data into snowflake
 
     Args:
-        args (argparse): arguments
+        overwrite (bool): Whether to overwrite table data or not
+        database (str): Database table to run ELT commands in
+        conn (snowflake.connector.SnowflakeConnection): Optional Snowflake 
+            connection injected externally (e.g., Airflow)
     """
     syn = synapseclient.login()
 
-    with get_connection() as conn:
+    # If Airflow provides a connection -> use it.
+    # Otherwise -> fall back to local Snowflake connection via env vars.
+    external_conn = conn is not None
+
+    if not external_conn:
+        conn = get_connection()
+
+    with conn:
         logger.info("Connected to Snowflake.")
         for dirpath, dirnames, _ in synu.walk(syn, PROJECT_SYNID):
             if is_valid_release_path(release_path=dirpath):
@@ -193,8 +208,8 @@ def main(args):
                         syn=syn,
                         conn=conn,
                         synid=dir_synid,
-                        overwrite=args.overwrite,
-                        database=args.database,
+                        overwrite=overwrite,
+                        database=database,
                     )
             else:
                 logger.info(f"Skipping invalid release path: {dirpath}.")
@@ -213,4 +228,4 @@ if __name__ == "__main__":
         help="Database to run ELT script in.",
     )
     args = parser.parse_args()
-    main(args)
+    main(database=args.database, overwrite=args.overwrite)
