@@ -121,8 +121,8 @@ def get_cursor(
 def table_exists(
     conn: snowflake.connector.SnowflakeConnection,
     table_name: str,
-    schema: str,
-    database: str,
+    schema: str | None = None,
+    database: str | None = None,
 ) -> bool:
     """Check if a snowflake table exists in the given database and
         schema
@@ -130,19 +130,24 @@ def table_exists(
     Args:
         conn (snowflake.connector.SnowflakeConnection): snowflake connection object
         table_name (str): name of the snowflake table to check for
-        schema (str): name of the snowflake schema to check in
-        database (str): name of the snowflake database to check in
+        schema (str | None, optional): name of the snowflake schema to check in
+        database (str | None, optional: name of the snowflake database to check in
 
     Returns:
         bool: whether the table exists or not
     """
     schema = schema or conn.schema
     database = database or conn.database
+    if not database or not schema:
+        raise ValueError("Must supply both database and schema")
 
     sql = f"SHOW TABLES LIKE '{table_name}' IN SCHEMA {database}.{schema}"
-    with conn.cursor() as cur:
-        cur.execute(sql, (table_name,))
+    cur = conn.cursor()
+    try:
+        cur.execute(sql)
         return cur.fetchone() is not None
+    finally:
+        cur.close()
 
 
 def write_to_snowflake(
