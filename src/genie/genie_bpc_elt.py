@@ -1,4 +1,5 @@
 """GENIE BPC ELT pipeline"""
+
 import argparse
 import os
 
@@ -7,20 +8,6 @@ import synapseclient
 import yaml
 
 from snowflake_utils import get_connection, logger, write_to_snowflake
-
-
-def _read_synapse_table(syn: synapseclient.Synapse, synid: str, sep: str = ",") -> pd.DataFrame:
-    """Fetch a Synapse file entity and load it as a DataFrame."""
-    entity = syn.get(synid)
-    try:
-        df = pd.read_csv(entity.path, sep=sep, comment="#", low_memory=False)
-    except pd.errors.EmptyDataError:
-        logger.warning(f"{entity.path} is empty — skipping.")
-        return pd.DataFrame()
-    except Exception as e:
-        logger.error(f"Failed to read Synapse entity {synid}: {e}")
-        return pd.DataFrame()
-    return df
 
 
 def create_snowflake_resources(
@@ -37,16 +24,27 @@ def create_snowflake_resources(
     schema_name = f"{cohort}_{version}"
     logger.info(f"Creating/using schema: {schema_name}")
 
-    with conn.cursor() as cs:
-        cs.execute(f"USE DATABASE {database};")
-        cs.execute(f"CREATE SCHEMA IF NOT EXISTS {schema_name} WITH MANAGED ACCESS;")
-        cs.execute(f"USE SCHEMA {schema_name}")
+    with get_connection(conn) as conn:
+        with conn.cursor() as cs:
+            cs.execute(f"USE DATABASE {database};")
+            cs.execute(
+                f"CREATE SCHEMA IF NOT EXISTS {schema_name} WITH MANAGED ACCESS;"
+            )
+            cs.execute(f"USE SCHEMA {schema_name}")
 
-    _upload_clinical_tables(conn, syn, clinical_synid, overwrite)
-    _upload_cbioportal_tables(conn, syn, cohort, cbioportal_synid, overwrite)
+        upload_clinical_tables(
+            conn=conn, syn=syn, clinical_synid=clinical_synid, overwrite=overwrite
+        )
+        upload_cbioportal_tables(
+            conn=conn,
+            syn=syn,
+            cohort=cohort,
+            cbioportal_synid=cbioportal_synid,
+            overwrite=overwrite,
+        )
 
 
-def _upload_clinical_tables(
+def upload_clinical_tables(
     conn,
     syn: synapseclient.Synapse,
     clinical_synid: str,
@@ -56,15 +54,22 @@ def _upload_clinical_tables(
     for clinical_file in syn.getChildren(clinical_synid):
         table_name = clinical_file["name"].replace(".csv", "")
         logger.info(f"Uploading clinical table: {table_name}")
-        df = _read_synapse_table(syn, clinical_file["id"], sep=",")
+        entity = syn.get(clinical_file["id"])
+        df = pd.read_csv(entity.path, sep=",", comment="#", low_memory=False)
         if df.empty:
             logger.warning(f"Skipping empty clinical file: {clinical_file['name']}")
             continue
 
-        write_to_snowflake(conn=conn, table_df=df, table_name=table_name, overwrite=overwrite)
+        write_to_snowflake(
+            conn=conn,
+            table_df=df,
+            table_name=table_name,
+            overwrite=overwrite,
+            quote_identifiers=False,
+        )
 
 
-def _upload_cbioportal_tables(
+def upload_cbioportal_tables(
     conn,
     syn: synapseclient.Synapse,
     cohort: str,
@@ -91,44 +96,51 @@ def _upload_cbioportal_tables(
 
         sep = "\t" if raw_name.endswith(".txt") else ","
         logger.info(f"Uploading cBioPortal table: {table_name}")
-        df = _read_synapse_table(syn, cbioportal_file["id"], sep=sep)
-        if df.empty:
-            logger.warning(f"Skipping empty cBioPortal file: {raw_name}")
-            continue
+        entity = syn.get(cbioportal_file["id"])
+        df = pd.read_csv(entity.path, sep=sep, comment="#", low_memory=False)
 
-        write_to_snowflake(conn=conn, table_df=df, table_name=table_name, overwrite=overwrite)
+        write_to_snowflake(
+            conn=conn,
+            table_df=df,
+            table_name=table_name,
+            overwrite=overwrite,
+            quote_identifiers=False,
+        )
 
 
-def main(args):
+def main(
+    database: str,
+    overwrite: bool,
+    conn: "snowflake.connector.SnowflakeConnection" = None,
+):
     """Main entrypoint for GENIE BPC ELT pipeline."""
     syn = synapseclient.login()
     script_dir = os.path.dirname(__file__)
     yaml_path = os.path.join(script_dir, "genie_bpc_releases.yaml")
-    with get_connection() as conn:
-        logger.info("Connected to Snowflake.")
+    logger.info("Connected to Snowflake.")
 
-        with open(yaml_path, "r") as f:
-            cohorts = yaml.safe_load(f)
+    with open(yaml_path, "r") as f:
+        cohorts = yaml.safe_load(f)
 
-        for cohort_info in cohorts:
-            cohort = cohort_info["cohort"]
-            version = cohort_info["version"]
-            clinical_synid = cohort_info["clinical_synid"]
-            cbioportal_synid = cohort_info["cbioportal_synid"]
+    for cohort_info in cohorts:
+        cohort = cohort_info["cohort"]
+        version = cohort_info["version"]
+        clinical_synid = cohort_info["clinical_synid"]
+        cbioportal_synid = cohort_info["cbioportal_synid"]
 
-            logger.info(f"Processing cohort: {cohort} (version {version})")
-            create_snowflake_resources(
-                conn=conn,
-                syn=syn,
-                cohort=cohort,
-                version=version,
-                clinical_synid=clinical_synid,
-                cbioportal_synid=cbioportal_synid,
-                overwrite=args.overwrite,
-                database=args.database,
-            )
+        logger.info(f"Processing cohort: {cohort} (version {version})")
+        create_snowflake_resources(
+            conn=conn,
+            syn=syn,
+            cohort=cohort,
+            version=version,
+            clinical_synid=clinical_synid,
+            cbioportal_synid=cbioportal_synid,
+            overwrite=overwrite,
+            database=database,
+        )
 
-        logger.info("All cohorts processed successfully.")
+    logger.info("All cohorts processed successfully.")
 
 
 if __name__ == "__main__":
@@ -139,10 +151,10 @@ if __name__ == "__main__":
         help="Overwrite table data if present.",
     )
     parser.add_argument(
-        "--database", 
-        type=str, 
-        default = "GENIE_DEV", 
-        help="Database to run ELT script in."
+        "--database",
+        type=str,
+        default="GENIE_DEV",
+        help="Database to run ELT script in.",
     )
     args = parser.parse_args()
-    main(args)
+    main(database=args.database, overwrite=args.overwrite)
