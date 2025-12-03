@@ -2,7 +2,7 @@ import pandas as pd
 import pytest
 from unittest.mock import patch, MagicMock, Mock
 
-from genie import genie_bpc_elt
+from src.genie import genie_bpc_elt
 
 
 def test_upload_clinical_tables_success():

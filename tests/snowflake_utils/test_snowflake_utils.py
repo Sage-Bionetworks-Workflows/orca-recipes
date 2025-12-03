@@ -3,7 +3,7 @@ from unittest.mock import patch, MagicMock
 import pandas as pd
 import pytest
 
-from snowflake_utils import get_cursor, get_connection, table_exists, write_to_snowflake
+from src.snowflake_utils import get_cursor, get_connection, table_exists, write_to_snowflake
 
 
 class TestConnector:

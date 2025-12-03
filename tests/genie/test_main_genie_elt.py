@@ -2,7 +2,7 @@ import pandas as pd
 import pytest
 from unittest.mock import patch, MagicMock
 
-from genie import main_genie_elt
+from src.genie import main_genie_elt
 
 
 @pytest.mark.parametrize(

@@ -22,8 +22,6 @@ jobs:
           pip install -r requirements-dev.txt
           
       - name: Run tests
-        env:
-          PYTHONPATH: ${{ github.workspace }}/src
         run: |
           python -m pytest tests/ -v --tb=short
   

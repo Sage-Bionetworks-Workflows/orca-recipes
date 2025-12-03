@@ -2,7 +2,7 @@ import pytest
 from unittest.mock import MagicMock, patch, call
 import pandas as pd
 
-from genie import genie_sp_elt
+from src.genie import genie_sp_elt
 
 
 @pytest.fixture
