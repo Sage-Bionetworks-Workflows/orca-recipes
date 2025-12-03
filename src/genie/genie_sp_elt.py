@@ -24,7 +24,7 @@ def process_cohort(
     """ Process a single cohort:
       - Download files from Synapse
       - Use specified patient_id_key and sample_id_key
-      - Write to Snowflake table named in YAML
+      - Write to Snowflake table 
 
     Args:
         syn (synapseclient.Synapse): synapse client connection
@@ -68,7 +68,7 @@ def process_cohort(
                 table_df=df,
                 table_name=table_name,
                 overwrite=overwrite,
-                quote_identifiers=False,
+                write_pandas_kwargs={"quote_identifiers":False},
             )
             logger.info(
                 f"[{schema_name}] Wrote {len(df)} rows to table '{table_name}'"

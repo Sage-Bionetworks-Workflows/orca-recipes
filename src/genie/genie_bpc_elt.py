@@ -128,7 +128,7 @@ def upload_cbioportal_tables(
             table_df=df,
             table_name=table_name,
             overwrite=overwrite,
-            quote_identifiers=False,
+            write_pandas_kwargs={"quote_identifiers":False},
         )
 
 
