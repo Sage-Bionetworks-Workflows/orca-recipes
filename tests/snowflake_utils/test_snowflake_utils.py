@@ -3,7 +3,7 @@ from unittest.mock import patch, MagicMock
 import pandas as pd
 import pytest
 
-from snowflake_utils import get_connection, table_exists, write_to_snowflake
+from snowflake_utils import get_cursor, get_connection, table_exists, write_to_snowflake
 
 
 class TestConnector:
@@ -55,6 +55,93 @@ class TestConnector:
         with patch("snowflake.connector.connect", side_effect=Exception("bad creds")):
             with pytest.raises(Exception, match="bad creds"):
                 get_connection()
+
+
+class TestCursor:
+    def _make_conn_and_cursor(self):
+        """
+        Helper to build a fake Snowflake connection whose cursor() is
+        a context manager yielding a cursor object.
+        """
+        conn = MagicMock(name="conn")
+        cursor_cm = MagicMock(name="cursor_cm")
+        cursor = MagicMock(name="cursor")
+
+        cursor_cm.__enter__.return_value = cursor
+        cursor_cm.__exit__.return_value = None
+
+        conn.cursor.return_value = cursor_cm
+        return conn, cursor_cm, cursor
+
+    def test_get_cursor_with_passed_conn_does_not_create_or_close_local_conn(self):
+        """
+        Test that when passed a Snowflake connection object, it will not create or close local
+        connection since there is none.
+        """
+        conn, cursor_cm, cursor = self._make_conn_and_cursor()
+
+        # patch create_local_connection so we can assert it's NOT called
+        with patch(
+            "snowflake_utils.snowflake_utils.create_local_connection"
+        ) as mock_create_local:
+            with get_cursor(conn=conn) as cs:
+                # yielded cursor should be the __enter__ result
+                assert cs is cursor
+
+            mock_create_local.assert_not_called()
+
+        # Make sure cursor() was used as a context manager
+        conn.cursor.assert_called_once()
+        cursor_cm.__enter__.assert_called_once()
+        cursor_cm.__exit__.assert_called_once()
+
+        # When conn is passed, we should not close it
+        conn.close.assert_not_called()
+
+    def test_get_cursor_without_conn_creates_and_closes_local_conn(self):
+        """
+        Test that when not passed a snowflake connection object (e.g from Airflow's SnowHook),
+        a local connection is created and eventually closed
+        """
+        local_conn, cursor_cm, cursor = self._make_conn_and_cursor()
+
+        with patch, object(
+            "snowflake_utils.snowflake_utils.create_local_connection",
+            return_value=local_conn,
+        ) as mock_create_local:
+            with get_cursor(conn=None) as cs:
+                assert cs is cursor
+
+            mock_create_local.assert_called_once()
+
+        # Cursor context manager used
+        local_conn.cursor.assert_called_once()
+        cursor_cm.__enter__.assert_called_once()
+        cursor_cm.__exit__.assert_called_once()
+
+        # Because local_conn was created inside, it must be closed in finally
+        local_conn.close.assert_called_once()
+
+    def test_get_cursor_closes_local_conn_even_on_exception(self):
+        """
+        Test that when using local credentials to connect to Snowflake,
+        a local connection is created and eventually closed
+        """
+        local_conn, cursor_cm, cursor = self._make_conn_and_cursor()
+
+        with patch(
+            "snowflake_utils.snowflake_utils.create_local_connection",
+            return_value=local_conn,
+        ):
+            with pytest.raises(RuntimeError):
+                with get_cursor() as cs:
+                    assert cs is cursor
+                    raise RuntimeError("boom")
+
+        # still closes connection
+        local_conn.close.assert_called_once()
+        # and still exited cursor CM
+        cursor_cm.__exit__.assert_called_once()
 
 
 class TestUtils:

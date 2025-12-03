@@ -114,7 +114,7 @@ def test_push_cbio_files_to_snowflake_success():
         "get_cbio_file_map",
         return_value={"data_clinical.txt": MagicMock(path="file.txt")},
     ), patch.object(
-        main_genie_elt.pd, "read_csv", return_value=MagicMock()
+        main_genie_elt.pd, "read_csv", return_value=pd.DataFrame({"a": [1]})
     ), patch.object(
         main_genie_elt, "write_to_snowflake"
     ) as mock_write:
@@ -123,69 +123,29 @@ def test_push_cbio_files_to_snowflake_success():
             mock_syn, mock_conn, "syn1", overwrite=True, database="test"
         )
         mock_write.assert_called_once()
+        
 
-
-@pytest.mark.parametrize(
-    "read_csv_side_effect, expected_log, expected_calls",
-    [
-        # Case 1: Normal — CSV loads fine and Snowflake write called
-        (None, "Using schema: test_schema", 1),
-        # Case 2: EmptyDataError — should log a warning, skip write
-        (pd.errors.EmptyDataError(), "is empty — skipping.", 0),
-        # Case 3: Unexpected error — should log an error, skip write
-        (Exception("File read failed"), "Failed to read", 0),
-    ],
-)
-def test_push_cbio_files_to_snowflake_has_expected_data_error(
-    read_csv_side_effect, expected_log, expected_calls, caplog
-):
-    mock_syn = MagicMock()
+def test_push_cbio_files_to_snowflake_skips_if_dataframe_empty():
     mock_conn = MagicMock()
-    mock_cursor = MagicMock()
-    mock_conn.cursor.return_value.__enter__.return_value = mock_cursor
+    mock_conn.cursor.return_value.__enter__.return_value = MagicMock()
+    mock_syn = MagicMock()
 
-    # Mock dependent functions
     with patch.object(
-        main_genie_elt, "get_table_schema_name", return_value="test_schema"
-    ), patch.object(main_genie_elt, "get_cbio_file_map") as mock_get_map, patch.object(
-        main_genie_elt, "get_table_name", return_value="clinical_patient"
+        main_genie_elt, "get_table_schema_name", return_value="schema"
+    ), patch.object(
+        main_genie_elt,
+        "get_cbio_file_map",
+        return_value={"data_clinical.txt": MagicMock(path="file.txt")},
+    ), patch.object(
+        main_genie_elt.pd, "read_csv", return_value=pd.DataFrame()
     ), patch.object(
         main_genie_elt, "write_to_snowflake"
-    ) as mock_write, patch.object(
-        pd, "read_csv"
-    ) as mock_read_csv:
-
-        # Mock the cbio file map to simulate one Synapse file
-        mock_entity = MagicMock()
-        mock_entity.path = "/tmp/fake_file.txt"
-        mock_get_map.return_value = {"data_clinical_patient.txt": mock_entity}
-
-        # Simulate pandas.read_csv behavior per test case
-        if read_csv_side_effect is not None:
-            mock_read_csv.side_effect = read_csv_side_effect
-        else:
-            mock_read_csv.return_value = pd.DataFrame({"col1": [1, 2, 3]})
+    ) as mock_write:
 
         main_genie_elt.push_cbio_files_to_snowflake(
-            syn=mock_syn,
-            conn=mock_conn,
-            synid="syn123",
-            overwrite=True,
-            database="FAKE_DB",
+            mock_syn, mock_conn, "syn1", overwrite=True, database="test"
         )
-
-    # Assert Snowflake commands are always called
-    mock_cursor.execute.assert_any_call("USE DATABASE FAKE_DB;")
-    mock_cursor.execute.assert_any_call(
-        "CREATE SCHEMA IF NOT EXISTS test_schema WITH MANAGED ACCESS;"
-    )
-    mock_cursor.execute.assert_any_call("USE SCHEMA test_schema")
-
-    # Assert expected write calls (0 if exception, 1 if normal)
-    assert mock_write.call_count == expected_calls
-
-    # Assert expected log text was emitted
-    assert any(expected_log in rec.message for rec in caplog.records)
+        mock_write.assert_not_called()
 
 
 @pytest.mark.parametrize(

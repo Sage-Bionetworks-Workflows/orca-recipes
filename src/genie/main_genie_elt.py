@@ -120,35 +120,30 @@ def push_cbio_files_to_snowflake(
     """
     release_schema_name = get_table_schema_name(syn=syn, synid=synid)
     release_file_map = get_cbio_file_map(syn=syn, synid=synid)
-    with get_connection(conn) as conn:
-        with conn.cursor() as cs:
-            cs.execute(f"USE DATABASE {database};")
-            cs.execute(
-                f"CREATE SCHEMA IF NOT EXISTS {release_schema_name} WITH MANAGED ACCESS;"
-            )
-            cs.execute(f"USE SCHEMA {release_schema_name}")
-            logger.info(f"Using schema: {release_schema_name}")
+    with conn.cursor() as cs:
+        cs.execute(f"USE DATABASE {database};")
+        cs.execute(
+            f"CREATE SCHEMA IF NOT EXISTS {release_schema_name} WITH MANAGED ACCESS;"
+        )
+        cs.execute(f"USE SCHEMA {release_schema_name}")
+        logger.info(f"Using schema: {release_schema_name}")
 
-        for release_file_key, release_file_ent in release_file_map.items():
-            table_name = get_table_name(release_file_key)
-            try:
-                df = pd.read_csv(
-                    release_file_ent.path, sep="\t", comment="#", low_memory=False
-                )
-            except pd.errors.EmptyDataError:
-                logger.warning(f"{release_file_ent.path} is empty — skipping.")
-                continue
-            except Exception as e:
-                logger.error(f"Failed to read {release_file_ent.path}: {e}")
-                continue
+    for release_file_key, release_file_ent in release_file_map.items():
+        table_name = get_table_name(release_file_key)
+        df = pd.read_csv(
+            release_file_ent.path, sep="\t", comment="#", low_memory=False
+        )
+        if df.empty:
+            logger.warning(f"Skipping empty clinical file: {release_file_key}")
+            continue
 
-            write_to_snowflake(
-                conn=conn,
-                table_df=df,
-                table_name=table_name,
-                overwrite=overwrite,
-                quote_identifiers=False,
-            )
+        write_to_snowflake(
+            conn=conn,
+            table_df=df,
+            table_name=table_name,
+            overwrite=overwrite,
+            quote_identifiers=False,
+        )
 
 
 def is_valid_release_path(release_path: str) -> bool:
@@ -192,32 +187,31 @@ def main(
         overwrite (bool): Whether to overwrite table data or not
         database (str): Database table to run ELT commands in
         conn (snowflake.connector.SnowflakeConnection): Optional Snowflake
-            connection injected externally (e.g., Airflow)
+            connection injected externally (e.g. Airflow)
     """
     syn = synapseclient.login()
+    conn_obj = get_connection(conn=conn)
 
-    # If Airflow provides a connection -> use it.
-    # Otherwise -> fall back to local Snowflake connection via env vars.
-    external_conn = conn is not None
-
-    if not external_conn:
-        conn = get_connection()
-
-    logger.info("Connected to Snowflake.")
-    for dirpath, dirnames, _ in synu.walk(syn, PROJECT_SYNID):
-        if is_valid_release_path(release_path=dirpath):
-            for dirname, dir_synid in dirnames:
-                logger.info(f"Processing release: {dirname}")
-                push_cbio_files_to_snowflake(
-                    syn=syn,
-                    conn=conn,
-                    synid=dir_synid,
-                    overwrite=overwrite,
-                    database=database,
-                )
-        else:
-            logger.info(f"Skipping invalid release path: {dirpath}.")
-        logger.info("ELT completed successfully.")
+    try:
+        logger.info("Connected to Snowflake.")
+        for dirpath, dirnames, _ in synu.walk(syn, PROJECT_SYNID):
+            if is_valid_release_path(release_path=dirpath):
+                for dirname, dir_synid in dirnames:
+                    logger.info(f"Processing release: {dirname}")
+                    push_cbio_files_to_snowflake(
+                        syn=syn,
+                        conn=conn_obj,
+                        synid=dir_synid,
+                        overwrite=overwrite,
+                        database=database,
+                    )
+            else:
+                logger.info(f"Skipping invalid release path: {dirpath}.")
+            logger.info("ELT completed successfully.")
+    finally:
+        # if it's a local connection, close it
+        if conn is None:
+            conn_obj.close()
 
 
 if __name__ == "__main__":

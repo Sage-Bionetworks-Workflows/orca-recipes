@@ -10,8 +10,33 @@ import yaml
 from snowflake_utils import get_connection, logger, write_to_snowflake
 
 
+def get_table_name(release_file_key: str, cohort: str) -> str:
+    """
+    Derive a clean Snowflake table name from a cbioportal/GENIE file name.
+
+    Examples:
+      data_clinical_patient.txt -> clinical_patient
+      genie_bpc_data_clinical_patient.txt -> clinical_patient
+      genie_bpc_cna_hg19.seg -> seg
+
+    Args:
+        release_file_key (str): the raw string of the release file
+        cohort (str): the name of the cohort this file is from
+
+    Returns:
+        str: cleaned and formatted name for the Snowflake table
+    """
+    table_name = (
+        release_file_key.replace("data_", "")
+        .replace(".txt", "")
+        .replace(f"genie_{cohort}_", "")
+        .replace("cna_hg19.seg", "seg")
+    )
+    return table_name
+
+
 def create_snowflake_resources(
-    conn,
+    conn: "snowflake.connector.SnowflakeConnection",
     syn: synapseclient.Synapse,
     cohort: str,
     version: str,
@@ -24,28 +49,27 @@ def create_snowflake_resources(
     schema_name = f"{cohort}_{version}"
     logger.info(f"Creating/using schema: {schema_name}")
 
-    with get_connection(conn) as conn:
-        with conn.cursor() as cs:
-            cs.execute(f"USE DATABASE {database};")
-            cs.execute(
-                f"CREATE SCHEMA IF NOT EXISTS {schema_name} WITH MANAGED ACCESS;"
-            )
-            cs.execute(f"USE SCHEMA {schema_name}")
+    with conn.cursor() as cs:
+        cs.execute(f"USE DATABASE {database};")
+        cs.execute(
+            f"CREATE SCHEMA IF NOT EXISTS {schema_name} WITH MANAGED ACCESS;"
+        )
+        cs.execute(f"USE SCHEMA {schema_name}")
 
-        upload_clinical_tables(
-            conn=conn, syn=syn, clinical_synid=clinical_synid, overwrite=overwrite
-        )
-        upload_cbioportal_tables(
-            conn=conn,
-            syn=syn,
-            cohort=cohort,
-            cbioportal_synid=cbioportal_synid,
-            overwrite=overwrite,
-        )
+    upload_clinical_tables(
+        conn=conn, syn=syn, clinical_synid=clinical_synid, overwrite=overwrite
+    )
+    upload_cbioportal_tables(
+        conn=conn,
+        syn=syn,
+        cohort=cohort,
+        cbioportal_synid=cbioportal_synid,
+        overwrite=overwrite,
+    )
 
 
 def upload_clinical_tables(
-    conn,
+    conn: "snowflake.connector.SnowflakeConnection",
     syn: synapseclient.Synapse,
     clinical_synid: str,
     overwrite: bool,
@@ -70,7 +94,7 @@ def upload_clinical_tables(
 
 
 def upload_cbioportal_tables(
-    conn,
+    conn: "snowflake.connector.SnowflakeConnection",
     syn: synapseclient.Synapse,
     cohort: str,
     cbioportal_synid: str,
@@ -113,7 +137,21 @@ def main(
     overwrite: bool,
     conn: "snowflake.connector.SnowflakeConnection" = None,
 ):
-    """Main entrypoint for GENIE BPC ELT pipeline."""
+    """
+        Main function - loops through the
+        cohorts in the yaml, gets the metadata 
+        information such as synapse ids of the folders 
+        containing the files to ingest. 
+        For BPC there are two for each cohort:
+            - clinical files folder
+            - cbioportal files folder
+
+    Args:
+        overwrite (bool): Whether to overwrite table data or not
+        database (str): Database table to run ELT commands in
+        conn (snowflake.connector.SnowflakeConnection): Optional Snowflake
+            connection injected externally (e.g. Airflow)
+    """
     syn = synapseclient.login()
     script_dir = os.path.dirname(__file__)
     yaml_path = os.path.join(script_dir, "genie_bpc_releases.yaml")
@@ -122,25 +160,31 @@ def main(
     with open(yaml_path, "r") as f:
         cohorts = yaml.safe_load(f)
 
-    for cohort_info in cohorts:
-        cohort = cohort_info["cohort"]
-        version = cohort_info["version"]
-        clinical_synid = cohort_info["clinical_synid"]
-        cbioportal_synid = cohort_info["cbioportal_synid"]
+    conn_obj = get_connection(conn=conn)
+    try:
+        for cohort_info in cohorts:
+            cohort = cohort_info["cohort"]
+            version = cohort_info["version"]
+            clinical_synid = cohort_info["clinical_synid"]
+            cbioportal_synid = cohort_info["cbioportal_synid"]
 
-        logger.info(f"Processing cohort: {cohort} (version {version})")
-        create_snowflake_resources(
-            conn=conn,
-            syn=syn,
-            cohort=cohort,
-            version=version,
-            clinical_synid=clinical_synid,
-            cbioportal_synid=cbioportal_synid,
-            overwrite=overwrite,
-            database=database,
-        )
+            logger.info(f"Processing cohort: {cohort} (version {version})")
+            create_snowflake_resources(
+                conn=conn_obj,
+                syn=syn,
+                cohort=cohort,
+                version=version,
+                clinical_synid=clinical_synid,
+                cbioportal_synid=cbioportal_synid,
+                overwrite=overwrite,
+                database=database,
+            )
 
-    logger.info("All cohorts processed successfully.")
+        logger.info("All cohorts processed successfully.")
+    finally:
+        # if it's a local connection, close it
+        if conn is None:
+            conn_obj.close()
 
 
 if __name__ == "__main__":

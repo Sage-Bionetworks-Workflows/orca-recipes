@@ -1,5 +1,5 @@
 import pytest
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, patch, call
 import pandas as pd
 
 from genie import genie_sp_elt
@@ -16,8 +16,8 @@ def mock_conn():
 def mock_syn():
     syn = MagicMock()
     syn.getChildren.return_value = [
-        {"id": "file1"},
-        {"id": "file2"}
+        {"id": "file1", "name": "f1.tsv"},
+        {"id": "file2", "name": "f2.tsv"}
     ]
     file_entity = MagicMock()
     file_entity.path = "/tmp/file.tsv"
@@ -44,33 +44,64 @@ def cohort_config_list():
 
 
 def test_process_cohort_single(mock_syn, mock_conn, cohort_config_single):
-    with patch.object(genie_sp_elt, "pandas") as mock_pd, \
+    """
+    Single folder_synid (string) should be coerced to list and overwrite forced False.
+    Also validates Snowflake schema setup SQL and 2 files ingested.
+    """
+    cursor = mock_conn.cursor.return_value.__enter__.return_value
+
+    with patch.object(genie_sp_elt, "pd") as mock_pd, \
          patch.object(genie_sp_elt, "write_to_snowflake") as mock_write:
 
-        # Mock pandas.read_csv to return a dataframe
-        mock_pd.read_csv.return_value = pd.DataFrame({"a": [1, 2]})
+        df = pd.DataFrame({"a": [1, 2]})
+        mock_pd.read_csv.return_value = df
 
         genie_sp_elt.process_cohort(
             syn=mock_syn,
             conn=mock_conn,
             cohort_config=cohort_config_single,
             database="TEST_DB",
-            overwrite=True
+            overwrite=True,   # should be ignored / forced False internally
         )
 
+        # 2 files from mock_syn.getChildren
         assert mock_pd.read_csv.call_count == 2
         assert mock_write.call_count == 2
-        mock_conn.cursor.return_value.__enter__.return_value.execute.assert_any_call("USE DATABASE TEST_DB;")
-        mock_conn.cursor.return_value.__enter__.return_value.execute.assert_any_call(
-            "CREATE SCHEMA IF NOT EXISTS test_cohort WITH MANAGED ACCESS;"
+
+        # overwrite MUST be False for single folder_synid case
+        for c in mock_write.call_args_list:
+            assert c.kwargs["overwrite"] is False
+            assert c.kwargs["table_name"] == "test_table"
+            assert c.kwargs["conn"] == mock_conn
+            assert c.kwargs["quote_identifiers"] is False
+            assert c.kwargs["table_df"] is df
+
+        # SQL setup executed in order
+        cursor.execute.assert_has_calls(
+            [
+                call("USE DATABASE TEST_DB;"),
+                call("CREATE SCHEMA IF NOT EXISTS test_cohort WITH MANAGED ACCESS;"),
+                call("USE SCHEMA test_cohort"),
+            ],
+            any_order=False,
+        )
+
+        # folder read called once on syn123 (after coercion)
+        mock_syn.getChildren.assert_called_once_with(
+            "syn123", includeTypes=["file"]
         )
 
 
 def test_process_cohort_folder_list(mock_syn, mock_conn, cohort_config_list):
-    with patch.object(genie_sp_elt, "pandas") as mock_pd, \
+    """
+    List folder_synid keeps overwrite as provided.
+    With 2 folders and 2 files per folder => 4 reads/writes.
+    """
+    with patch.object(genie_sp_elt, "pd") as mock_pd, \
          patch.object(genie_sp_elt, "write_to_snowflake") as mock_write:
 
-        mock_pd.read_csv.return_value = pd.DataFrame({"a": [1]})
+        df = pd.DataFrame({"a": [1]})
+        mock_pd.read_csv.return_value = df
 
         genie_sp_elt.process_cohort(
             syn=mock_syn,
@@ -84,12 +115,33 @@ def test_process_cohort_folder_list(mock_syn, mock_conn, cohort_config_list):
         assert mock_pd.read_csv.call_count == 4
         assert mock_write.call_count == 4
 
+        # overwrite should remain False for list case
+        for c in mock_write.call_args_list:
+            assert c.kwargs["overwrite"] is False
+            assert c.kwargs["table_name"] == "test_table"
+            assert c.kwargs["conn"] == mock_conn
+            assert c.kwargs["quote_identifiers"] is False
+            assert c.kwargs["table_df"] is df
 
-def test_process_cohort_empty_file(mock_syn, mock_conn, cohort_config_single):
-    with patch.object(genie_sp_elt, "pandas") as mock_pd, \
+        # Ensure getChildren called for each folder
+        mock_syn.getChildren.assert_has_calls(
+            [
+                call("syn1", includeTypes=["file"]),
+                call("syn2", includeTypes=["file"]),
+            ],
+            any_order=False,
+        )
+
+
+def test_process_cohort_skips_empty_files(mock_syn, mock_conn, cohort_config_single):
+    """
+    Empty dataframe should skip write_to_snowflake.
+    Still reads both files.
+    """
+    with patch.object(genie_sp_elt, "pd") as mock_pd, \
          patch.object(genie_sp_elt, "write_to_snowflake") as mock_write:
 
-        mock_pd.read_csv.side_effect = pd.errors.EmptyDataError
+        mock_pd.read_csv.return_value = pd.DataFrame()  # empty => df.empty True
 
         genie_sp_elt.process_cohort(
             syn=mock_syn,
@@ -99,21 +151,5 @@ def test_process_cohort_empty_file(mock_syn, mock_conn, cohort_config_single):
             overwrite=True
         )
 
-        mock_write.assert_not_called()
-
-
-def test_process_cohort_read_exception(mock_syn, mock_conn, cohort_config_single):
-    with patch.object(genie_sp_elt, "pandas") as mock_pd, \
-         patch.object(genie_sp_elt, "write_to_snowflake") as mock_write:
-
-        mock_pd.read_csv.side_effect = Exception("Failed read")
-
-        genie_sp_elt.process_cohort(
-            syn=mock_syn,
-            conn=mock_conn,
-            cohort_config=cohort_config_single,
-            database="TEST_DB",
-            overwrite=True
-        )
-
+        assert mock_pd.read_csv.call_count == 2
         mock_write.assert_not_called()
