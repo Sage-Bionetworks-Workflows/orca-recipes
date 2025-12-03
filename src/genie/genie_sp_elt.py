@@ -35,7 +35,7 @@ def process_cohort(
     """
     schema_name = cohort_config["cohort"]
     table_name = cohort_config["table_name"]
-    folder_synids = cohort_config["folder_synid"]
+    file_synids = cohort_config["file_synid"]
 
     logger.info(f"Creating/using schema: {schema_name}")
 
@@ -46,33 +46,33 @@ def process_cohort(
         )
         cs.execute(f"USE SCHEMA {schema_name}")
 
-    # Ensure folder_synids is a list
-    if not isinstance(folder_synids, list):
-        folder_synids = [folder_synids]
+    # Ensure file_synids is a list
+    if not isinstance(file_synids, list):
+        file_synids = [file_synids]
+
+    for synid in file_synids:
+        logger.info(f"[{schema_name}] Processing Synapse file: {synid}")
+        # Download the file(s)
+        file_entity = syn.get(synid, downloadLocation="/tmp", followLink=True)
+        sep = "\t" if table_name == "cbioportal_clinical_sample" else ","
+        df = pd.read_csv(file_entity.path, sep=sep, low_memory=False, comment = "#")
+        if df.empty:
+            logger.warning(f"Skipping empty clinical file: {file_entity['name']}")
+            continue
+
+        # Write DataFrame to Snowflake
+        write_to_snowflake(
+            conn=conn,
+            table_df=df,
+            table_name=table_name,
+            overwrite=overwrite,
+            write_pandas_kwargs={"quote_identifiers":False},
+        )
+        # set overwrite to False if there are multiple files to write to one table (after the first)
         overwrite = False
-
-    for synid in folder_synids:
-        logger.info(f"[{schema_name}] Processing Synapse folder: {synid}")
-        # Download the files from Synapse folder
-        folder_files = syn.getChildren(synid, includeTypes=["file"])
-        for f in folder_files:
-            file_entity = syn.get(f["id"], downloadLocation="/tmp", followLink=True)
-            df = pd.read_csv(file_entity.path, sep="\t", low_memory=False)
-            if df.empty:
-                logger.warning(f"Skipping empty clinical file: {f['name']}")
-                continue
-
-            # Write DataFrame to Snowflake
-            write_to_snowflake(
-                conn=conn,
-                table_df=df,
-                table_name=table_name,
-                overwrite=overwrite,
-                write_pandas_kwargs={"quote_identifiers":False},
-            )
-            logger.info(
-                f"[{schema_name}] Wrote {len(df)} rows to table '{table_name}'"
-            )
+        logger.info(
+            f"[{schema_name}] Wrote {len(df)} rows to table '{table_name}'"
+        )
 
 
 def main(
@@ -95,7 +95,7 @@ def main(
     syn = synapseclient.login()
 
     script_dir = os.path.dirname(__file__)
-    yaml_path = os.path.join(script_dir, "genie_bpc_releases.yaml")
+    yaml_path = os.path.join(script_dir, "genie_sp_releases.yaml")
     
     conn_obj = get_connection(conn=conn)
     try:

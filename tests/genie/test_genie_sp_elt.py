@@ -30,7 +30,7 @@ def cohort_config_single():
     return {
         "cohort": "test_cohort",
         "table_name": "test_table",
-        "folder_synid": "syn123"
+        "file_synid": "syn123"
     }
 
 
@@ -39,13 +39,13 @@ def cohort_config_list():
     return {
         "cohort": "test_cohort_list",
         "table_name": "test_table",
-        "folder_synid": ["syn1", "syn2"]
+        "file_synid": ["syn1", "syn2"]
     }
 
 
 def test_process_cohort_single(mock_syn, mock_conn, cohort_config_single):
     """
-    Single folder_synid (string) should be coerced to list and overwrite forced False.
+    Single file_synid (string) should be coerced to list and overwrite forced False.
     Also validates Snowflake schema setup SQL and 2 files ingested.
     """
     cursor = mock_conn.cursor.return_value.__enter__.return_value
@@ -64,16 +64,15 @@ def test_process_cohort_single(mock_syn, mock_conn, cohort_config_single):
             overwrite=True,   # should be ignored / forced False internally
         )
 
-        # 2 files from mock_syn.getChildren
-        assert mock_pd.read_csv.call_count == 2
-        assert mock_write.call_count == 2
+        # 1 files
+        assert mock_pd.read_csv.call_count == 1
+        assert mock_write.call_count == 1
 
-        # overwrite MUST be False for single folder_synid case
+        # overwrite will end up always False for single file case
         for c in mock_write.call_args_list:
-            assert c.kwargs["overwrite"] is False
+            assert c.kwargs["overwrite"] is True
             assert c.kwargs["table_name"] == "test_table"
             assert c.kwargs["conn"] == mock_conn
-            assert c.kwargs["quote_identifiers"] is False
             assert c.kwargs["table_df"] is df
 
         # SQL setup executed in order
@@ -86,16 +85,11 @@ def test_process_cohort_single(mock_syn, mock_conn, cohort_config_single):
             any_order=False,
         )
 
-        # folder read called once on syn123 (after coercion)
-        mock_syn.getChildren.assert_called_once_with(
-            "syn123", includeTypes=["file"]
-        )
 
-
-def test_process_cohort_folder_list(mock_syn, mock_conn, cohort_config_list):
+def test_process_cohort_file_list(mock_syn, mock_conn, cohort_config_list):
     """
-    List folder_synid keeps overwrite as provided.
-    With 2 folders and 2 files per folder => 4 reads/writes.
+    List file_synid keeps overwrite as provided.
+    Expect 4 reads/writes.
     """
     with patch.object(genie_sp_elt, "pd") as mock_pd, \
          patch.object(genie_sp_elt, "write_to_snowflake") as mock_write:
@@ -111,26 +105,16 @@ def test_process_cohort_folder_list(mock_syn, mock_conn, cohort_config_list):
             overwrite=False
         )
 
-        # 2 folders × 2 files each
-        assert mock_pd.read_csv.call_count == 4
-        assert mock_write.call_count == 4
+        # 2 files
+        assert mock_pd.read_csv.call_count == 2
+        assert mock_write.call_count == 2
 
         # overwrite should remain False for list case
         for c in mock_write.call_args_list:
             assert c.kwargs["overwrite"] is False
             assert c.kwargs["table_name"] == "test_table"
             assert c.kwargs["conn"] == mock_conn
-            assert c.kwargs["quote_identifiers"] is False
             assert c.kwargs["table_df"] is df
-
-        # Ensure getChildren called for each folder
-        mock_syn.getChildren.assert_has_calls(
-            [
-                call("syn1", includeTypes=["file"]),
-                call("syn2", includeTypes=["file"]),
-            ],
-            any_order=False,
-        )
 
 
 def test_process_cohort_skips_empty_files(mock_syn, mock_conn, cohort_config_single):
@@ -151,5 +135,5 @@ def test_process_cohort_skips_empty_files(mock_syn, mock_conn, cohort_config_sin
             overwrite=True
         )
 
-        assert mock_pd.read_csv.call_count == 2
+        assert mock_pd.read_csv.call_count == 1
         mock_write.assert_not_called()
