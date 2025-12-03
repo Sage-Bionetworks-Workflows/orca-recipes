@@ -92,7 +92,6 @@ def main(
         conn (snowflake.connector.SnowflakeConnection): Optional Snowflake
             connection injected externally (e.g. Airflow)
     """
-    # Connect to Synapse
     syn = synapseclient.login()
 
     script_dir = os.path.dirname(__file__)
