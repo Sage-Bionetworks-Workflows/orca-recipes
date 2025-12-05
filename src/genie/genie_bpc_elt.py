@@ -45,7 +45,20 @@ def create_snowflake_resources(
     overwrite: bool,
     database: str,
 ) -> None:
-    """Create Snowflake schema and upload clinical + cBioPortal tables for one cohort."""
+    """Create Snowflake schema and upload clinical + cBioPortal tables for one cohort.
+
+    Args:
+        conn (snowflake.connector.SnowflakeConnection): snowflake connection
+        syn (synapseclient.Synapse): synapse client connection
+        cohort (str): name of the cohort e.g: BrCa
+        version (str): release version of the cohort data e.g: public_02_2
+        clinical_synid (str): synapse id of the folder containing the clinical files for the
+            given cohort and release version
+        cbioportal_synid (str): synapse id of the folder containing the cbioportal files for the
+            given cohort and release version
+        overwrite (bool): whether to overwrite pre-existing tables with the data or not
+        database (str): name of the database to write to
+    """
     schema_name = f"{cohort}_{version}"
     logger.info(f"Creating/using schema: {schema_name}")
 
@@ -74,7 +87,17 @@ def upload_clinical_tables(
     clinical_synid: str,
     overwrite: bool,
 ) -> None:
-    """Upload clinical tables to Snowflake."""
+    """Retrieves clinical files from Synaspe and then
+       uploads the data to tables on Snowflake, skipping excluded prefixes.
+
+    Args:
+        conn (snowflake.connector.SnowflakeConnection): snowflake connection
+        syn (synapseclient.Synapse): synapse client connection
+        cohort (str): name of the cohort
+        clinical_synid (str): synapse id of the folder containing the clinical files for the
+            given cohort
+        overwrite (bool): whether to overwrite the table contents or not
+    """
     for clinical_file in syn.getChildren(clinical_synid):
         table_name = clinical_file["name"].replace(".csv", "")
         logger.info(f"Uploading clinical table: {table_name}")
@@ -100,7 +123,17 @@ def upload_cbioportal_tables(
     cbioportal_synid: str,
     overwrite: bool,
 ) -> None:
-    """Upload cBioPortal tables to Snowflake, skipping excluded prefixes."""
+    """Retrieves cBioPortal files from Synaspe and then
+       uploads the data to tables on Snowflake, skipping excluded prefixes.
+
+    Args:
+        conn (snowflake.connector.SnowflakeConnection): snowflake connection
+        syn (synapseclient.Synapse): synapse client connection
+        cohort (str): name of the cohort
+        cbioportal_synid (str): synapse id of the folder containing the cbioportal files for the
+            given cohort
+        overwrite (bool): whether to overwrite the table contents or not
+    """
     exclude_prefixes = ("gene_panel", "meta", "CNA", "case_lists", "seg", "tmb")
 
     for cbioportal_file in syn.getChildren(cbioportal_synid):
