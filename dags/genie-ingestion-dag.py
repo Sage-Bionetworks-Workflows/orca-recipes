@@ -3,6 +3,7 @@ from datetime import datetime
 from airflow.decorators import dag, task
 from airflow.models.param import Param
 from airflow.providers.snowflake.hooks.snowflake import SnowflakeHook
+from orca.services.synapse import SynapseHook
 
 # Adjust import to your real package path inside Airflow
 from snowflake_utils import get_connection, get_cursor
@@ -10,6 +11,7 @@ from snowflake_utils import get_connection, get_cursor
 
 dag_params = {
     "snowflake_conn_id": Param("SNOWFLAKE_GENIE_SERVICE_RAW_CONN", type="string"),
+    "synapse_conn_id": Param("SYNAPSE_ORCA_SERVICE_ACCOUNT_CONN", type="string"),
 }
 
 @dag(
@@ -22,7 +24,7 @@ dag_params = {
 def test_snowflake_utils_dag():
 
     @task()
-    def test_get_connection(**context):
+    def test_get_snowflake_connection(**context):
         """
         Validate:
           - Airflow SnowflakeHook returns a conn
@@ -46,7 +48,7 @@ def test_snowflake_utils_dag():
             print("get_connection -> version/region:", cs.fetchone())
 
         # Do NOT close conn; Airflow owns it.
-        return "ok_connection"
+        return "ok_snowflake_connection"
 
 
     @task()
@@ -78,10 +80,16 @@ def test_snowflake_utils_dag():
 
         return "ok_cursor"
 
+    
+    @task()
+    def test_get_genie_synapse_connection(**context):
+        syn_hook = SynapseHook(context["params"]["synapse_conn_id"])
+        return "ok_genie_synapse_connection"
 
     # Run both (independent or you can chain)
-    test_get_connection()
+    test_get_snowflake_connection()
     test_get_cursor()
+    test_get_genie_synapse_connection()
 
 
 test_snowflake_utils_dag = test_snowflake_utils_dag()
