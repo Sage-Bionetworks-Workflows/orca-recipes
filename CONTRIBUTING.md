@@ -173,25 +173,26 @@ New secrets must be created in AWS Secrets Manager in the `dpe-prod` account.
 1. Make sure your region is set to **us-east-1**.
 1. For connection URIs, the secret name should have the prefix `airflow/connections/`
 (i.e. `airflow/connections/MY_SECRET_CONNECTION_STRING`). Variables should have the prefix `airflow/variables/` (i.e. `airflow/variables/MY_SECRET_VARIABLE`).
-1. There are two ways to [configure the secrets based on the documentation](https://airflow.apache.org/docs/apache-airflow-providers-snowflake/stable/connections/snowflake.html#configuring-the-connection). If serializing with json, this is a way to turn the key to a single line that could fit into the json:
+1. Secret type is **Other type of secret**
+1. There are two ways to [configure the secrets based on the documentation](https://airflow.apache.org/docs/apache-airflow-providers-snowflake/stable/connections/snowflake.html#configuring-the-connection) either through key-value pairs or serializing with json. Based on the snowflake documentation, all these parameters are "optional", but you still have to specify the following parameters and their values:
+   - warehouse
+   - role
+   - account
+   - private_key_content
+   - authenticator
+
+If choosing the [serializing with json method](https://airflow.apache.org/docs/apache-airflow-providers-snowflake/stable/connections/snowflake.html#json-format-example), this is a way to turn the private key to a single line that could fit into the json under `private_key_content`:
 
 ```python
 def single_liner():
     with open("<path_to_private_key_file>", "r") as f:
         lines = f.read().splitlines()
 
-    single_line = "\\n".join(lines)
+    single_line = "\n".join(lines)
     print(single_line)
 
 single_liner()
 ```
-
-Based on the documentation, all these parameters are "optional", but you still have to specify:
- - warehouse
- - role
- - account
- - private_key_content
- - authenticator
 
 Within a DAG, you can then use your connection when instantiating a `Hook` [object](https://airflow.apache.org/docs/apache-airflow/stable/authoring-and-scheduling/connections.html#hooks), like:
 
