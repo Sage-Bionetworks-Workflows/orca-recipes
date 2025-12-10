@@ -10,11 +10,13 @@ from orca.services.synapse import SynapseHook
 
 
 FINAL_TABLE = "MY_DB.MY_SCHEMA.ALL_PATIENT_SAMPLES"
-PATIENT_SAMPLE_TRACKING_TABLE_SYNID = ""
+
+# staging table for now
+PATIENT_SAMPLE_TRACKING_TABLE_SYNID = "syn71708167"
 
 
 dag_params = {
-    "snowflake_developer_service_conn": Param("SNOWFLAKE_DEVELOPER_SERVICE_RAW_CONN", type="string"),
+    "snowflake_developer_service_conn": Param("SNOWFLAKE_GENIE_SERVICE_RAW_CONN", type="string"),
     "synapse_conn_id": Param("SYNAPSE_ORCA_SERVICE_ACCOUNT_CONN", type="string"),
 }
 
