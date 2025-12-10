@@ -167,8 +167,31 @@ Airflow secrets (_e.g._ connections and variables) are stored in Secrets Manager
 
 ### Creating a new secret
 
-New secrets must be created in AWS Secrets Manager in the `dpe-prod` account. For connection URIs, the secret name should have the prefix `airflow/connections/` 
+New secrets must be created in AWS Secrets Manager in the `dpe-prod` account.
+
+1. You will need at least **Developer** access to the account.
+1. Make sure your region is set to **us-east-1**.
+1. For connection URIs, the secret name should have the prefix `airflow/connections/`
 (i.e. `airflow/connections/MY_SECRET_CONNECTION_STRING`). Variables should have the prefix `airflow/variables/` (i.e. `airflow/variables/MY_SECRET_VARIABLE`).
+1. There are two ways to [configure the secrets based on the documentation](https://airflow.apache.org/docs/apache-airflow-providers-snowflake/stable/connections/snowflake.html#configuring-the-connection). If serializing with json, this is a way to turn the key to a single line that could fit into the json:
+
+```python
+def single_liner():
+    with open("<path_to_private_key_file>", "r") as f:
+        lines = f.read().splitlines()
+
+    single_line = "\\n".join(lines)
+    print(single_line)
+
+single_liner()
+```
+
+Based on the documentation, all these parameters are "optional", but you still have to specify:
+ - warehouse
+ - role
+ - account
+ - private_key_content
+ - authenticator
 
 Within a DAG, you can then use your connection when instantiating a `Hook` [object](https://airflow.apache.org/docs/apache-airflow/stable/authoring-and-scheduling/connections.html#hooks), like:
 

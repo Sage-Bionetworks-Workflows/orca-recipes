@@ -9,7 +9,7 @@ from snowflake_utils import get_connection, get_cursor
 
 
 dag_params = {
-    "snowflake_conn_id": Param("SNOWFLAKE_DEVELOPER_SERVICE_RAW_CONN", type="string"),
+    "snowflake_conn_id": Param("SNOWFLAKE_GENIE_SERVICE_RAW_CONN", type="string"),
 }
 
 @dag(
