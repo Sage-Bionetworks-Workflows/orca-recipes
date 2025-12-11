@@ -85,7 +85,7 @@ def test_snowflake_utils_dag():
     def test_get_genie_synapse_connection(**context):
         syn_hook = SynapseHook(context["params"]["synapse_conn_id"])
         # test a random file
-        syn_hook.get("syn51611938")
+        syn_hook.client.get("syn51611938")
         return "ok_genie_synapse_connection"
 
     # Run both (independent or you can chain)
