@@ -163,7 +163,18 @@ Follow these best practices when developing DAGs to ensure reliability and maint
 
 ## Secrets
 
-Airflow secrets (_e.g._ connections and variables) are stored in Secrets Manager within the `dpe-prod` AWS account. This repository uses an IAM User `airflow-secrets-backend` to access the secrets. Access keys for the IAM account are stored in this repository as codespace secrets, enabling Airflow deployments in our configured codespaces environment to retrieve connection URIs and secret variables from `dpe-prod`. The credentials used in the repository's codespace secrets must be rotated manually within the AWS console, and updated every 90 days.
+Airflow secrets (_e.g._ connections and variables) are stored in Secrets Manager within the `dpe-prod` AWS account. This includes some of the following connection IDs that are already in-place ready to use:
+
+1. `synapse_conn_id`: `"SYNAPSE_ORCA_SERVICE_ACCOUNT_CONN"`
+   - The Airflow connection ID used to connect to the Synapse service. Use  to run Synapse commands. This connection was created under the Synapse orca service account. 
+1. `aws_conn_id`: `"AWS_TOWER_PROD_S3_CONN"`
+   - The Airflow connection ID used to connect to AWS service.
+1. `snowflake_conn_id`: `"SNOWFLAKE_DEVELOPER_SERVICE_RAW_CONN"`
+   - The Airflow connection ID used to connect to the Snowflake service. Use this to run Snowflake commands as `DEVELOPER_SERVICE` in the `DATA_ENGINEER` role.
+
+These are all located in AWS Secrets Manager in the `dpe-prod` account.
+
+This repository uses an IAM User `airflow-secrets-backend` to access the secrets. Access keys for the IAM account are stored in this repository as codespace secrets, enabling Airflow deployments in our configured codespaces environment to retrieve connection URIs and secret variables from `dpe-prod`. The credentials used in the repository's codespace secrets must be rotated manually within the AWS console, and updated every 90 days.
 
 ### Creating a new secret
 
@@ -173,8 +184,17 @@ New secrets must be created in AWS Secrets Manager in the `dpe-prod` account.
 1. Make sure your region is set to **us-east-1**.
 1. For connection URIs, the secret name should have the prefix `airflow/connections/`
 (i.e. `airflow/connections/MY_SECRET_CONNECTION_STRING`). Variables should have the prefix `airflow/variables/` (i.e. `airflow/variables/MY_SECRET_VARIABLE`).
-1. Secret type is **Other type of secret**
-1. There are two ways to [configure the secrets based on the documentation](https://airflow.apache.org/docs/apache-airflow-providers-snowflake/stable/connections/snowflake.html#configuring-the-connection) either through key-value pairs or serializing with json. Based on the snowflake documentation, all these parameters are "optional", but you still have to specify the following parameters and their values:
+1. Secret type to use is **Other type of secret**
+
+### Configuring a SynapseHook connection secret
+
+See [Synapse credentials section in the py-orca's env.example](https://github.com/Sage-Bionetworks-Workflows/py-orca/blob/main/.env.example) for the expected format of your custom `SYNAPSE_CONNECTION_URI`.
+
+### Configuring a SnowflakeHook connection secret
+
+Typically, Snowflake secrets are used in accordance with Snowflake Service Users. Please refer to the [Snowflake Service Accounts documentation](https://sagebionetworks.jira.com/wiki/spaces/DPE/pages/3431628815/Snowflake+Service+Accounts) first if this is the case for you.
+
+1. There are two ways to [configure a snowflake secret based on the documentation](https://airflow.apache.org/docs/apache-airflow-providers-snowflake/stable/connections/snowflake.html#configuring-the-connection) either through key-value pairs or serializing with json. Based on the snowflake documentation, all of the following parameters are marked as "optional", but you still have to specify the parameters and their values:
    - warehouse
    - role
    - account
@@ -196,18 +216,27 @@ single_liner()
 
 Within a DAG, you can then use your connection when instantiating a `Hook` [object](https://airflow.apache.org/docs/apache-airflow/stable/authoring-and-scheduling/connections.html#hooks), like:
 
+Example for Synapse connections:
+
 ```python
 from orca.services.synapse import SynapseHook
 
-syn_hook = SynapseHook("MY_SECRET_CONNECTION_STRING")
+syn_hook = SynapseHook("SYNAPSE_ORCA_SERVICE_ACCOUNT_CONN")
+```
+
+Example for Snowflake connections:
+
+```python
+from airflow.providers.snowflake.hooks.snowflake import SnowflakeHook
+
+snow_hook = SnowflakeHook("SNOWFLAKE_DEVELOPER_SERVICE_RAW_CONN")
 ```
 
 or your secret variable, like:
 
 ```python
-my_secret_variable = Variable.get("MY_SECRET_VARIABLE")
+my_secret_variable = Variable.get("MY_SECRET_VARIABLE_CONNECTION_STRING")
 ```
-
 
 During DAG development and testing, you can create a secret containing the connection URI (or secret variable) for development resources (such as Nextflow Tower Dev). Once you are ready to run the DAG in production, you can update the secret value with a connection URI for production resources (such as Nextflow Tower Prod).
 

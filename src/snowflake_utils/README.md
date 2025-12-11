@@ -63,10 +63,12 @@ cs = get_cursor(conn=conn)
 
 Then in your DAG you would just pass in the conn object from Airflow:
 ```
+from airflow.providers.snowflake.hooks.snowflake import SnowflakeHook
+
 from genie import main_genie_elt   # <-- your script
 
 dag_params = {
-    "snowflake_conn_id": Param("SNOWFLAKE_DEVELOPER_SERVICE_RAW_CONN", type="string"),
+    "snowflake_conn_id": Param("YOUR_SNOWFLAKE_CONNECTION_STRING", type="string"),
 }
 
 @dag(
@@ -77,7 +79,7 @@ def test_snowflake_utils_dag():
 
     @task()
     def test_get_connection(**context):
-        snow_hook = SnowflakeHook(snowflake_conn_id)
+        snow_hook = SnowflakeHook(context["params"]["snowflake_conn_id"])
         airflow_conn = snow_hook.get_conn()
 
         ... # other code
