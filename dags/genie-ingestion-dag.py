@@ -11,7 +11,7 @@ from snowflake_utils import get_connection, get_cursor
 
 dag_params = {
     "snowflake_conn_id": Param("SNOWFLAKE_GENIE_SERVICE_RAW_CONN", type="string"),
-    "synapse_conn_id": Param("SYNAPSE_ORCA_SERVICE_ACCOUNT_CONN", type="string"),
+    "synapse_conn_id": Param("SYNAPSE_GENIE_RUNNER_SERVICE_ACCOUNT_CONN", type="string"),
 }
 
 @dag(
@@ -84,6 +84,8 @@ def test_snowflake_utils_dag():
     @task()
     def test_get_genie_synapse_connection(**context):
         syn_hook = SynapseHook(context["params"]["synapse_conn_id"])
+        # test a random file
+        syn_hook.get("syn51611938")
         return "ok_genie_synapse_connection"
 
     # Run both (independent or you can chain)
