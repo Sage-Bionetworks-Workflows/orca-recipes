@@ -5,18 +5,22 @@ from typing import List
 import synapseclient
 from airflow.decorators import dag, task
 from airflow.models.param import Param
+from airflow.operators.python import PythonOperator
 from airflow.providers.snowflake.hooks.snowflake import SnowflakeHook
 from orca.services.synapse import SynapseHook
 
 
 FINAL_TABLE = "MY_DB.MY_SCHEMA.ALL_PATIENT_SAMPLES"
+BPC_YAML_PATH = "/genie/genie_bpc_releases.yaml" 
+SP_YAML_PATH = "/genie/genie_sp_releases.yaml" 
+
 
 # staging table for now
 PATIENT_SAMPLE_TRACKING_TABLE_SYNID = "syn71708167"
 
 
 dag_params = {
-    "snowflake_developer_service_conn": Param("SNOWFLAKE_GENIE_SERVICE_RAW_CONN", type="string"),
+    "snowflake_genie_service_conn": Param("SNOWFLAKE_GENIE_SERVICE_RAW_CONN", type="string"),
     "synapse_conn_id": Param("SYNAPSE_ORCA_SERVICE_ACCOUNT_CONN", type="string"),
 }
 
@@ -66,154 +70,79 @@ class PatientSampleRow:
     release_project_type: int
     in_latest_release: int
     release_name: float
-
+    
 
 @dag(**dag_config)
 def build_patient_sample_tracking_table():
-    
-    @task
-    def build_union_table(**context):
-        snow_hook = SnowflakeHook(context["params"]["snowflake_developer_service_conn"])
-        ctx = snow_hook.get_conn()
-        cs = ctx.cursor()
-        query = f"""
-        WITH
-        /* ------------------------------------------------------------ */
-        /* 1) LATEST CONSORTIUM RELEASE (e.g., CONSORTIUM_17_6)          */
-        /* ------------------------------------------------------------ */
-        consortium_candidates AS (
+
+    def get_latest_consortium_schema(**context):
+        hook = SnowflakeHook(snowflake_conn_id=context["params"]["snowflake_genie_service_conn"])
+
+        sql = """
+        WITH consortium_candidates AS (
             SELECT
                 schema_name,
                 TRY_TO_NUMBER(REGEXP_SUBSTR(schema_name, 'CONSORTIUM_(\\d+)', 1, 1, 'e', 1)) AS major_v,
                 TRY_TO_NUMBER(REGEXP_SUBSTR(schema_name, 'CONSORTIUM_\\d+_(\\d+)', 1, 1, 'e', 1)) AS minor_v
-            FROM MY_DB.INFORMATION_SCHEMA.SCHEMATA
+            FROM GENIE.INFORMATION_SCHEMA.SCHEMATA
             WHERE schema_name ILIKE 'CONSORTIUM\\_%' ESCAPE '\\'
-        ),
-        latest_consortium AS (
-            SELECT schema_name
-            FROM consortium_candidates
-            QUALIFY ROW_NUMBER() OVER (
-                ORDER BY major_v DESC NULLS LAST, minor_v DESC NULLS LAST
-            ) = 1
-        ),
-        consortium_ids AS (
-            SELECT DISTINCT
-                'consortium'       AS release_project_type,
-                TRUE               AS in_latest_release,
-                lc.schema_name     AS release_name,
-                t.PATIENT_ID,
-                t.SAMPLE_ID
-            FROM latest_consortium lc,
-            LATERAL (
-                SELECT PATIENT_ID, SAMPLE_ID
-                FROM IDENTIFIER('MY_DB.' || lc.schema_name || '.CLINICAL_SAMPLE')
-            ) t
-        ),
-
-        /* ------------------------------------------------------------ */
-        /* 2) LATEST SCHEMA PER COHORT (BRCA, BLADDER, ESOPHAGO, ...)    */
-        /*    schemas like BRCA_1_1_CONSORTIUM                          */
-        /* ------------------------------------------------------------ */
-        cohort_list AS (
-            SELECT value::string AS cohort_name
-            FROM LATERAL FLATTEN(
-                input => ARRAY_CONSTRUCT('BRCA','BLADDER','ESOPHAGO')
-            )
-        ),
-        cohort_candidates AS (
-            SELECT
-                s.schema_name,
-                cl.cohort_name,
-                TRY_TO_NUMBER(
-                    REGEXP_SUBSTR(s.schema_name, '^[A-Z]+_(\\d+)_', 1, 1, 'e', 1)
-                ) AS major_v,
-                TRY_TO_NUMBER(
-                    REGEXP_SUBSTR(s.schema_name, '^[A-Z]+_\\d+_(\\d+)_CONSORTIUM', 1, 1, 'e', 1)
-                ) AS minor_v
-            FROM MY_DB.INFORMATION_SCHEMA.SCHEMATA s
-            JOIN cohort_list cl
-            ON s.schema_name ILIKE cl.cohort_name || '\\_%\\_CONSORTIUM' ESCAPE '\\'
-        ),
-        latest_cohort_schemas AS (
-            SELECT schema_name, cohort_name
-            FROM cohort_candidates
-            QUALIFY ROW_NUMBER() OVER (
-                PARTITION BY cohort_name
-                ORDER BY major_v DESC NULLS LAST, minor_v DESC NULLS LAST
-            ) = 1
-        ),
-        cohort_ids AS (
-            SELECT DISTINCT
-                'cohort'           AS release_project_type,
-                TRUE               AS in_latest_release,
-                lcs.schema_name    AS release_name,
-                t.RECORD_ID        AS PATIENT_ID,
-                t.CPT_GENIE_SAMPLE_ID AS SAMPLE_ID
-            FROM latest_cohort_schemas lcs,
-            LATERAL (
-                SELECT RECORD_ID, CPT_GENIE_SAMPLE_ID
-                FROM IDENTIFIER(
-                    'MY_DB.' || lcs.schema_name || '.CANCER_PANEL_TEST_LEVEL_DATASET'
-                )
-            ) t
-        ),
-
-        /* ------------------------------------------------------------ */
-        /* 3) PROJECT-SPECIFIC SCHEMAS (template mapping)                */
-        /* ------------------------------------------------------------ */
-        project_list AS (
-            SELECT * FROM VALUES
-                --project_name, schema_name, table_name, patient_col, sample_col
-                ('A', 'A_SCHEMA', 'A_TABLE', 'A_PATIENT_ID_COL', 'A_SAMPLE_ID_COL'),
-                ('B', 'B_SCHEMA', 'B_TABLE', 'B_PATIENT_ID_COL', 'B_SAMPLE_ID_COL'),
-                ('C', 'C_SCHEMA', 'C_TABLE', 'C_PATIENT_ID_COL', 'C_SAMPLE_ID_COL')
-            AS pl(project_name, schema_name, table_name, patient_col, sample_col)
-        ),
-        project_ids AS (
-            SELECT DISTINCT
-                'project'          AS release_project_type,
-                TRUE               AS in_latest_release,
-                pl.schema_name     AS release_name,
-                t.patient_id       AS PATIENT_ID,
-                t.sample_id        AS SAMPLE_ID
-            FROM project_list pl,
-            LATERAL (
-                SELECT
-                    (IDENTIFIER(pl.patient_col))::string AS patient_id,
-                    (IDENTIFIER(pl.sample_col))::string  AS sample_id
-                FROM IDENTIFIER(
-                    'MY_DB.' || pl.schema_name || '.' || pl.table_name
-                )
-            ) t
         )
-
-        /* ------------------------------------------------------------ */
-        /* FINAL CONCAT / UNION                                          */
-        /* ------------------------------------------------------------ */
-        SELECT * FROM consortium_ids
-        UNION ALL
-        SELECT * FROM cohort_ids
-        UNION ALL
-        SELECT * FROM project_ids;
+        SELECT schema_name
+        FROM consortium_candidates
+        QUALIFY ROW_NUMBER() OVER (
+            ORDER BY major_v DESC NULLS LAST, minor_v DESC NULLS LAST
+        ) = 1;
         """
 
-        cs.execute(query)
-        top_downloaded_df = cs.fetch_pandas_all()
+        rows = hook.get_records(sql)
+        if not rows:
+            raise ValueError("No CONSORTIUM_* schemas found in GENIE.INFORMATION_SCHEMA.SCHEMATA")
 
-        patient_sample_rows = []
-        for _, row in top_downloaded_df.iterrows():
-            patient_sample_rows.append(
-                PatientSampleRow(
-                    sample_id=row["SAMPLE_ID"],
-                    patient_id=row["PATIENT_ID"],
-                    release_project_type=row["RELEASE_PROJECT_TYPE"],
-                    in_latest_release=row[
-                        "IN_LATEST_RELEASE"
-                    ],
-                    release_name=row["RELEASE_NAME"],
-                )
-            )
-        return patient_sample_rows
+        latest_schema = rows[0][0]
+        # push to XCom
+        context["ti"].xcom_push(key="latest_consortium_schema", value=latest_schema)
+
+
+    def query_latest_consortium_schema(**context):
+        hook = SnowflakeHook(snowflake_conn_id=context["params"]["snowflake_genie_service_conn"])
+
+        latest_schema = context["ti"].xcom_pull(
+            key="latest_consortium_schema",
+            task_ids="get_latest_consortium_schema",
+        )
+
+        if not latest_schema:
+            raise ValueError("latest_consortium_schema XCom missing")
+
+        # Build your second query using Python formatting
+        sql = f"""
+        CREATE OR REPLACE TABLE {TARGET_TABLE} AS
+        SELECT DISTINCT
+            PATIENT_ID,
+            SAMPLE_ID,
+            'MAIN_GENIE' AS release_project_type,
+            TRUE         AS in_latest_release,
+            '{latest_schema}' AS release_name
+        FROM GENIE.{latest_schema}.CLINICAL_SAMPLE;
+        """
+
+        print("Running SQL:\n", sql)
+        hook.run(sql)
+
+
+        t_get_latest = PythonOperator(
+            task_id="get_latest_consortium_schema",
+            python_callable=get_latest_consortium_schema,
+            provide_context=True,
+        )
+
+        t_query_latest = PythonOperator(
+            task_id="query_latest_consortium_schema",
+            python_callable=query_latest_consortium_schema,
+            provide_context=True,
+        )
+
+        t_get_latest >> t_query_latest
 
 
     @task
@@ -236,7 +165,7 @@ def build_patient_sample_tracking_table():
             synapseclient.Table(schema=PATIENT_SAMPLE_TRACKING_TABLE_SYNID, values=data)
         )
         
-    synapse_table =  build_union_table()
+    synapse_table = build_union_table()
     push_results_to_synapse_table(synapse_table)
     
 build_patient_sample_tracking_table()
