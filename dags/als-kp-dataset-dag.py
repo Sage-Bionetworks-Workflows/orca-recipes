@@ -476,7 +476,7 @@ def update_existing_datasets(
         existing_dataset.annotations.update({
             "source": "Critical Path Institute",
             "creator": ", ".join(item["creator"]) if isinstance(item["creator"], list) else item["creator"],
-            "keywords": ", ".join(item["keywords"]) if isinstance(item["keywords"], list) else item["keywords"],
+            "keywords": item["keywords"] if isinstance(item["keywords"], list) else [item["keywords"]],
             "subject": ", ".join(item["subject"]) if isinstance(item["subject"], list) else item["subject"],
             "collection": ", ".join(item["collection"]) if isinstance(item["collection"], list) else item["collection"],
             "publisher": item["publisher"],
