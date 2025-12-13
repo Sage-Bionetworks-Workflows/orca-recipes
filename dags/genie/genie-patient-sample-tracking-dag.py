@@ -35,7 +35,6 @@ dag_config = {
     "params": dag_params,
 }
 
-
 @dataclass
 class PatientSampleRow:
     """Dataclass to hold the patient sample row of data.
@@ -75,10 +74,10 @@ class PatientSampleRow:
 @dag(**dag_config)
 def build_patient_sample_tracking_table():
 
-    def get_latest_consortium_schema(**context):
-        hook = SnowflakeHook(snowflake_conn_id=context["params"]["snowflake_genie_service_conn"])
 
-        sql = """
+    @task(task_id="get_latest_consortium_schema")
+    def get_latest_consortium_schema(**context) -> str:
+        GET_LATEST_SCHEMA_SQL = r"""
         WITH consortium_candidates AS (
             SELECT
                 schema_name,
@@ -91,59 +90,30 @@ def build_patient_sample_tracking_table():
         FROM consortium_candidates
         QUALIFY ROW_NUMBER() OVER (
             ORDER BY major_v DESC NULLS LAST, minor_v DESC NULLS LAST
-        ) = 1;
+        ) = 1
         """
-
-        rows = hook.get_records(sql)
-        if not rows:
-            raise ValueError("No CONSORTIUM_* schemas found in GENIE.INFORMATION_SCHEMA.SCHEMATA")
-
-        latest_schema = rows[0][0]
-        # push to XCom
-        context["ti"].xcom_push(key="latest_consortium_schema", value=latest_schema)
-
-
-    def query_latest_consortium_schema(**context):
         hook = SnowflakeHook(snowflake_conn_id=context["params"]["snowflake_genie_service_conn"])
+        row = hook.get_first(GET_LATEST_SCHEMA_SQL)  # returns a tuple like ('CONSORTIUM_12_3',)
+        if not row or not row[0]:
+            raise ValueError("No CONSORTIUM_* schema found/visible in GENIE.INFORMATION_SCHEMA.SCHEMATA")
+        return row[0]
 
-        latest_schema = context["ti"].xcom_pull(
-            key="latest_consortium_schema",
-            task_ids="get_latest_consortium_schema",
-        )
+    @task(task_id="query_latest_clinical_sample")
+    def query_latest_clinical_sample(latest_schema: str, **context):
+        conn_id = context["params"]["snowflake_genie_service_conn"]
+        hook = SnowflakeHook(snowflake_conn_id=conn_id)
 
-        if not latest_schema:
-            raise ValueError("latest_consortium_schema XCom missing")
-
-        # Build your second query using Python formatting
         sql = f"""
-        CREATE OR REPLACE TABLE {TARGET_TABLE} AS
         SELECT DISTINCT
             PATIENT_ID,
             SAMPLE_ID,
             'MAIN_GENIE' AS release_project_type,
             TRUE         AS in_latest_release,
             '{latest_schema}' AS release_name
-        FROM GENIE.{latest_schema}.CLINICAL_SAMPLE;
+        FROM GENIE.{latest_schema}.CLINICAL_SAMPLE
         """
-
-        print("Running SQL:\n", sql)
-        hook.run(sql)
-
-
-        t_get_latest = PythonOperator(
-            task_id="get_latest_consortium_schema",
-            python_callable=get_latest_consortium_schema,
-            provide_context=True,
-        )
-
-        t_query_latest = PythonOperator(
-            task_id="query_latest_consortium_schema",
-            python_callable=query_latest_consortium_schema,
-            provide_context=True,
-        )
-
-        t_get_latest >> t_query_latest
-
+        
+        hook.get_pandas_df(sql)
 
     @task
     def push_results_to_synapse_table(patient_sample_rows: List[PatientSampleRow], **context) -> None:
@@ -165,7 +135,8 @@ def build_patient_sample_tracking_table():
             synapseclient.Table(schema=PATIENT_SAMPLE_TRACKING_TABLE_SYNID, values=data)
         )
         
-    synapse_table = build_union_table()
-    push_results_to_synapse_table(synapse_table)
+    latest = get_latest_consortium_schema()
+    query_latest_clinical_sample(latest)
+    #push_results_to_synapse_table(synapse_table)
     
 build_patient_sample_tracking_table()
