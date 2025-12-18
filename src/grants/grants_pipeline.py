@@ -43,8 +43,70 @@ def step2_preliminary_filter(grants_data):
     print('\n')
     return eligible_grants
 
+def fetch_opportunity_details(opportunity_id):
+    """Fetch opportunity details from Grants.gov API"""
+    headers = {
+        "Content-Type": "application/json"
+    }
+    response = requests.post("https://api.grants.gov/v1/api/fetchOpportunity", headers=headers, json={"opportunityId": opportunity_id})
+    return response.json()['data']
 
-def step3_upload_to_snowflake(table_df, table_name, auto_table_create=False, overwrite=False):
+def extracrt_opportunity_fields(opportunity_details):
+    """Filter opportunity details to get the required fields based on the data model"""
+    synopsis = opportunity_details.get('synopsis', {})
+    
+    # Handle awardFloor - can be "none" or a number
+    award_floor = synopsis.get('awardFloor', 'none')
+    if award_floor == 'none' or award_floor is None:
+        funding_amount = None
+    else:
+        try:
+            funding_amount = int(award_floor)
+        except (ValueError, TypeError):
+            funding_amount = None
+    
+    # Parse dates
+    post_date = synopsis.get('postingDate')
+    end_date = synopsis.get('responseDate')
+    
+    # Calculate duration in years if both dates exist
+    grant_duration = None
+    if post_date and end_date:
+        try:
+            post_dt = pd.to_datetime(post_date)
+            end_dt = pd.to_datetime(end_date)
+            grant_duration = (end_dt - post_dt).days / 365.25
+        except (ValueError, TypeError):
+            grant_duration = None
+    
+    # Create DataFrame from dictionary (single row) - values must be in lists
+    data = {
+        'title': [opportunity_details.get('opportunityTitle')],
+        'funding_amount': [funding_amount],
+        'organization': [synopsis.get('agencyContactName')],
+        'contact_info': [synopsis.get('agencyContactEmail')],
+        'data_source': ['grants.gov'],
+        'post_date': [post_date],
+        'end_date': [end_date],
+        'grant_description': [synopsis.get('synopsisDesc')],
+        'grant_duration': [grant_duration],
+        'domain': ['TBD']
+    }
+    
+    opportunity_details_df = pd.DataFrame(data)
+    return opportunity_details_df
+
+def step3_append_grant_details(grants_data):
+    """Append grant details to the grants data."""
+    grants_df = pd.DataFrame()
+    for grant in grants_data:
+        opportunity_id = grant['id']
+        grant_details = fetch_opportunity_details(opportunity_id)
+        grant_details = extracrt_opportunity_fields(grant_details)
+        grants_df = pd.concat([grants_df, grant_details], ignore_index=True)
+    return grants_df
+
+def step4_upload_to_snowflake(table_df, table_name, auto_table_create=False, overwrite=False):
     """
     Uploads the final table of the pipeline to Snowflake.
     TODO: Replace this with Rixing's snowflake_utils module when that's merged
@@ -62,12 +124,11 @@ def step3_upload_to_snowflake(table_df, table_name, auto_table_create=False, ove
     
     write_pandas(conn, table_df, table_name, auto_create_table=auto_table_create, overwrite=overwrite)
 
-
 def grants_pipeline(api_url, request_body):
     grants_data = step1_retrieve_grants(api_url, request_body)
     eligible_grants = step2_preliminary_filter(grants_data)
-    return eligible_grants
-
+    grants_df = step3_append_grant_details(eligible_grants)
+    return grants_df
 
 if __name__ == "__main__":
     limit_rows = 10
