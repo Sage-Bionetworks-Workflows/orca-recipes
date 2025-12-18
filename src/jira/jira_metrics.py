@@ -33,7 +33,7 @@ def _extract_issue_details(jira_client: JIRA, issue: Union[str, jira.resources.I
         issue_id = issue.id
     else:
         issue_id = issue
-    print(issue_id)
+    # print(issue_id)
 
     issue_info = jira_client.issue(issue_id)
     issue_info_raw = issue_info.raw['fields']
@@ -77,7 +77,7 @@ def _extract_issue_details(jira_client: JIRA, issue: Union[str, jira.resources.I
     issue_summary = issue_info.fields.summary
 
     # Get the description of the issue
-    # issue_desc = issue_info.fields.description
+    issue_desc = issue_info.fields.description
 
     # Get the issue type of the issue
     issue_type_name = issue_info.fields.issuetype.name
@@ -106,7 +106,7 @@ def _extract_issue_details(jira_client: JIRA, issue: Union[str, jira.resources.I
 
     # Get the due date of the issue
     due_date = issue_info_raw.get('duedate')
-
+    program_code = issue_info_raw.get('customfield_12162')
     # Get the linked issues of the issue
     inward_issues = []
     outward_issues = []
@@ -139,7 +139,7 @@ def _extract_issue_details(jira_client: JIRA, issue: Union[str, jira.resources.I
         "key": issue_info.key,
         "labels": labels,
         "summary": issue_summary,
-        #"description": issue_desc,
+        "description": issue_desc,
         'status': issue_info_raw['status']['name'],
         "assignee": issue_assignee,
         'story_points': issue_story_points,
@@ -160,6 +160,7 @@ def _extract_issue_details(jira_client: JIRA, issue: Union[str, jira.resources.I
         # "linked_issues": linked_issues,
         "inward_issues": inward_issues,
         "outward_issues": outward_issues,
+        'program_code': program_code,
         # "subtasks": subtasks
     }
 
@@ -249,43 +250,55 @@ def main():
     for delivery_issue_id in all_delivery_issues:
         all_delivery_issue_information.append(_extract_issue_details(jira_client=jira_client, issue=delivery_issue_id))
 
-    # issues = get_issues(jira_client=jira_client, jql="project='PLFM'")
-    # print(issues)
-    # if all_sprint_info.empty:
-    #     raise ValueError("No sprint info found")
-    # all_sprint_info.to_csv("dpe_sprint_info.csv", index=False)
-    # date_columns = ['created_on', 'start_date', 'resolution_date']
-    # for date_column in date_columns:
-    #     all_sprint_info[date_column] = pd.to_datetime(all_sprint_info[date_column], utc=True, errors='coerce').dt.strftime('%Y-%m-%d')
-    #     # HACK: Error: Expression type does not match column data type, expecting DATE but got NUMBER(38,0) for column CREATED_ON
-    #     # This error occurs but the `write_pandas` function seems to convert a column with empty values to a number type columns
-    #     if all_sprint_info[date_column].isnull().all():
-    #         del all_sprint_info[date_column]
-    #     # tried these below, but they don't work
-    #     # all_sprint_info[date_column].fillna(pd.NaT, inplace=True)
-    #     # all_sprint_info[date_column] = all_sprint_info[date_column].astype('datetime64[ns]')
+    all_delivery_issue_df = pd.DataFrame(all_delivery_issue_information)
+    all_delivery_issue_df.to_csv("roadmap_delivery_issues.csv", index=False)
+    all_issues_in_epic_df = pd.DataFrame()
+    for _, issue in all_delivery_issue_df.iterrows():
+        print(issue['key'], issue['summary'])
+        if issue['issuetype'] == "Epic":
+            issue_key = issue["key"]
+            epic_issues = get_issues(jira_client=jira_client, jql=f"parent='{issue_key}'")
+            # for epic_issue in epic_issues:
+            #     all_issues_in_epic.append(_extract_issue_details(jira_client=jira_client, issue=epic_issue))
+            if epic_issues.empty:
+                continue
+            all_issues_in_epic_df = pd.concat([all_issues_in_epic_df, epic_issues], ignore_index=True)
+    # all_issues_in_epic_df = pd.DataFrame(all_issues_in_epic)
+    all_issues_in_epic_df.to_csv("roadmap_epic_issues.csv", index=False)
+    all_tech_roadmap_issues_df = pd.concat([all_delivery_issue_df, all_issues_in_epic_df, tech_roadmap_issues], ignore_index=True)
 
-    # config = dotenv_values(".env")
+    date_columns = ['created_on', 'start_date', 'resolution_date']
+    for date_column in date_columns:
+        all_tech_roadmap_issues_df[date_column] = pd.to_datetime(all_tech_roadmap_issues_df[date_column], utc=True, errors='coerce').dt.strftime('%Y-%m-%d')
+        # HACK: Error: Expression type does not match column data type, expecting DATE but got NUMBER(38,0) for column CREATED_ON
+        # This error occurs but the `write_pandas` function seems to convert a column with empty values to a number type columns
+        if all_tech_roadmap_issues_df[date_column].isnull().all():
+            del all_tech_roadmap_issues_df[date_column]
+        # tried these below, but they don't work
+        # all_sprint_info[date_column].fillna(pd.NaT, inplace=True)
+        # all_sprint_info[date_column] = all_sprint_info[date_column].astype('datetime64[ns]')
+    all_tech_roadmap_issues_df['export_date'] = datetime.datetime.now(pytz.UTC).strftime('%Y-%m-%d')
+    config = dotenv_values(".env")
 
-    # ctx = snowflake.connector.connect(
-    #     user=config['user'],
-    #     # password=config['password'],
-    #     account=config['snowflake_account'],
-    #     private_key_file=config['private_key_file'],
-    #     private_key_file_pwd=config['private_key_file_pwd'],
-    #     database="sage",
-    #     schema="DPE",
-    #     role="SYSADMIN",
-    #     warehouse="compute_xsmall"
-    # )
-    # write_pandas(
-    #     ctx,
-    #     all_sprint_info,
-    #     "jira_metrics",
-    #     auto_create_table=True,
-    #     # overwrite=True,
-    #     quote_identifiers=False
-    # )
+    ctx = snowflake.connector.connect(
+        user=config['user'],
+        # password=config['password'],
+        account=config['snowflake_account'],
+        private_key_file=config['private_key_file'],
+        private_key_file_pwd=config['private_key_file_pwd'],
+        database="sage",
+        schema="DPE",
+        role="SYSADMIN",
+        warehouse="compute_xsmall"
+    )
+    write_pandas(
+        ctx,
+        all_tech_roadmap_issues_df,
+        "TECH_ROADMAP_JIRA_ISSUES",
+        auto_create_table=True,
+        overwrite=True,
+        quote_identifiers=False
+    )
 
 
 if __name__ == "__main__":
