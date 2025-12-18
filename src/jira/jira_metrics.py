@@ -4,6 +4,7 @@ import os
 import datetime
 from unittest import result
 import pytz
+from typing import Union
 
 from dotenv import dotenv_values
 from jira import JIRA
@@ -14,7 +15,7 @@ import snowflake.connector
 from snowflake.connector.pandas_tools import write_pandas
 
 
-def _extract_issue_details(jira_client: JIRA, issue: jira.resources.Issue) -> dict:
+def _extract_issue_details(jira_client: JIRA, issue: Union[str, jira.resources.Issue]) -> dict:
     """
     Extracts the relevant information from a Jira issue object.
 
@@ -28,7 +29,13 @@ def _extract_issue_details(jira_client: JIRA, issue: jira.resources.Issue) -> di
     Returns:
         dict: A dictionary containing the relevant information from the Jira issue object.
     """
-    issue_info = jira_client.issue(issue.id)
+    if isinstance(issue, jira.resources.Issue):
+        issue_id = issue.id
+    else:
+        issue_id = issue
+    print(issue_id)
+
+    issue_info = jira_client.issue(issue_id)
     issue_info_raw = issue_info.raw['fields']
 
     # Define fields to export to snowflake
@@ -76,10 +83,13 @@ def _extract_issue_details(jira_client: JIRA, issue: jira.resources.Issue) -> di
     issue_type_name = issue_info.fields.issuetype.name
 
     # Get the labels of the issue
-    labels = issue.fields.labels
+    labels = issue_info.fields.labels
 
     # Get the priority of the issue
-    priority = issue_info.fields.priority.name
+    if issue_info.fields.priority is not None:
+        priority = issue_info.fields.priority.name
+    else:
+        priority = None
 
     # Get the reporter of the issue
     if isinstance(issue_info.fields.reporter, str) or issue_info.fields.reporter is None:
@@ -125,7 +135,7 @@ def _extract_issue_details(jira_client: JIRA, issue: jira.resources.Issue) -> di
         'project': project,
         # 'sprint_id': sprint.id,
         "issuetype": issue_type_name,
-        "id": issue.id,
+        "id": issue_id,
         "key": issue_info.key,
         "labels": labels,
         "summary": issue_summary,
@@ -176,7 +186,6 @@ def get_issues(jira_client: JIRA, jql: str) -> pd.DataFrame:
     while issues.nextPageToken:
         issues = jira_client.enhanced_search_issues(jql, nextPageToken=issues.nextPageToken)
         all_results.extend(issues)
-        print(issues.nextPageToken)
 
     extracted_results = []
     for issue in all_results:
@@ -229,11 +238,19 @@ def main():
         server='https://sagebionetworks.jira.com/',
         basic_auth=(username, api_token)
     )
-    issues = get_issues(jira_client=jira_client, jql="project='Technology'")
-    print(issues.to_csv("technology_issues.csv", index=False))
+    tech_roadmap_issues = get_issues(jira_client=jira_client, jql="project='Technology'")
+    tech_roadmap_issues.to_csv("technology_issues.csv", index=False)
+    # inward issues are delivery items
+    all_delivery_issues = []
+    for delivery_issue in tech_roadmap_issues['inward_issues']:
+        all_delivery_issues.extend(delivery_issue)
 
-    issues = get_issues(jira_client=jira_client, jql="project='PLFM'")
-    print(issues)
+    all_delivery_issue_information = []
+    for delivery_issue_id in all_delivery_issues:
+        all_delivery_issue_information.append(_extract_issue_details(jira_client=jira_client, issue=delivery_issue_id))
+
+    # issues = get_issues(jira_client=jira_client, jql="project='PLFM'")
+    # print(issues)
     # if all_sprint_info.empty:
     #     raise ValueError("No sprint info found")
     # all_sprint_info.to_csv("dpe_sprint_info.csv", index=False)
