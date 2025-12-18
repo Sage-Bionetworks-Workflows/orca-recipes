@@ -23,8 +23,10 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements-dev.txt
-          pip install -r requirements-airflow.txt
           
+      - name: Install airflow deps
+        run: |
+          pip install -r requirements-airflow.txt
           
       - name: Run tests
         run: |
