@@ -176,4 +176,4 @@ if __name__ == "__main__":
     print("converted to dataframe:")
     print(table_df)
     print("Uploading to Snowflake...")
-    #step3_upload_to_snowflake(table_df, auto_table_create=True, overwrite=True)
+    step4_upload_to_snowflake(table_df, auto_table_create=True, overwrite=True)
