@@ -63,7 +63,7 @@ def step3_upload_to_snowflake(table_df, table_name, auto_table_create=False, ove
     write_pandas(conn, table_df, table_name, auto_create_table=auto_table_create, overwrite=overwrite)
 
 
-def grants_pipeline(api_url, request_body):
+def retrieve_federal_grants(api_url, request_body):
     grants_data = step1_retrieve_grants(api_url, request_body)
     eligible_grants = step2_preliminary_filter(grants_data)
     return eligible_grants
@@ -86,7 +86,7 @@ if __name__ == "__main__":
                 "aln": "",
                 "fundingCategories": ""
             }
-        grants = grants_pipeline(api_url, body)
+        grants = retrieve_federal_grants(api_url, body)
         all_grants.extend(grants)
     
     print("ALL GRANTS:", len(all_grants))

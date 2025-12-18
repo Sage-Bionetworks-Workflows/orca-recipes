@@ -8,7 +8,9 @@ from airflow.decorators import dag, task
 from airflow.models.param import Param
 
 # Import your existing functions
-# from your_module import grants_pipeline, step3_upload_to_snowflake
+import sys
+sys.path.append("/path/to/project_root/src")
+from src.grants.retrieve_grants import retrieve_federal_grants, step3_upload_to_snowflake
 
 
 @dag(
@@ -68,15 +70,13 @@ def grants_gov_search_to_snowflake():
         body = payload["body"]
         keyword = body.get("keyword", "<unknown>")
         print("Searching for grants with keyword:", keyword)
-        grants = grants_pipeline(api_url, body)
+        grants = retrieve_federal_grants(api_url, body)
         return grants
 
     @task
-    def combine_and_upload(
-        grants_by_keyword: List[List[Dict[str, Any]]],
-        auto_table_create: bool,
-        overwrite: bool,
-    ) -> int:
+    def combine_grants_to_dataframe(
+        grants_by_keyword: List[List[Dict[str, Any]]]
+    ) -> pd.DataFrame:
         # Flatten
         all_grants: List[Dict[str, Any]] = [
             g for sublist in grants_by_keyword for g in (sublist or [])
@@ -86,14 +86,21 @@ def grants_gov_search_to_snowflake():
         table_df = pd.DataFrame(all_grants)
         print("converted to dataframe:")
         print(table_df.head())
+        return table_df
 
+    @task
+    def upload_to_snowflake(
+        table_df: pd.DataFrame,
+        auto_table_create: bool,
+        overwrite: bool,
+    ) -> int:
         print("Uploading to Snowflake...")
         step3_upload_to_snowflake(
             table_df,
             auto_table_create=auto_table_create,
             overwrite=overwrite,
         )
-        return len(all_grants)
+        return len(table_df)
 
     # Wire it up (use DAG params)
     bodies = build_request_bodies(
@@ -102,11 +109,15 @@ def grants_gov_search_to_snowflake():
         api_url="{{ params.api_url }}",
     )
     grants_lists = fetch_grants_for_keyword.expand(payload=bodies)
-    combine_and_upload(
-        grants_by_keyword=grants_lists,
+    grants_df = combine_grants_to_dataframe(grants_by_keyword=grants_lists)
+    upload_result = upload_to_snowflake(
+        table_df=grants_df,
         auto_table_create="{{ params.auto_table_create }}",
         overwrite="{{ params.overwrite }}",
     )
+
+    # Define task dependencies
+    bodies >> grants_lists >> grants_df >> upload_result
 
 
 dag = grants_gov_search_to_snowflake()
