@@ -5,6 +5,9 @@ import snowflake.connector
 from datetime import datetime
 from dateutil.relativedelta import relativedelta
 from snowflake.connector.pandas_tools import write_pandas
+import synapseclient
+from synapseclient import Synapse
+from synapseclient.models import File
 
 
 def step1_retrieve_grants(api_url, request_body):
@@ -16,6 +19,17 @@ def step1_retrieve_grants(api_url, request_body):
     response = requests.post(api_url, json=request_body, headers=headers)
 
     return response.json()['data']
+
+def step1_b_retrieve_grants_from_synapse() -> pd.DataFrame:
+    """
+    Retrieves grants data from a Synapse CSV file. This data will be in the same format as the grants schema>
+    """
+    syn = Synapse()
+    syn.login(silent=True)
+
+    file = File("syn72004505").get(synapse_client=syn)
+    df = pd.read_csv(file.path, sep=",")
+    return df
 
 def step2_preliminary_filter(grants_data):
     """
@@ -124,7 +138,8 @@ def step4_upload_to_snowflake(table_df, table_name, auto_table_create=False, ove
     
     write_pandas(conn, table_df, table_name, auto_create_table=auto_table_create, overwrite=overwrite)
 
-def grants_pipeline(api_url, request_body):
+
+def retrieve_federal_grants(api_url, request_body):
     grants_data = step1_retrieve_grants(api_url, request_body)
     eligible_grants = step2_preliminary_filter(grants_data)
     grants_df = step3_append_grant_details(eligible_grants)
@@ -147,7 +162,7 @@ if __name__ == "__main__":
                 "aln": "",
                 "fundingCategories": ""
             }
-        grants = grants_pipeline(api_url, body)
+        grants = retrieve_federal_grants(api_url, body)
         all_grants.extend(grants)
     
     print("ALL GRANTS:", len(all_grants))
