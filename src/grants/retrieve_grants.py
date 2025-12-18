@@ -5,6 +5,9 @@ import snowflake.connector
 from datetime import datetime
 from dateutil.relativedelta import relativedelta
 from snowflake.connector.pandas_tools import write_pandas
+import synapseclient
+from synapseclient import Synapse
+from synapseclient.models import File
 
 
 def step1_retrieve_grants(api_url, request_body):
@@ -16,6 +19,17 @@ def step1_retrieve_grants(api_url, request_body):
     response = requests.post(api_url, json=request_body, headers=headers)
 
     return response.json()['data']
+
+def step1_b_retrieve_grants_from_synapse() -> pd.DataFrame:
+    """
+    Retrieves grants data from a Synapse CSV file. This data will be in the same format as the grants schema>
+    """
+    syn = Synapse()
+    syn.login(silent=True)
+
+    file = File("syn72004505").get(synapse_client=syn)
+    df = pd.read_csv(file.path, sep=",")
+    return df
 
 def step2_preliminary_filter(grants_data):
     """
