@@ -150,7 +150,7 @@ def all_federal_grants(api_url, request_body):
 
 if __name__ == "__main__":
     limit_rows = 10
-    kwds = ['alzheimer']#, 'arthritis', 'autoimmune', 'cancer', 'nf', 'neurofibromatosis', 'longevity', 'elite']
+    kwds = ['alzheimer', 'arthritis', 'autoimmune', 'cancer', 'nf', 'neurofibromatosis', 'longevity', 'elite']
     api_url = "https://api.grants.gov/v1/api/search2"
 
     all_fedral_grants = pd.DataFrame()
