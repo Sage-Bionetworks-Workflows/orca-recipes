@@ -8,59 +8,52 @@ from synapseclient import Synapse
 from synapseclient.models import Agent
 
 import ast
-
+# Given the following JIRA ticket descriptions generate a summary of the technology roadmap item for stakeholders. Only the results should be returned.**  
 PROMPT = """
-**Given the following JIRA ticket descriptions generate a summary of the technology roadmap item for stakeholders. Only the results should be returned.**  
+### **Role:**
+You are a Product Manager creating a **stakeholder-facing roadmap update**.
+### **Objective:**
+Given a **roadmap item** with linked **epics and JIRA issues**, produce a **concise, non-technical summary** that explains what’s changing, why it matters, and who is impacted—at the **roadmap item level**.
 ### **Requirements:**  
-- **Always include a `## Summary` section** that provides a high-level, **non-technical** overview of the roadmap item. This should include:  
-  - What has changed.  
-  - Why these changes were made.  
-  - The expected impact on users, teams, or workflows.  
-- **Affected Users/Systems:** Clearly identify which teams, applications, or workflows are impacted by this roadmap item.  
-- **Breaking Changes:** Explicitly call out any backward-incompatible changes. If there are breaking changes, include:  
-  - What is changing and why.  
-  - Steps required to adapt to the change.  
-  - Any timelines or deprecation notices.  
-- **Process Changes:** If any operational, workflow, or permission-related changes have been introduced, provide clear guidance on:  
-  - What has changed.  
-  - How stakeholders need to adjust.  
-  - Any required actions.  
-- **Upgrade & Migration Steps:** If users need to update configurations, dependencies, or SDKs, include:  
-  - The required upgrade steps.  
-  - Links to documentation or additional resources.  
-- **Categorize changes into `## New Features`, `## Fixes & Improvements`, and `## Deprecated or Breaking Changes` as appropriate.**  
-  - Each section should have **bullet points summarizing key changes**.  
-  - **JIRA ticket IDs** should be included where relevant but not verbatim descriptions.  
+
+- **Always include `## Summary`**
+  - purpose of the original TECH roadmap item
+  - What is being delivered across epics
+  - Why this work was prioritized
+  - Expected impact on users, teams, or workflows
+
+- **Synthesize, don't restate**
+  - Abstract themes across epics and issues
+  - Reference JIRA IDs only for traceability
+
+- **Clearly call out**
+  - Affected users, teams, and systems
+  - Breaking or backward-incompatible changes (with mitigation steps and timelines)
+  - Process or workflow changes and required actions
+  - Required upgrades or migrations (with links if available)
+
+- **Organize changes into**
+  - `## New Features`
+  - `## Fixes & Improvements`
+  - `## Deprecated or Breaking Changes`
+
+- **Tone**
+  - Non-technical, concise, stakeholder-friendly
+
 ### **Input:**  
 ```
-#### JIRA Ticket Descriptions:
+#### JIRA Tickets:
 {JIRA_ISSUE_CONTENT}
-
 ```
 ### **Expected Output Format:**  
-```  
-## Summary  
-- [Brief high-level summary of what is changing and why]  
-- [Who or what is impacted]  
-- [Any important considerations for stakeholders]  
-## Affected Users & Systems  
-- [List of impacted teams, applications, or workflows]  
-## Breaking Changes  
-- [List of backward-incompatible changes]  
-- [Steps required to mitigate these changes]  
-- [Timelines for migration, if applicable]  
-## Process Changes  
-- [Description of workflow, operational, or permission updates]  
-- [Actions required by stakeholders]  
-## New Features  
-- [List of new features with impact on stakeholders]  
-## Fixes & Improvements  
-- [List of bug fixes and general improvements]  
-## Deprecations
-- [List of deprecated features, APIs, or configurations]  
-- [Recommended migration path]  
-For more details, visit [TECH ROADMAP ITEM](Tech roadmap item jira link)  
-```
+## Summary
+[Purpose of the original TECH roadmap item]
+[Brief high-level summary of what is changing and why]
+[Who or what is impacted]
+[Any important considerations for stakeholders]
+## Affected Users & Systems
+## Deprecated or Breaking Changes
+## New Features
 """
 syn = Synapse()
 syn.login()
@@ -87,15 +80,15 @@ def main():
     done_items = technology_jira_issues[technology_jira_issues['status'] == "Done"]
     tech_roadmap_responses = []
     for _, row in done_items.iterrows():
-        print(row)
         # issue_id = row['issue_id']
         delivery_tickets = ast.literal_eval(row['inward_issues'])
         subset_issues = roadmap_jira_issues[roadmap_jira_issues['id'].isin(delivery_tickets)]
         all_epic_issues = roadmap_epic_issues[roadmap_epic_issues['parent'].isin(subset_issues.id)]
         all_issues = pd.concat([subset_issues, all_epic_issues, row.to_frame().T], ignore_index=True)
+        print(row['key'], row['summary'], f"- {sum(~all_issues['issuetype'].isin(['Epic', 'Idea']))} issues")
+
         jira_issue_content = {}
         for _, issue_row in all_issues.iterrows():
-            print(issue_row['summary'])
             jira_issue_content[issue_row['key']] = {
                 'summary': issue_row['summary'],
                 'description': issue_row['description'],
