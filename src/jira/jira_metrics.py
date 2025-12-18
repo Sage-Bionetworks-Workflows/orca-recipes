@@ -106,7 +106,9 @@ def _extract_issue_details(jira_client: JIRA, issue: Union[str, jira.resources.I
 
     # Get the due date of the issue
     due_date = issue_info_raw.get('duedate')
-    program_code = issue_info_raw.get('customfield_12162')
+    program_codes = issue_info_raw.get('customfield_12162')
+    if program_codes:
+        program_codes = [code['value'] for code in program_codes]
     # Get the linked issues of the issue
     inward_issues = []
     outward_issues = []
@@ -160,7 +162,7 @@ def _extract_issue_details(jira_client: JIRA, issue: Union[str, jira.resources.I
         # "linked_issues": linked_issues,
         "inward_issues": inward_issues,
         "outward_issues": outward_issues,
-        'program_code': program_code,
+        'program_code': program_codes,
         # "subtasks": subtasks
     }
 

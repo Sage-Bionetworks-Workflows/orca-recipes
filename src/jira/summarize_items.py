@@ -85,6 +85,7 @@ def main():
         subset_issues = roadmap_jira_issues[roadmap_jira_issues['id'].isin(delivery_tickets)]
         all_epic_issues = roadmap_epic_issues[roadmap_epic_issues['parent'].isin(subset_issues.id)]
         all_issues = pd.concat([subset_issues, all_epic_issues, row.to_frame().T], ignore_index=True)
+        all_issues = all_issues[~all_issues['resolution'].isin(["Won't Do", "Duplicate", "Cancelled", "Cannot Reproduce", "Won't Fix", "Incomplete", "Known Error"])]
         print(row['key'], row['summary'], f"- {sum(~all_issues['issuetype'].isin(['Epic', 'Idea']))} issues")
 
         jira_issue_content = {}
@@ -96,6 +97,7 @@ def main():
             }
 
         response = construct_release_notes(jira_issue_content)
+        print(response)
         tech_roadmap_responses.append(response)
     technology_jira_issues['AI_summary_of_roadmap_item'] = tech_roadmap_responses
     technology_jira_issues.to_csv("technology_issues_with_AI_summary.csv", index=False)
