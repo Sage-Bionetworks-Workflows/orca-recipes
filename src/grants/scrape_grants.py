@@ -1,3 +1,19 @@
+"""
+Dependencies: 
+- Access to the data model synapse CSV
+- Developer account on Anthropic
+- API Key token saved as ANTHROPIC_API_KEY in your environment
+- Valid Synapse account with synapse configured in your environment
+
+How to Run:
+
+1. Gather list of 
+2. Set up your environment via:
+pip install anthropic requests pandas synapseclient
+3. Provide a text file urls.txt with list of URLs or update the local urls variable
+4. python3 scrape_grants.py
+5. Check your working directory for a extracted_grants.csv
+""" 
 import anthropic
 import requests
 import os
@@ -29,7 +45,7 @@ def load_data_model(syn : synapseclient.Synapse, data_model_synid : str) -> pd.D
         return None
       
 
-def format_data_model_for_prompt(data_model_df):
+def format_data_model_for_prompt(data_model_df : pd.DataFrame) -> str:
     """Format the data model into a detailed prompt section"""
     prompt_section = "FIELD SPECIFICATIONS:\n\n"
     
@@ -43,7 +59,7 @@ def format_data_model_for_prompt(data_model_df):
     
     return prompt_section
 
-def fetch_webpage_content(url):
+def fetch_webpage_content(url : str) -> str:
     """Fetch the HTML content of a webpage"""
     try:
         headers = {
@@ -55,7 +71,7 @@ def fetch_webpage_content(url):
     except Exception as e:
         return f"Error fetching {url}: {str(e)}"
 
-def extract_grants_with_claude(url, data_model_df):
+def extract_grants_with_claude(url : str, data_model_df : pd.DataFrame) -> str:
     """Use Claude to extract grant information from webpage content"""
     
     # Fetch the webpage content
@@ -128,7 +144,11 @@ Please be thorough and extract all relevant information according to the data mo
         print(f"❌ Error calling Claude API: {e}")
         return None
 
-def process_multiple_urls(urls, data_model_df, output_file="combined_grants.csv"):
+def process_multiple_urls(
+  urls : List[str], 
+  data_model_df : pd.DataFrame, 
+  output_file : str ="combined_grants.csv"
+  ) -> pd.DataFrame:
     """Process multiple URLs and combine results"""
     
     all_results = []
@@ -201,7 +221,7 @@ def main():
             urls = [line.strip() for line in f if line.strip() and not line.startswith('#')]
         print(f"✅ Loaded {len(urls)} URLs from {URLS_FILE}")
     except FileNotFoundError:
-        print(f"⚠️ {URLS_FILE} not found. Using default URLs...")
+        print(f"{URLS_FILE} not found. Using default URLs...")
         urls = [
             "https://www.aacr.org/professionals/research-funding/current-funding-opportunities/",
         ]
