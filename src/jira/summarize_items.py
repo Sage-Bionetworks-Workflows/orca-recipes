@@ -75,26 +75,29 @@ def construct_summary(jira_issue_content: Dict[str, str]) -> None:
 
 
 def main():
+    """main workflow"""
+    # Can replace these calls with reading from Snowflake
     technology_jira_issues = pd.read_csv("technology_issues.csv")
     roadmap_jira_issues = pd.read_csv("roadmap_delivery_issues.csv")
     roadmap_epic_issues = pd.read_csv("roadmap_epic_issues.csv")
     done_items = technology_jira_issues[technology_jira_issues['status'] == "Done"]
     tech_roadmap_responses = []
     for _, row in done_items.iterrows():
-        # issue_id = row['issue_id']
         delivery_tickets = ast.literal_eval(row['inward_is_implemented_by_issues'])
         subset_issues = roadmap_jira_issues[roadmap_jira_issues['id'].isin(delivery_tickets)]
         all_epic_issues = roadmap_epic_issues[roadmap_epic_issues['parent'].isin(subset_issues.id)]
         all_issues = pd.concat([subset_issues, all_epic_issues, row.to_frame().T], ignore_index=True)
         all_issues = all_issues[~all_issues['resolution'].isin(["Won't Do", "Duplicate", "Cancelled", "Cannot Reproduce", "Won't Fix", "Incomplete", "Known Error"])]
-        print(row['key'], row['summary'], f"- {sum(~all_issues['issuetype'].isin(['Epic', 'Idea']))} issues")
+        print("#", row['key'], row['summary'], f"- {sum(~all_issues['issuetype'].isin(['Epic', 'Idea']))} issues")
 
         jira_issue_content = {}
         for _, issue_row in all_issues.iterrows():
+            # If we want more information to be summarized, we can add more metadata
             metadata = {
                 'summary': issue_row['summary'],
                 # 'program_code': issue_row['program_code'],
             }
+            # Only add description if there is one to reduce tokens used
             if not pd.isna(issue_row['description']):
                 metadata['description'] = issue_row['description']
             jira_issue_content[issue_row['key']] = metadata
@@ -102,5 +105,5 @@ def main():
         response = construct_summary(jira_issue_content)
         print(response)
         tech_roadmap_responses.append(response)
-    technology_jira_issues['AI_summary_of_roadmap_item'] = tech_roadmap_responses
-    technology_jira_issues.to_csv("technology_issues_with_AI_summary.csv", index=False)
+    done_items['AI_summary_of_roadmap_item'] = tech_roadmap_responses
+    done_items.to_csv("technology_issues_with_AI_summary.csv", index=False)

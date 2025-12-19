@@ -24,7 +24,7 @@ def _extract_issue_details(jira_client: JIRA, issue: Union[str, jira.resources.I
 
     Args:
         jira_client (JIRA): The Jira client object.
-        issue (jira.resources.Issue): The Jira issue object.
+        issue (jira.resources.Issue|str): The Jira issue object or issue ID
 
     Returns:
         dict: A dictionary containing the relevant information from the Jira issue object.
@@ -168,25 +168,19 @@ def _extract_issue_details(jira_client: JIRA, issue: Union[str, jira.resources.I
         "inward_is_implemented_by_issues": inward_is_implemented_by_issues,
         "outward_issues": outward_issues,
         'program_code': program_codes,
-        # "subtasks": subtasks
     }
 
 
 def get_issues(jira_client: JIRA, jql: str) -> pd.DataFrame:
     """
-    Get all issues in a sprint
-    This does NOT take into account the specific status of
-    an issue at the duration of the sprint
-    For example, an issue could be "Waiting for review" at the
-    end of the sprint, but can be "Closed" now. This will
-    skew the "number of story points" per engineer over time.
+    Get all issues based on a JQL query
 
     Args:
-        jira_client (JIRA): _description_
-        sprint (jira.resources.Sprint): _description_
+        jira_client (JIRA): Logged in session of jira client
+        jql (str): JQL query string
 
     Returns:
-        pd.DataFrame: all issues in a sprint
+        pd.DataFrame: all issues matching the JQL query
     """
     all_results = []
     issues = jira_client.enhanced_search_issues(jql)
@@ -293,15 +287,15 @@ def main():
         account=config['snowflake_account'],
         private_key_file=config['private_key_file'],
         private_key_file_pwd=config['private_key_file_pwd'],
-        database="sage",
-        schema="DPE",
-        role="SYSADMIN",
+        database="DATA_ANALYTICS",
+        schema="JIRA",
+        role="DATA_ANALYTICS",
         warehouse="compute_xsmall"
     )
     write_pandas(
         ctx,
         all_tech_roadmap_issues_df,
-        "TECH_ROADMAP_JIRA_ISSUES",
+        "TECH_ROADMAP_JIRA",
         auto_create_table=True,
         overwrite=True,
         quote_identifiers=False
