@@ -15,6 +15,10 @@ import snowflake.connector
 from snowflake.connector.pandas_tools import write_pandas
 
 
+# This should be refactored.  There should be a function to extract the raw data and
+# then separate functions to transform the Jira data based on the different projects
+# as each project is set up differently which leads to differences in how the
+# fields are being used.
 def _extract_issue_details(
     jira_client: JIRA, issue: Union[str, jira.resources.Issue]
 ) -> dict:
@@ -202,7 +206,6 @@ def get_issues(jira_client: JIRA, jql: str) -> pd.DataFrame:
     extracted_results = []
     for issue in all_results:
         issue_details = _extract_issue_details(jira_client=jira_client, issue=issue)
-        # print(project)
         extracted_results.append(issue_details)
     jira_issues_df = pd.DataFrame(extracted_results)
     return jira_issues_df
