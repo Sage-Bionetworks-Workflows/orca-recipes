@@ -14,9 +14,11 @@ pip install anthropic requests pandas synapseclient
 4. python3 scrape_grants.py
 5. Check your working directory for a extracted_grants.csv
 """ 
+import os
+from typing import List
+
 import anthropic
 import requests
-import os
 import pandas as pd
 import synapseclient
 
