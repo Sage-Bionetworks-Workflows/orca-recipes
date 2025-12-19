@@ -89,16 +89,23 @@ def extracrt_opportunity_fields(opportunity_details):
     grant_duration = None
     if post_date and end_date:
         try:
-            post_dt = pd.to_datetime(post_date)
-            end_dt = pd.to_datetime(end_date)
+            print("POST")
+            print(post_date, end_date)
+            post_dt = datetime.strptime(post_date, "%m/%d/%Y")
+            end_dt = datetime.strptime(end_date, "%m/%d/%Y")
             grant_duration = (end_dt - post_dt).days / 365.25
         except (ValueError, TypeError):
             grant_duration = None
     
     # Create DataFrame from dictionary (single row) - values must be in lists
+    import re
+    print("funding amount:", funding_amount)
+    converted_funding_amount = re.sub(r'\D', '', str(funding_amount)) if funding_amount is not None else None
+    print("converted funding amount:", converted_funding_amount)
+    # TODO: Figure out why Snowflake only recognizes the columns when you make it a string (e.g. select "title" works but select title does not)
     data = {
         'title': [opportunity_details.get('opportunityTitle')],
-        'funding_amount': [funding_amount],
+        'funding_amount': [converted_funding_amount],
         'organization': [synopsis.get('agencyContactName')],
         'contact_info': [synopsis.get('agencyContactEmail')],
         'data_source': ['grants.gov'],
@@ -176,4 +183,4 @@ if __name__ == "__main__":
     print("converted to dataframe:")
     print(table_df)
     print("Uploading to Snowflake...")
-    step4_upload_to_snowflake(table_df, auto_table_create=True, overwrite=True)
+    step4_upload_to_snowflake(table_df, "GRANTS_PIPELINE_TEST",auto_table_create=True, overwrite=True)
