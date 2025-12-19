@@ -112,9 +112,12 @@ def _extract_issue_details(jira_client: JIRA, issue: Union[str, jira.resources.I
     # Get the linked issues of the issue
     inward_issues = []
     outward_issues = []
+    inward_is_implemented_by_issues = []
     for linked in issue_info_raw.get('issuelinks'):
         if linked.get("outwardIssue") is not None:
             outward_issues.append(linked.get("outwardIssue")['key'])
+        elif linked.get("inwardIssue") is not None and linked["type"]['inward'] == "is implemented by":
+            inward_is_implemented_by_issues.append(linked.get("inwardIssue")['key'])
         else:
             inward_issues.append(linked.get("inwardIssue")['key'])
 
@@ -161,6 +164,8 @@ def _extract_issue_details(jira_client: JIRA, issue: Union[str, jira.resources.I
         "resolution": resolution,
         # "linked_issues": linked_issues,
         "inward_issues": inward_issues,
+        # These are delivery items for TECH roadmap (is implemented by)
+        "inward_is_implemented_by_issues": inward_is_implemented_by_issues,
         "outward_issues": outward_issues,
         'program_code': program_codes,
         # "subtasks": subtasks
@@ -245,7 +250,7 @@ def main():
     tech_roadmap_issues.to_csv("technology_issues.csv", index=False)
     # inward issues are delivery items
     all_delivery_issues = []
-    for delivery_issue in tech_roadmap_issues['inward_issues']:
+    for delivery_issue in tech_roadmap_issues['inward_is_implemented_by_issues']:
         all_delivery_issues.extend(delivery_issue)
 
     all_delivery_issue_information = []

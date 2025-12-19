@@ -1,13 +1,11 @@
-# import base64
-# import json
-# import re
-from typing import Dict, Set
-# import httpx
-import pandas as pd
-from synapseclient import Synapse
-from synapseclient.models import Agent
-
+"""Summarize Jira ticket items per roadmap item using google gemini"""
 import ast
+from typing import Dict
+
+from google import genai
+from google.genai import types
+import pandas as pd
+
 # Given the following JIRA ticket descriptions generate a summary of the technology roadmap item for stakeholders. Only the results should be returned.**  
 PROMPT = """
 ### **Role:**
@@ -55,22 +53,25 @@ Given a **roadmap item** with linked **epics and JIRA issues**, produce a **conc
 ## Deprecated or Breaking Changes
 ## New Features
 """
-syn = Synapse()
-syn.login()
-# It is important to use registration_id="139" because this is the dpe-technical-writer agent
-release_note_agent = Agent(registration_id="139").get()
+
+client = genai.Client()
 
 
-def construct_release_notes(jira_issue_content: Dict[str, str]) -> None:
+def construct_summary(jira_issue_content: Dict[str, str]) -> None:
     """
-    Prompt the agent with the release notes template and the extracted
-    JIRA and Github content.
+    Prompt the agent with summary prompt based on Jira ticket descriptions
     """
     prompt = PROMPT.format(
         JIRA_ISSUE_CONTENT=jira_issue_content,
     )
-    results = release_note_agent.prompt(prompt=prompt)
-    return results.response
+    response = client.models.generate_content(
+        model="gemini-2.5-flash",
+        contents=prompt,
+        config=types.GenerateContentConfig(
+            thinking_config=types.ThinkingConfig(thinking_budget=0) # Disables thinking
+        ),
+    )
+    return response.text
 
 
 def main():
@@ -81,7 +82,7 @@ def main():
     tech_roadmap_responses = []
     for _, row in done_items.iterrows():
         # issue_id = row['issue_id']
-        delivery_tickets = ast.literal_eval(row['inward_issues'])
+        delivery_tickets = ast.literal_eval(row['inward_is_implemented_by_issues'])
         subset_issues = roadmap_jira_issues[roadmap_jira_issues['id'].isin(delivery_tickets)]
         all_epic_issues = roadmap_epic_issues[roadmap_epic_issues['parent'].isin(subset_issues.id)]
         all_issues = pd.concat([subset_issues, all_epic_issues, row.to_frame().T], ignore_index=True)
@@ -98,7 +99,7 @@ def main():
                 metadata['description'] = issue_row['description']
             jira_issue_content[issue_row['key']] = metadata
 
-        response = construct_release_notes(jira_issue_content)
+        response = construct_summary(jira_issue_content)
         print(response)
         tech_roadmap_responses.append(response)
     technology_jira_issues['AI_summary_of_roadmap_item'] = tech_roadmap_responses
