@@ -2,7 +2,6 @@
 
 import os
 import datetime
-from unittest import result
 import pytz
 from typing import Union
 
