@@ -90,11 +90,13 @@ def main():
 
         jira_issue_content = {}
         for _, issue_row in all_issues.iterrows():
-            jira_issue_content[issue_row['key']] = {
+            metadata = {
                 'summary': issue_row['summary'],
-                'description': issue_row['description'],
                 # 'program_code': issue_row['program_code'],
             }
+            if not pd.isna(issue_row['description']):
+                metadata['description'] = issue_row['description']
+            jira_issue_content[issue_row['key']] = metadata
 
         response = construct_release_notes(jira_issue_content)
         print(response)
