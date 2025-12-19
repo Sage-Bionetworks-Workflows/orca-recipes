@@ -1,5 +1,5 @@
-"""This script ingests the data from Jira across Sage and ingests it into snowflake
-"""
+"""This script ingests the data from Jira across Sage and ingests it into snowflake"""
+
 import os
 import datetime
 from unittest import result
@@ -15,7 +15,9 @@ import snowflake.connector
 from snowflake.connector.pandas_tools import write_pandas
 
 
-def _extract_issue_details(jira_client: JIRA, issue: Union[str, jira.resources.Issue]) -> dict:
+def _extract_issue_details(
+    jira_client: JIRA, issue: Union[str, jira.resources.Issue]
+) -> dict:
     """
     Extracts the relevant information from a Jira issue object.
 
@@ -36,7 +38,7 @@ def _extract_issue_details(jira_client: JIRA, issue: Union[str, jira.resources.I
     # print(issue_id)
 
     issue_info = jira_client.issue(issue_id)
-    issue_info_raw = issue_info.raw['fields']
+    issue_info_raw = issue_info.raw["fields"]
 
     # Define fields to export to snowflake
     if issue_info.fields.assignee is not None:
@@ -53,14 +55,14 @@ def _extract_issue_details(jira_client: JIRA, issue: Union[str, jira.resources.I
     # Get the pair details of the issue
     pair_details = issue_info_raw.get("customfield_12185")
     if pair_details is not None:
-        pair = pair_details['displayName']
+        pair = pair_details["displayName"]
     else:
         pair = None
 
     # Get the validator details of the issue
     validator_details = issue_info_raw.get("customfield_11140")
     if validator_details is not None:
-        validator = validator_details['displayName']
+        validator = validator_details["displayName"]
     else:
         validator = None
 
@@ -92,34 +94,40 @@ def _extract_issue_details(jira_client: JIRA, issue: Union[str, jira.resources.I
         priority = None
 
     # Get the reporter of the issue
-    if isinstance(issue_info.fields.reporter, str) or issue_info.fields.reporter is None:
+    if (
+        isinstance(issue_info.fields.reporter, str)
+        or issue_info.fields.reporter is None
+    ):
         reporter = issue_info.fields.reporter
     else:
         reporter = issue_info.fields.reporter.displayName
 
     # Get the parent of the issue
-    parent_details = issue_info_raw.get('parent')
+    parent_details = issue_info_raw.get("parent")
     if parent_details is not None:
-        parent = parent_details['key']
+        parent = parent_details["key"]
     else:
         parent = None
 
     # Get the due date of the issue
-    due_date = issue_info_raw.get('duedate')
-    program_codes = issue_info_raw.get('customfield_12162')
+    due_date = issue_info_raw.get("duedate")
+    program_codes = issue_info_raw.get("customfield_12162")
     if program_codes:
-        program_codes = [code['value'] for code in program_codes]
+        program_codes = [code["value"] for code in program_codes]
     # Get the linked issues of the issue
     inward_issues = []
     outward_issues = []
     inward_is_implemented_by_issues = []
-    for linked in issue_info_raw.get('issuelinks'):
+    for linked in issue_info_raw.get("issuelinks"):
         if linked.get("outwardIssue") is not None:
-            outward_issues.append(linked.get("outwardIssue")['key'])
-        elif linked.get("inwardIssue") is not None and linked["type"]['inward'] == "is implemented by":
-            inward_is_implemented_by_issues.append(linked.get("inwardIssue")['key'])
+            outward_issues.append(linked.get("outwardIssue")["key"])
+        elif (
+            linked.get("inwardIssue") is not None
+            and linked["type"]["inward"] == "is implemented by"
+        ):
+            inward_is_implemented_by_issues.append(linked.get("inwardIssue")["key"])
         else:
-            inward_issues.append(linked.get("inwardIssue")['key'])
+            inward_issues.append(linked.get("inwardIssue")["key"])
 
     # Get the resolution date of the issue
     resolution_date = issue_info.fields.resolutiondate
@@ -137,7 +145,7 @@ def _extract_issue_details(jira_client: JIRA, issue: Union[str, jira.resources.I
     project = issue_info.fields.project.key
 
     return {
-        'project': project,
+        "project": project,
         # 'sprint_id': sprint.id,
         "issuetype": issue_type_name,
         "id": issue_id,
@@ -145,9 +153,9 @@ def _extract_issue_details(jira_client: JIRA, issue: Union[str, jira.resources.I
         "labels": labels,
         "summary": issue_summary,
         "description": issue_desc,
-        'status': issue_info_raw['status']['name'],
+        "status": issue_info_raw["status"]["name"],
         "assignee": issue_assignee,
-        'story_points': issue_story_points,
+        "story_points": issue_story_points,
         # "sprint": sprint.name,
         "epic_link": epic_link,
         "pair": pair,
@@ -167,7 +175,7 @@ def _extract_issue_details(jira_client: JIRA, issue: Union[str, jira.resources.I
         # These are delivery items for TECH roadmap (is implemented by)
         "inward_is_implemented_by_issues": inward_is_implemented_by_issues,
         "outward_issues": outward_issues,
-        'program_code': program_codes,
+        "program_code": program_codes,
     }
 
 
@@ -186,7 +194,9 @@ def get_issues(jira_client: JIRA, jql: str) -> pd.DataFrame:
     issues = jira_client.enhanced_search_issues(jql)
     all_results.extend(issues)
     while issues.nextPageToken:
-        issues = jira_client.enhanced_search_issues(jql, nextPageToken=issues.nextPageToken)
+        issues = jira_client.enhanced_search_issues(
+            jql, nextPageToken=issues.nextPageToken
+        )
         all_results.extend(issues)
 
     extracted_results = []
@@ -198,7 +208,9 @@ def get_issues(jira_client: JIRA, jql: str) -> pd.DataFrame:
     return jira_issues_df
 
 
-def get_custom_headers(server: str='https://sagebionetworks.jira.com/', issue_id: str='BS-1') -> dict:
+def get_custom_headers(
+    server: str = "https://sagebionetworks.jira.com/", issue_id: str = "BS-1"
+) -> dict:
     """Map custom header names to readable names
 
     Args:
@@ -218,59 +230,71 @@ def get_custom_headers(server: str='https://sagebionetworks.jira.com/', issue_id
     Returns:
         dict: Custom headers mapped to readable string headers
     """
-    username = os.environ['JIRA_USERNAME']
-    api_token = os.environ['JIRA_API_TOKEN']
+    username = os.environ["JIRA_USERNAME"]
+    api_token = os.environ["JIRA_API_TOKEN"]
     # base_url = 'https://sagebionetworks.jira.com/'
     auth = requests.auth.HTTPBasicAuth(username, api_token)
-    headers = {
-        "Accept": "application/json"
-    }
-    response = requests.get(f"{server}/rest/api/latest/issue/{issue_id}?expand=names", headers=headers, auth=auth)
+    headers = {"Accept": "application/json"}
+    response = requests.get(
+        f"{server}/rest/api/latest/issue/{issue_id}?expand=names",
+        headers=headers,
+        auth=auth,
+    )
     data = response.json()
-    return data['names']
-
+    return data["names"]
 
 
 def main():
-    """Invoke jira metrics
-    """
-    username = os.environ['JIRA_USERNAME']
-    api_token = os.environ['JIRA_API_TOKEN']
+    """Invoke jira metrics"""
+    username = os.environ["JIRA_USERNAME"]
+    api_token = os.environ["JIRA_API_TOKEN"]
     jira_client = JIRA(
-        server='https://sagebionetworks.jira.com/',
-        basic_auth=(username, api_token)
+        server="https://sagebionetworks.jira.com/", basic_auth=(username, api_token)
     )
-    tech_roadmap_issues = get_issues(jira_client=jira_client, jql="project='Technology'")
+    tech_roadmap_issues = get_issues(
+        jira_client=jira_client, jql="project='Technology'"
+    )
     tech_roadmap_issues.to_csv("technology_issues.csv", index=False)
     # inward issues are delivery items
     all_delivery_issues = []
-    for delivery_issue in tech_roadmap_issues['inward_is_implemented_by_issues']:
+    for delivery_issue in tech_roadmap_issues["inward_is_implemented_by_issues"]:
         all_delivery_issues.extend(delivery_issue)
 
     all_delivery_issue_information = []
     for delivery_issue_id in all_delivery_issues:
-        all_delivery_issue_information.append(_extract_issue_details(jira_client=jira_client, issue=delivery_issue_id))
+        all_delivery_issue_information.append(
+            _extract_issue_details(jira_client=jira_client, issue=delivery_issue_id)
+        )
 
     all_delivery_issue_df = pd.DataFrame(all_delivery_issue_information)
     all_delivery_issue_df.to_csv("roadmap_delivery_issues.csv", index=False)
     all_issues_in_epic_df = pd.DataFrame()
     for _, issue in all_delivery_issue_df.iterrows():
-        print(issue['key'], issue['summary'])
-        if issue['issuetype'] == "Epic":
+        print(issue["key"], issue["summary"])
+        if issue["issuetype"] == "Epic":
             issue_key = issue["key"]
-            epic_issues = get_issues(jira_client=jira_client, jql=f"parent='{issue_key}'")
+            epic_issues = get_issues(
+                jira_client=jira_client, jql=f"parent='{issue_key}'"
+            )
             # for epic_issue in epic_issues:
             #     all_issues_in_epic.append(_extract_issue_details(jira_client=jira_client, issue=epic_issue))
             if epic_issues.empty:
                 continue
-            all_issues_in_epic_df = pd.concat([all_issues_in_epic_df, epic_issues], ignore_index=True)
+            all_issues_in_epic_df = pd.concat(
+                [all_issues_in_epic_df, epic_issues], ignore_index=True
+            )
     # all_issues_in_epic_df = pd.DataFrame(all_issues_in_epic)
     all_issues_in_epic_df.to_csv("roadmap_epic_issues.csv", index=False)
-    all_tech_roadmap_issues_df = pd.concat([all_delivery_issue_df, all_issues_in_epic_df, tech_roadmap_issues], ignore_index=True)
+    all_tech_roadmap_issues_df = pd.concat(
+        [all_delivery_issue_df, all_issues_in_epic_df, tech_roadmap_issues],
+        ignore_index=True,
+    )
 
-    date_columns = ['created_on', 'start_date', 'resolution_date']
+    date_columns = ["created_on", "start_date", "resolution_date"]
     for date_column in date_columns:
-        all_tech_roadmap_issues_df[date_column] = pd.to_datetime(all_tech_roadmap_issues_df[date_column], utc=True, errors='coerce').dt.strftime('%Y-%m-%d')
+        all_tech_roadmap_issues_df[date_column] = pd.to_datetime(
+            all_tech_roadmap_issues_df[date_column], utc=True, errors="coerce"
+        ).dt.strftime("%Y-%m-%d")
         # HACK: Error: Expression type does not match column data type, expecting DATE but got NUMBER(38,0) for column CREATED_ON
         # This error occurs but the `write_pandas` function seems to convert a column with empty values to a number type columns
         if all_tech_roadmap_issues_df[date_column].isnull().all():
@@ -278,19 +302,21 @@ def main():
         # tried these below, but they don't work
         # all_sprint_info[date_column].fillna(pd.NaT, inplace=True)
         # all_sprint_info[date_column] = all_sprint_info[date_column].astype('datetime64[ns]')
-    all_tech_roadmap_issues_df['export_date'] = datetime.datetime.now(pytz.UTC).strftime('%Y-%m-%d')
+    all_tech_roadmap_issues_df["export_date"] = datetime.datetime.now(
+        pytz.UTC
+    ).strftime("%Y-%m-%d")
     config = dotenv_values(".env")
 
     ctx = snowflake.connector.connect(
-        user=config['user'],
+        user=config["user"],
         # password=config['password'],
-        account=config['snowflake_account'],
-        private_key_file=config['private_key_file'],
-        private_key_file_pwd=config['private_key_file_pwd'],
+        account=config["snowflake_account"],
+        private_key_file=config["private_key_file"],
+        private_key_file_pwd=config["private_key_file_pwd"],
         database="DATA_ANALYTICS",
         schema="JIRA",
         role="DATA_ANALYTICS",
-        warehouse="compute_xsmall"
+        warehouse="compute_xsmall",
     )
     write_pandas(
         ctx,
@@ -298,7 +324,7 @@ def main():
         "TECH_ROADMAP_JIRA",
         auto_create_table=True,
         overwrite=True,
-        quote_identifiers=False
+        quote_identifiers=False,
     )
 
 
