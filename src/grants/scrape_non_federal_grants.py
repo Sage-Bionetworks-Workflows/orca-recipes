@@ -1,19 +1,3 @@
-"""
-Dependencies: 
-- Access to the data model synapse CSV
-- Developer account on Anthropic
-- API Key token saved as ANTHROPIC_API_KEY in your environment
-- Valid Synapse account with synapse configured in your environment
-
-How to Run:
-
-1. Gather list of 
-2. Set up your environment via:
-pip install anthropic requests pandas synapseclient
-3. Provide a text file urls.txt with list of URLs or update the local urls variable
-4. python3 scrape_grants.py
-5. Check your working directory for a extracted_grants.csv
-""" 
 import os
 from typing import List
 
@@ -25,7 +9,7 @@ import synapseclient
 # Configuration
 DATA_MODEL_SYNID = "syn72010973"  # Synapse ID to data model file
 URLS_FILE = "urls.txt"  # Path to file with URLs (one per line)
-OUTPUT_FILE = "extracted_grants.csv"
+OUTPUT_FILE = "all_grants.csv"
 ANTHROPIC_API_KEY= os.getenv("ANTHROPIC_API_KEY")
 
 def load_data_model(syn : synapseclient.Synapse, data_model_synid : str) -> pd.DataFrame:
