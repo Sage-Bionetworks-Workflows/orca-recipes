@@ -50,7 +50,6 @@ Given a **JIRA issues**, produce a **concise, non-technical summary** that expla
 [Who or what is impacted]
 [Any important considerations for stakeholders]
 [Number of tickets completed]
-[Distribution of assignees]
 ## Affected Users & Systems
 ## Deprecated or Breaking Changes
 ## New Features
@@ -95,14 +94,12 @@ def main():
         # If we want more information to be summarized, we can add more metadata
         metadata = {
             "summary": issue_row["summary"],
-            'program_code': issue_row['program_code'],
-            "assignee": issue_row["assignee"],
+            "description": issue_row["description"],
+            # 'program_code': issue_row['program_code'],
+            # "assignee": issue_row["assignee"],
             "issuetype": issue_row["issuetype"],
             "fix_version": issue_row["fix_version"],
         }
-        # Only add description if there is one to reduce tokens used
-        # if not pd.isna(issue_row["description"]):
-        #     metadata["description"] = issue_row["description"]
         jira_issue_content[issue_row["key"]] = metadata
 
     response = construct_summary(jira_issue_content)
