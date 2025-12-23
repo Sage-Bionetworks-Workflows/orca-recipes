@@ -290,8 +290,8 @@ def save_minimal_jsonld_to_s3() -> None:
                 "license": "" if pd.isnull(row["license"]) else row["license"]
             }
 
-        s3_key = f"{dataset_name}_{dataset_id}.minimal_croissant.jsonld"
-        execute_push_to_s3(dataset=dataset,dataset_id=row["id"],s3_key=s3_key, croissant_file=minimal_croissant_file, push_to_s3=push_to_s3, **context)
+            s3_key = f"{dataset_name}_{dataset_id}.minimal_croissant.jsonld"
+            execute_push_to_s3(dataset=dataset,dataset_id=row["id"],s3_key=s3_key, croissant_file=minimal_croissant_file, push_to_s3=push_to_s3, **context)
 
 
     create_and_push_to_s3()
