@@ -1,6 +1,7 @@
 import os
 from typing import Union
 
+from atlassian import Confluence
 from jira import JIRA
 import jira
 import pandas as pd
@@ -243,3 +244,36 @@ def get_custom_headers(
     )
     data = response.json()
     return data["names"]
+
+
+def get_or_create_page(space: str, client: Confluence, title: str, parent_id: str, **kwargs) -> str:
+    """
+    Retrieve a page by title under parent_id in the given space using CQL search;
+    create it if it doesn't exist. Returns the page_id.
+
+    Args:
+        space (str): Confluence space key
+        client (Confluence): Authenticated Confluence client
+        title (str): Title of the page to retrieve or create
+        parent_id (str): ID of the parent page under which to search or create the page
+        **kwargs: Additional arguments to pass to create_page if creating a new page
+
+    Returns:
+        str: ID of the retrieved or created page
+    """
+    cql = f'title = "{title}" AND ancestor = {parent_id} AND space = "{space}"'
+    res = client.cql(cql, limit=1)
+    if res.get('results'):
+        page_id = res['results'][0]['content']['id']
+        print(f"Found existing Confluence page '{title}' (ID: {page_id}) via CQL search")
+        return page_id
+    new = client.create_page(
+        space=space,
+        title=title,
+        body="",
+        parent_id=parent_id,
+        representation='wiki',
+        type=kwargs.get("type", "page"),
+    )
+    print(f"Created blank Confluence page '{title}' (ID: {new['id']})")
+    return new['id']

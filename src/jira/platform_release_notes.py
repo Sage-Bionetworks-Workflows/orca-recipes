@@ -1,11 +1,12 @@
 """Summarize Jira ticket items per roadmap item using google gemini"""
 import os
 
+from atlassian import Confluence
 from google import genai
 from google.genai import types
 from jira import JIRA
 
-from jira_utils import get_issues
+from jira_utils import get_issues, get_or_create_page
 
 # Given the following JIRA ticket descriptions generate a summary of the technology roadmap item for stakeholders. Only the results should be returned.**
 PROMPT = """
@@ -15,7 +16,8 @@ You are a Product Manager creating **stakeholder-facing release notes**.
 Given a **JIRA issues**, produce a **concise, non-technical summary** that explains what's changing, why it matters, and who is impacted—at at the release level.
 ### **Requirements:**  
 
-- **Always include `## Summary`**
+- Thie document MUST be written in CONFLUENCE STYLE MARKUP https://confluence.atlassian.com/doc/confluence-wiki-markup-251003035.html
+- **Always include `h1. Summary`**
   - purpose of the original TECH roadmap item
   - What is being delivered across epics
   - Why this work was prioritized
@@ -45,14 +47,14 @@ Given a **JIRA issues**, produce a **concise, non-technical summary** that expla
 {JIRA_ISSUE_CONTENT}
 ```
 ### **Expected Output Format:**  
-## Summary [stack release name]
+h1. Summary [stack release name]
 [Brief high-level summary of what is changing and why]
 [Who or what is impacted]
 [Any important considerations for stakeholders]
 [Number of tickets completed]
-## Affected Users & Systems
-## Deprecated or Breaking Changes
-## New Features
+h1. Affected Users & Systems
+h1. Deprecated or Breaking Changes
+h1. New Features
 """
 # stack-571
 STACK_RELEASE = "stack-570"
@@ -107,3 +109,17 @@ def main():
     # tech_roadmap_responses.append(response)
     # done_items["AI_summary_of_roadmap_item"] = tech_roadmap_responses
     # done_items.to_csv("technology_issues_with_AI_summary.csv", index=False)
+    confluence = Confluence(
+        url="https://sagebionetworks.jira.com/wiki",
+        username=username,
+        password=api_token
+    )
+    news_page_confluence_id = 4467982339
+    page_id = get_or_create_page(space="DRAFT", client=confluence, title=STACK_RELEASE, parent_id=news_page_confluence_id)
+    confluence.update_page(
+        page_id=page_id,
+        title=STACK_RELEASE,
+        body=response,
+        parent_id=news_page_confluence_id,
+        representation='wiki'
+    )
