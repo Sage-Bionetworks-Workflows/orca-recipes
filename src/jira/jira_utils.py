@@ -127,9 +127,9 @@ def _extract_issue_details(
             inward_issues.append(linked.get("inwardIssue")["key"])
     
     sprint = issue_info_raw.get('customfield_10440')
-    print(sprint)
+    # print(sprint)
     fix_version = issue_info_raw.get('fixVersions')
-    print(fix_version)
+    # print(fix_version)
     # Get the resolution date of the issue
     resolution_date = issue_info.fields.resolutiondate
 

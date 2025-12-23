@@ -23,7 +23,8 @@ Given a **JIRA issues**, produce a **concise, non-technical summary** that expla
 
 - Thie document MUST be written in CONFLUENCE STYLE MARKUP https://confluence.atlassian.com/doc/confluence-wiki-markup-251003035.html
 - in the sections for New Features and Fixes & Improvements, make each item Header 3 or 4
-- DO NOT HALLUCINATE JIRA ISSUE CONTENT. ONLY SUMMARIZE THE PROVIDED CONTENT AS THESE RELEASE NOTES WILL BE PUBLIC FACING.
+- YOU MUST NOT HALLUCINATE JIRA ISSUE CONTENT. ONLY SUMMARIZE THE PROVIDED CONTENT AS THESE RELEASE NOTES WILL BE PUBLIC FACING.
+- Curly braces are forbidden characters in the ouput, Any path parameters MUST be represented using angle brackets only. If curly braces appear anywhere in the output, the response is invalid.
 - **Always include `h1. Summary`**
   - purpose of the original TECH roadmap item
   - What is being delivered across epics
