@@ -14,7 +14,7 @@ This DAG addresses the issue where Google has difficulty indexing Croissant JSON
 
 The workflow for making datasets discoverable to Google:
 1. This DAG generates minimal JSON-LD files and uploads them to a publicly accessible S3 bucket
-2. This DAG stores the S3 URLs in a Synapse table (syn72041138)
+2. This DAG stores the S3 URLs in a Synapse table
 3. When a Synapse dataset webpage is opened in the portal, the Synapse Web Client queries this table
 4. If a croissant file link exists for that dataset, the Synapse Web Client injects it into the HTML of the page
 5. Google crawler reads the JSON-LD from the HTML and indexes the dataset for Google Datasets search
