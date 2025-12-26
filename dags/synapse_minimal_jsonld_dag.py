@@ -1,5 +1,29 @@
 
+"""
+This DAG interacts with a few different services to accomplish the following:
 
+- (Synapse, Authenticated) Query the Synapse Data Catalog to retrieve all datasets listed on the data catalog homepage
+- (Synapse, Authenticated) For each dataset in the data catalog, retrieve metadata including name, description, contributors, and license
+- (Synapse, Authenticated) Generate minimal Schema.org JSON-LD metadata files for each dataset following the minimal Croissant format
+- (S3, Authenticated) For each dataset, upload the minimal JSON-LD file to the `synapse-croissant-metadata-minimal` public S3 bucket in the `org-sagebase-dpe-prod` AWS account
+- (Synapse, Authenticated) For each dataset, query the Synapse table to check if a link to the S3 object already exists
+- (Synapse, Authenticated) Store or update the S3 object URL in the Synapse table for each dataset
+
+
+This DAG addresses the issue where Google has difficulty indexing Croissant JSON embedded in portal pages. 
+
+The workflow for making datasets discoverable to Google:
+1. This DAG generates minimal JSON-LD files and uploads them to a publicly accessible S3 bucket
+2. This DAG stores the S3 URLs in a Synapse table (syn72041138)
+3. When a Synapse dataset webpage is opened in the portal, the Synapse Web Client queries this table
+4. If a croissant file link exists for that dataset, the Synapse Web Client injects it into the HTML of the page
+5. Google crawler reads the JSON-LD from the HTML and indexes the dataset for Google Datasets search
+
+See synapse-dataset-to-croissant.py for additional note on the pushing to S3. 
+
+DAG Parameters:
+- Review the DAG Parameters under the `@dag` decorated function
+"""
 from airflow.decorators import dag, task
 from datetime import datetime
 from synapseclient.models import query
