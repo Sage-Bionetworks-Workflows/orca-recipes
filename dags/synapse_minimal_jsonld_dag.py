@@ -4,9 +4,12 @@ from airflow.decorators import dag, task
 from datetime import datetime
 from synapseclient.models import query
 from synapseclient import Entity, Synapse
+from synapseclient.models import Table
 from airflow.models.param import Param
 from orca.services.synapse import SynapseHook
 import pandas as pd
+from pandas import DataFrame
+from urllib.parse import quote_plus
 import json
 import os
 from io import BytesIO
@@ -33,6 +36,7 @@ dag_params = {
     "synapse_conn_id": Param("SYNAPSE_ORCA_SERVICE_ACCOUNT_CONN", type="string"),
     "push_results_to_s3": Param(True, type="boolean"),
     "aws_conn_id": Param("AWS_SYNAPSE_CROISSANT_METADATA_S3_CONN", type="string"),
+    "push_links_to_synapse": Param(True, type="boolean"),
 }
 
 dag_config = {
@@ -56,6 +60,7 @@ BUCKET_NAME="synapse-croissant-metadata-minimal"
 MY_SERVICE_NAME = "airflow-synapse-dataset-to-minimal-croissant"
 MY_DEPLOYMENT_ENVIRONMENT = "prod"
 MY_SERVICE_VERSION = "1.0.0"
+SYNAPSE_TABLE_FOR_CROISSANT_LINKS = "syn72041138"
 
 def set_up_tracing() -> Tracer:
     """
@@ -245,11 +250,77 @@ def create_syn_client() -> Synapse:
 def save_minimal_jsonld_to_s3() -> None:
     """Execute a query on Snowflake and report the results to a Synapse table."""
 
-    @task
-    def create_and_push_to_s3(**context) -> None:
+    def execute_push_to_synapse(push_to_synapse: bool, dataset: Entity, dataset_id: str, s3_url: str, **context) -> None:
         """
-        Query the dataset_collection to get the IDs for the dataset we are going to
-        be running this process for.
+        Handle the push to Synapse of the croissant file link. This is done by using
+        an authenticated Synapse client to first query the table to determine if an
+        update is needed. If the link already exists with the expected S3 URL, then
+        skip the update. If the link does not exist or the S3 URL is different, then
+        update the link with the new S3 URL using the authenticated Synapse client.
+
+        Arguments:
+            push_to_synapse: A boolean to indicate if the results should be pushed to
+                Synapse. When set to `False`, the results will be printed to the logs.
+            dataset: The dataset to push to Synapse.
+            dataset_id: The ID of the dataset.
+            s3_url: The S3 URL to use for the value of the cell in the table.
+            syn_client: The unauthenticated Synapse client to use to query the table.
+            context: The context of the DAG run.
+
+        Returns:
+            None
+        """
+        try:
+            if not push_to_synapse:
+                otel_logger.info(
+                    f"Croissant file link for [dataset: {dataset.name}, id: {dataset_id}]: {s3_url}")
+                return
+
+            otel_logger.info(
+                f"Uploading croissant file link to Synapse table {SYNAPSE_TABLE_FOR_CROISSANT_LINKS}"
+            )
+
+            # Warning: Using an authenticated Synapse Client during this section of code
+            syn_hook = SynapseHook(
+                context["params"]["synapse_conn_id"])
+            authenticated_syn_client: Synapse = syn_hook.client
+            authenticated_syn_client._rest_call = MethodType(
+                _rest_call_replacement, authenticated_syn_client)
+            existing_row_df = query(query=f"SELECT * FROM {SYNAPSE_TABLE_FOR_CROISSANT_LINKS} WHERE dataset = '{dataset_id}'", synapse_client=authenticated_syn_client)
+
+            if not existing_row_df.empty and existing_row_df["minimal_croissant_file_s3_object"].values[0] == s3_url:
+                otel_logger.info(
+                    f"Croissant file link already exists in Synapse table {SYNAPSE_TABLE_FOR_CROISSANT_LINKS}. Skipping.")
+                return
+
+            df = DataFrame(
+                data={
+                    "dataset": [dataset_id],
+                    "minimal_croissant_file_s3_object": [s3_url]
+                }
+            )
+            if existing_row_df.empty:
+                # If the row does not exist, create a new row
+                print("Creating new row in Synapse table")
+                Table(id=SYNAPSE_TABLE_FOR_CROISSANT_LINKS).store_rows(values=df)
+                
+            else:
+                # Update the existing row with the new value
+                print("Updating existing row in Synapse table")
+                existing_row_df["minimal_croissant_file_s3_object"] = [s3_url]
+                Table(id=SYNAPSE_TABLE_FOR_CROISSANT_LINKS).store_rows(values=existing_row_df)
+
+        except Exception as ex:
+            otel_logger.exception(
+                "Failed to push croissant file link to Synapse.")
+            otel_tracer.span_processor.force_flush()
+            otel_logger.handlers[0].flush()
+            raise ex
+
+    @task
+    def create_and_save_jsonld(**context) -> None:
+        """
+        Create and save the minimal croissant JSON-LD files to S3 and links to a synapse table for all datasets in the home page of data catalog.
 
         Arguments:
             dataset_collection: The dataset collection to query for datasets.
@@ -263,6 +334,7 @@ def save_minimal_jsonld_to_s3() -> None:
         table = query(f"select * from {SYNAPSE_DATA_CATALOG}", synapse_client=syn_client)
         
         push_to_s3 = context["params"]["push_results_to_s3"]
+        push_to_synapse = context["params"]["push_links_to_synapse"]
 
         
         for index, row in table.iterrows():
@@ -292,9 +364,12 @@ def save_minimal_jsonld_to_s3() -> None:
 
             s3_key = f"{dataset_name}_{dataset_id}.minimal_croissant.jsonld"
             execute_push_to_s3(dataset=dataset,dataset_id=row["id"],s3_key=s3_key, croissant_file=minimal_croissant_file, push_to_s3=push_to_s3, **context)
+            
+            s3_url = f"https://{BUCKET_NAME}.s3.us-east-1.amazonaws.com/{quote_plus(s3_key)}"
+            execute_push_to_synapse(push_to_synapse=push_to_synapse, dataset=dataset, dataset_id=dataset_id, s3_url=s3_url, **context)
 
 
-    create_and_push_to_s3()
+    create_and_save_jsonld()
     
 
 save_minimal_jsonld_to_s3()
