@@ -76,7 +76,7 @@ dag_config = {
 SYNAPSE_DATA_CATALOG = "syn61609402"
 # AWS related constants
 REGION_NAME = "us-east-1"
-BUCKET_NAME="synapse-croissant-metadata-minimal"
+BUCKET_NAME = "synapse-croissant-metadata-minimal"
 # Open telemetry related constants
 # Used to set `deployment.environment` in the telemetry data.
 # Since tracing and logging is getting set up outside of the DAG, we need to set
