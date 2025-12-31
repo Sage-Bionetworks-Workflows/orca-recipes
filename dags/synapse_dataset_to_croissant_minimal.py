@@ -168,6 +168,12 @@ def set_up_logging() -> Logger:
 otel_tracer = set_up_tracing()
 otel_logger = set_up_logging()
 
+# TODO: Remove this on the next > 4.7.0 release of the Synapse Python Client
+# This is a temporary hack to include the changes from: https://github.com/Sage-Bionetworks/synapsePythonClient/pull/1188
+# The hack is used here because the current SYNPY client does not have an HTTP timeout
+# for requests to Synapse. As a result and due to the significant number of HTTP calls that
+# occur during the DAG, the DAG can stall and never return due to the requests library.
+# https://requests.readthedocs.io/en/latest/user/advanced/#timeouts
 
 def _rest_call_replacement(
     self,
