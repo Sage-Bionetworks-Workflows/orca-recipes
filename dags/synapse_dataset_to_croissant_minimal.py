@@ -548,7 +548,7 @@ def save_minimal_jsonld_to_s3() -> None:
 
 
     @task
-    def create_and_save_jsonld(**context) -> None:
+    def create_and_save_jsonld(**context) -> List[Dict[str, str]]:
         """
         Create and save the minimal croissant JSON-LD files to S3 and links to a synapse table for all datasets in the home page of data catalog.
 
