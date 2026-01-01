@@ -421,7 +421,7 @@ def save_minimal_jsonld_to_s3() -> None:
     
     @task
     def delete_non_current_croissant_file_in_s3(
-        root_carrier_context: Dict, dataset_ids: List[str], **context
+        root_carrier_context: Dict, combined_dataset_name_and_id: List[Dict[str, str]], **context
     ) -> None:
         """
         Delete the non-current croissant files from S3. 
@@ -434,7 +434,7 @@ def save_minimal_jsonld_to_s3() -> None:
 
         Arguments:
             root_carrier_context: The root carrier context to use for the trace context.
-            dataset_ids: a set of dataset ids that are currently present in the data catalog
+            combined_dataset_name_and_id: a list of dictionaries containing dataset_id and dataset_name for all current datasets
 
         Returns:
             None
@@ -446,7 +446,7 @@ def save_minimal_jsonld_to_s3() -> None:
 
             objects_to_delete = extract_s3_objects_to_delete(
                 bucket_objects=bucket_objects,
-                combined_dataset_name_and_id=dataset_ids,
+                combined_dataset_name_and_id=combined_dataset_name_and_id,
             )
 
             if objects_to_delete:
@@ -465,6 +465,87 @@ def save_minimal_jsonld_to_s3() -> None:
             otel_tracer.span_processor.force_flush()
             otel_logger.handlers[0].flush()
             return None
+        
+    def extract_synapse_rows_to_delete(synapse_rows: DataFrame, combined_dataset_name_and_id: List[Dict[str, str]]) -> List[str]:
+        """
+        Extract the Synapse table rows to delete. This is done by comparing
+        the list of dataset IDs in the Synapse table to the list of current datasets.
+        If a dataset ID is found in the Synapse table that does not correspond to a current dataset,
+        it is marked for deletion.
+
+        Arguments:
+            synapse_rows: The DataFrame containing the rows from the Synapse table.
+            combined_dataset_name_and_id: A list of dictionaries containing dataset_id and dataset_name for all current datasets.
+        """
+        rows_to_delete = []
+
+        if synapse_rows.empty:
+            otel_logger.info("No rows found in Synapse table.")
+            return rows_to_delete
+
+        # Create a set of current dataset IDs for fast lookup
+        current_dataset_ids = set(d["dataset_id"] for d in combined_dataset_name_and_id)
+
+        for index, row in synapse_rows.iterrows():
+            dataset_id_in_row = str(row["dataset"])
+            if dataset_id_in_row not in current_dataset_ids:
+                rows_to_delete.append(str(row["ROW_ID"]))
+
+        return rows_to_delete
+        
+    @task
+    def delete_non_current_croissant_file_in_synapse(
+        root_carrier_context: Dict, combined_dataset_name_and_id: List[Dict[str, str]], **context
+    ) -> None:
+        """
+        Delete the non-current croissant file links from Synapse table.
+        This is used to remove the old links from Synapse table that are no longer needed.
+        A "non-current" link is defined as a croissant file link which is no longer
+        present in the data catalog.
+
+        This can occur if the dataset has been removed from the data catalog and thus synapse table is out of date.
+
+        Arguments:
+            root_carrier_context: The root carrier context to use for the trace context.
+            combined_dataset_name_and_id: a list of dictionaries containing dataset_id and dataset_name for all current datasets
+
+        Returns:
+            None
+        """
+        # Warning: Using an authenticated Synapse Client during this section of code
+        with otel_tracer.start_as_current_span("delete_non_current_files_from_s3", context=TraceContextTextMapPropagator().extract(root_carrier_context)) as span:
+            syn_hook = SynapseHook(context["params"]["synapse_conn_id"])
+            
+            authenticated_syn_client: Synapse = syn_hook.client
+            authenticated_syn_client._rest_call = MethodType(
+                _rest_call_replacement, authenticated_syn_client)
+            
+            query_string = f"SELECT * FROM {SYNAPSE_TABLE_FOR_CROISSANT_LINKS}"
+            table_dataframe= query(query=query_string, synapse_client=authenticated_syn_client)
+
+            rows_to_delete = extract_synapse_rows_to_delete(
+                synapse_rows=table_dataframe,
+                combined_dataset_name_and_id=combined_dataset_name_and_id,
+            )
+
+            if rows_to_delete:
+                delete_out_of_date_from_synapse = context["params"]["delete_out_of_date_from_synapse"]
+                if delete_out_of_date_from_synapse:
+                    otel_logger.info(
+                        f"Deleting the following rows from Synapse: {rows_to_delete}")
+                    # Delete rows from the Synapse table
+                    table_to_delete_from = Table(id=SYNAPSE_TABLE_FOR_CROISSANT_LINKS)
+                    table_to_delete_from.delete_rows(row_ids=[int(row_id) for row_id in rows_to_delete])
+                else:
+                    otel_logger.info(
+                        f"Found rows to delete from Synapse, but not deleting due to `delete_out_of_date_from_synapse` param: {rows_to_delete}")
+            else:
+                otel_logger.info(
+                    "No rows to delete from Synapse. All rows are current.")
+            otel_tracer.span_processor.force_flush()
+            otel_logger.handlers[0].flush()
+            return None
+
 
     @task
     def create_and_save_jsonld(**context) -> None:
@@ -485,7 +566,7 @@ def save_minimal_jsonld_to_s3() -> None:
         push_to_s3 = context["params"]["push_results_to_s3"]
         push_to_synapse = context["params"]["push_links_to_synapse"]
 
-        existing_dataset_ids = []
+        combined_dataset_name_and_id = []
         for index, row in table.iterrows():
             if pd.isnull(row["id"]):
                 continue
@@ -494,7 +575,7 @@ def save_minimal_jsonld_to_s3() -> None:
             dataset_name = row["name"]
             
             # save all the active dataset ids and names to prepare for cleanup later
-            existing_dataset_ids.append({
+            combined_dataset_name_and_id.append({
                 "dataset_id": dataset_id,
                 "dataset_name": dataset_name
             })
@@ -522,14 +603,19 @@ def save_minimal_jsonld_to_s3() -> None:
             s3_url = f"https://{BUCKET_NAME}.s3.us-east-1.amazonaws.com/{quote_plus(s3_key)}"
             execute_push_to_synapse(push_to_synapse=push_to_synapse, dataset=dataset, dataset_id=dataset_id, s3_url=s3_url, **context)
 
-        return existing_dataset_ids
+        return combined_dataset_name_and_id
 
     root_carrier_context = create_root_span()
-    dataset_ids = create_and_save_jsonld()
+    combined_dataset_name_and_id = create_and_save_jsonld()
 
     delete_non_current_croissant_file_in_s3(
         root_carrier_context=root_carrier_context,
-        dataset_ids=dataset_ids
+        combined_dataset_name_and_id=combined_dataset_name_and_id,
     )
+
+    delete_non_current_croissant_file_in_synapse(root_carrier_context=root_carrier_context, 
+        combined_dataset_name_and_id=combined_dataset_name_and_id,
+    )
+
 
 save_minimal_jsonld_to_s3()
