@@ -37,12 +37,15 @@ from urllib.parse import quote_plus
 import json
 import os
 from io import BytesIO
-from typing import Any, Dict
+from typing import Any, Dict, List
 from types import MethodType
 from airflow.models import Variable
 from logging import NOTSET, Logger, getLogger
 from opentelemetry import trace
+from opentelemetry import context as otel_context
 from opentelemetry._logs import set_logger_provider
+from opentelemetry.trace.propagation.tracecontext import \
+    TraceContextTextMapPropagator
 from opentelemetry.exporter.otlp.proto.http._log_exporter import \
     OTLPLogExporter
 from opentelemetry.exporter.otlp.proto.http.trace_exporter import \
@@ -61,6 +64,8 @@ dag_params = {
     "push_results_to_s3": Param(True, type="boolean"),
     "aws_conn_id": Param("AWS_SYNAPSE_CROISSANT_METADATA_S3_CONN", type="string"),
     "push_links_to_synapse": Param(True, type="boolean"),
+    "delete_out_of_date_from_s3": Param(True, type="boolean"),
+    "delete_out_of_date_from_synapse": Param(True, type="boolean"),
 }
 
 dag_config = {
@@ -264,6 +269,7 @@ def execute_push_to_s3(dataset: Entity, dataset_id: str, s3_key: str, croissant_
         otel_logger.handlers[0].flush()
         raise ex
 
+
 @dag(**dag_config)
 def save_minimal_jsonld_to_s3() -> None:
     """Execute a query on Snowflake and report the results to a Synapse table."""
@@ -334,6 +340,131 @@ def save_minimal_jsonld_to_s3() -> None:
             otel_tracer.span_processor.force_flush()
             otel_logger.handlers[0].flush()
             raise ex
+        
+    def create_root_span(**context) -> Dict:
+        """
+        Create a root span that all other spans will be children of. This also will
+        create a context that can be used to propagate the trace context. This is
+        detailed in this document:
+        <https://opentelemetry.io/docs/languages/python/propagation/#manual-context-propagation>
+
+        The reason by context is being propogated is that due to the distributed nature
+        of Airflow, the context is not automatically propagated to the tasks. This is
+        a workaround to ensure that the trace context is propagated to the tasks and
+        all child spans are correctly linked to the root span.
+
+        One of the issues with this is that the root span does not seem to get sent
+        to the telemetry backend. This is likely due to the fact that the root span
+        is not ended before the process is finished. An upgrade to the latest version
+        of Apache airflow may resolve some issues with this:
+        <https://airflow.apache.org/docs/apache-airflow/stable/release_notes.html#opentelemetry-traces-for-apache-airflow-37948>
+
+        Returns:
+            The trace context that can be used to propagate the trace context.
+        """
+        root_span = otel_tracer.start_span(
+            name="synapse_dataset_to_croissant", context=otel_context.get_current()
+        )
+        parent_context = trace.set_span_in_context(root_span)
+        otel_context.attach(parent_context)
+        carrier = {}
+        TraceContextTextMapPropagator().inject(carrier)
+        return carrier
+    
+    def extract_s3_objects_to_delete(bucket_objects: List[str], combined_dataset_name_and_id: List[Dict[str, str]]) -> List[str]:
+        """
+        Extract the S3 objects to delete from the bucket. This is done by comparing
+        the list of objects in the bucket to the list of datasets (dataset_id and dataset_name).
+        If an object is found in the bucket that does not correspond to a current dataset,
+        it is marked for deletion.
+
+        Arguments:
+            bucket_objects: The list of objects in the S3 bucket.
+            combined_dataset_name_and_id: The list of dictionaries containing
+                dataset_id and dataset_name for all current datasets.
+        """
+        objects_to_delete = []
+
+        if not bucket_objects:
+            otel_logger.info("No objects found in S3.")
+            return objects_to_delete
+
+        for obj_key in bucket_objects:
+            # Extract dataset name and ID from the S3 object key
+            # Expected format: {dataset_name}_{dataset_id}.minimal_croissant.jsonld
+            if obj_key.endswith(".minimal_croissant.jsonld"):
+                # Remove the extension
+                obj_without_ext = obj_key.replace(".minimal_croissant.jsonld", "")
+                
+                # Split on the last underscore to get name and ID
+                parts = obj_without_ext.rsplit("_", 1)
+                if len(parts) < 2:
+                    otel_logger.info(f"Object {obj_key} does not match expected pattern. Skipping.")
+                    continue
+                
+                dataset_name = parts[0]
+                dataset_id = parts[1]
+
+                # Check if this dataset_name and dataset_id combo exists in current datasets
+                match_found = False
+                for current_dataset in combined_dataset_name_and_id:
+                    if (current_dataset["dataset_id"] == dataset_id and 
+                        current_dataset["dataset_name"] == dataset_name):
+                        match_found = True
+                        break
+                
+                if not match_found:
+                    objects_to_delete.append(obj_key)
+
+        return objects_to_delete
+
+    
+    @task
+    def delete_non_current_croissant_file_in_s3(
+        root_carrier_context: Dict, dataset_ids: List[str], **context
+    ) -> None:
+        """
+        Delete the non-current croissant files from S3. 
+        This is used to remove the old files from S3 that are no longer needed. 
+        A "non-current" file is defined as a croissant JSON LD file which is no longer
+        present in the data catalog.
+
+        This can occur if the dataset has been removed from the data catalog, or
+        if there is a new version of the dataset that has been added to the data catalog.
+
+        Arguments:
+            root_carrier_context: The root carrier context to use for the trace context.
+            dataset_ids: a set of dataset ids that are currently present in the data catalog
+
+        Returns:
+            None
+        """
+        with otel_tracer.start_as_current_span("delete_non_current_files_from_s3", context=TraceContextTextMapPropagator().extract(root_carrier_context)) as span:
+            s3_hook = S3Hook(
+                aws_conn_id=context["params"]["aws_conn_id"], region_name=REGION_NAME)
+            bucket_objects = s3_hook.list_keys(bucket_name=BUCKET_NAME)
+
+            objects_to_delete = extract_s3_objects_to_delete(
+                bucket_objects=bucket_objects,
+                combined_dataset_name_and_id=dataset_ids,
+            )
+
+            if objects_to_delete:
+                delete_out_of_date_from_s3 = context["params"]["delete_out_of_date_from_s3"]
+                if delete_out_of_date_from_s3:
+                    otel_logger.info(
+                        f"Deleting the following objects from S3: {objects_to_delete}")
+                    s3_hook.delete_objects(
+                        bucket=BUCKET_NAME, keys=objects_to_delete)
+                else:
+                    otel_logger.info(
+                        f"Found objects to delete from S3, but not deleting due to `delete_out_of_date_from_s3` param: {objects_to_delete}")
+            else:
+                otel_logger.info(
+                    "No objects to delete from S3. All objects are current.")
+            otel_tracer.span_processor.force_flush()
+            otel_logger.handlers[0].flush()
+            return None
 
     @task
     def create_and_save_jsonld(**context) -> None:
@@ -354,14 +485,19 @@ def save_minimal_jsonld_to_s3() -> None:
         push_to_s3 = context["params"]["push_results_to_s3"]
         push_to_synapse = context["params"]["push_links_to_synapse"]
 
-        
+        existing_dataset_ids = []
         for index, row in table.iterrows():
             if pd.isnull(row["id"]):
-                # skip rows without a Synapse ID
                 continue
 
             dataset_id = row["id"]
             dataset_name = row["name"]
+            
+            # save all the active dataset ids and names to prepare for cleanup later
+            existing_dataset_ids.append({
+                "dataset_id": dataset_id,
+                "dataset_name": dataset_name
+            })
             dataset = syn_client.get(dataset_id, downloadFile=False)
 
             link = f"https://www.synapse.org/#!Synapse:{row['id']}"
@@ -386,8 +522,14 @@ def save_minimal_jsonld_to_s3() -> None:
             s3_url = f"https://{BUCKET_NAME}.s3.us-east-1.amazonaws.com/{quote_plus(s3_key)}"
             execute_push_to_synapse(push_to_synapse=push_to_synapse, dataset=dataset, dataset_id=dataset_id, s3_url=s3_url, **context)
 
+        return existing_dataset_ids
 
-    create_and_save_jsonld()
-    
+    root_carrier_context = create_root_span()
+    dataset_ids = create_and_save_jsonld()
+
+    delete_non_current_croissant_file_in_s3(
+        root_carrier_context=root_carrier_context,
+        dataset_ids=dataset_ids
+    )
 
 save_minimal_jsonld_to_s3()
