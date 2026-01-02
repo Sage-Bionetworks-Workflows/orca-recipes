@@ -1,4 +1,10 @@
-"""Summarize Jira ticket items per roadmap item using google gemini
+"""Summarize Jira ticket items per roadmap item using google gemini.
+
+1. Obtain Google GEMINI API key (Work with sage IT) and set it in the environment variable GEMINI_API_KEY
+2. Obtain Jira API token and set it in the environment variables JIRA_USERNAME and JIRA_API_TOKEN.
+   Your username is your sage email.
+3. Install dependencies: `pip install -r requirements.txt`.  This is assuming you have an understanding
+   of how to set up your Python environment.
 
 Usage:
 python platform_release_notes.py stack-570
