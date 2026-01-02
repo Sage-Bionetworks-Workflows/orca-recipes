@@ -583,7 +583,7 @@ def save_minimal_jsonld_to_s3() -> None:
             })
             dataset = syn_client.get(dataset_id, downloadFile=False)
 
-            link = f"https://www.synapse.org/#!Synapse:{row['id']}"
+            link = f"https://www.synapse.org/Synapse:{row['id']}"
 
             minimal_croissant_file = {
                 "@context": "https://schema.org/",
