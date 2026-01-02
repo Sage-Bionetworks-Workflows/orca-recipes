@@ -8,6 +8,8 @@ This DAG interacts with a few different services to accomplish the following:
 - (S3, Authenticated) For each dataset, upload the minimal JSON-LD file to the `synapse-croissant-metadata-minimal` public S3 bucket in the `org-sagebase-dpe-prod` AWS account
 - (Synapse, Authenticated) For each dataset, query the Synapse table to check if a link to the S3 object already exists
 - (Synapse, Authenticated) Store or update the S3 object URL in the Synapse table for each dataset
+- (S3, Authenticated) Delete non-current croissant files from S3 that no longer correspond to datasets in the data catalog
+- (Synapse, Authenticated) Delete non-current croissant file links from the Synapse table that no longer correspond to datasets in the data catalog
 
 
 This DAG addresses the issue where Google has difficulty indexing Croissant JSON embedded in portal pages. 
