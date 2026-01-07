@@ -14,7 +14,14 @@ from snowflake_utils import get_connection, logger
 CLINICAL_SCHEMA = "BPC_CLINICAL_FILES"
 CBIOPORTAL_SCHEMA = "BPC_CBIOPORTAL_FILES"
 
-CBIOPORTAL_EXCLUDE_PREFIXES = ("data_gene_panel", "meta", "data_CNA", "case_lists", "data_seg", "tmb")
+CBIOPORTAL_EXCLUDE_PREFIXES = (
+    "data_gene_panel",
+    "meta",
+    "data_CNA",
+    "case_lists",
+    "data_seg",
+    "tmb",
+)
 
 
 # Synapse filename -> Snowflake table
@@ -28,6 +35,23 @@ CLINICAL_FILES = {
 
 
 class ReleaseInfo(NamedTuple):
+    """
+    Information parsed from a genie release identifier.
+
+    Attributes
+    ----------
+    cohort : str
+        Name of the cohort (e.g: CRC)
+    release : str
+        Full release string (e.g., "17.1-consortium", "17.0-public").
+    release_type : str
+        Type of release usually just "public" or "consortium"
+    major_version : int
+        Major version number (e.g. 17).
+    minor_version : int
+        Minor version number (e.g. 2).
+    """
+
     cohort: str
     release: str
     release_type: str
@@ -36,10 +60,20 @@ class ReleaseInfo(NamedTuple):
 
 
 def parse_bpc_version(cohort: str, version: str) -> ReleaseInfo:
-    """
+    """Parses the ReleaseInfo information from the release folder
     Expected format:
       public_02_2
       consortium_03_1
+
+    Args:
+        cohort (str): Name of the cohort
+        version (str): Version of the
+
+    Raises:
+        ValueError: raises error when version format doesn't follow the above expected
+
+    Returns:
+        ReleaseInfo: object containing the release info details
     """
     m = re.match(r"^(public|consortium)_(\d+)_(\d+)$", version, flags=re.IGNORECASE)
     if not m:
@@ -59,7 +93,16 @@ def parse_bpc_version(cohort: str, version: str) -> ReleaseInfo:
     )
 
 
-def ensure_schema(conn, database: str, schema: str) -> None:
+def ensure_schema(
+    conn: "snowflake.connector.SnowflakeConnection", database: str, schema: str
+) -> None:
+    """Creates the Snowflake schema in the given database
+
+    Args:
+        conn (snowflake.connector.SnowflakeConnection): Snowflake connection
+        database (str): Name of the Snowflake database to create schema in
+        schema (str): Name of the schema to create in the Snowflake database
+    """
     with conn.cursor() as cs:
         cs.execute(f"USE DATABASE {database};")
         cs.execute(f"CREATE SCHEMA IF NOT EXISTS {schema} WITH MANAGED ACCESS;")
@@ -67,15 +110,46 @@ def ensure_schema(conn, database: str, schema: str) -> None:
     logger.info(f"Using schema: {database}.{schema}")
 
 
-def delete_existing_partition(conn, table_fqn: str, cohort: str, release: str) -> None:
+def delete_existing_partition(
+    conn: "snowflake.connector.SnowflakeConnection",
+    table: str,
+    cohort: str,
+    release: str,
+) -> None:
+    """Deletes the partition of the Snowflake table filtering on
+        the release and cohort.
+        This is only used when overwriting existing partitions.
+
+    Args:
+        conn (snowflake.connector.SnowflakeConnection): Snowflake connection
+        table (str): Name of the Snowflake table to delete from
+        cohort (str): Name of the cohort to filter on
+        release (str): Name of the release to filter on
+    """
     with conn.cursor() as cs:
         cs.execute(
-            f"DELETE FROM {table_fqn} WHERE COHORT = %s AND RELEASE = %s",
+            f"DELETE FROM {table} WHERE COHORT = %s AND RELEASE = %s",
             (cohort, release),
         )
 
 
-def append_df(conn, df: pd.DataFrame, table: str) -> None:
+def append_df(
+    conn: "snowflake.connector.SnowflakeConnection", df: pd.DataFrame, table: str
+) -> None:
+    """Appends the table to snowflake. We only append when uploading results
+    (using overwrite = False) here because if we overwrite Snowflake tables,
+    Snowflake will overwrite everything to just include this data from a specific release
+    but because we append multiple releases in a table, we wouldn't want that.
+    We'd just want to overwrite each release which we handle in delete_existing_partition.
+
+    Args:
+        conn (snowflake.connector.SnowflakeConnection): Snowflake connection
+        df (pd.DataFrame): the input data to append to a Snowflake table
+        table (str): name of the Snowflake table to append to
+
+    Raises:
+        RuntimeError: making sure the code fails even for silent errors
+    """
     success, nchunks, nrows, _ = write_pandas(
         conn,
         df,
@@ -89,27 +163,21 @@ def append_df(conn, df: pd.DataFrame, table: str) -> None:
     logger.info(f"Appended {nrows} rows to {table} ({nchunks} chunks).")
 
 
-# ----------------------------
-# Naming + metadata
-# ----------------------------
-def get_clinical_table_name(filename: str) -> str:
-    return filename.replace(".csv", "")
-
-
-def get_cbioportal_table_name(filename: str, cohort: str) -> str:
-    return (
-        filename.replace("data_", "")
-        .replace(".txt", "")
-        .replace(f"genie_{cohort}_", "")
-        .replace("cna_hg19.seg", "seg")
-    )
-
-
 def add_bpc_metadata(
     df: pd.DataFrame,
     release_info: ReleaseInfo,
     source_file: str,
 ) -> pd.DataFrame:
+    """_summary_
+
+    Args:
+        df (pd.DataFrame): _description_
+        release_info (ReleaseInfo): _description_
+        source_file (str): _description_
+
+    Returns:
+        pd.DataFrame: _description_
+    """
     df = df.copy()
     df["COHORT"] = release_info.cohort.upper()
     df["RELEASE"] = release_info.release
@@ -121,17 +189,24 @@ def add_bpc_metadata(
     return df
 
 
-# ----------------------------
-# Ingestion routines
-# ----------------------------
 def upload_clinical_tables_stacked(
-    conn,
+    conn: "snowflake.connector.SnowflakeConnection",
     syn: synapseclient.Synapse,
     database: str,
     release_info: ReleaseInfo,
     clinical_synid: str,
     overwrite_partition: bool,
 ) -> None:
+    """_summary_
+
+    Args:
+        conn (snowflake.connector.SnowflakeConnection): _description_
+        syn (synapseclient.Synapse): _description_
+        database (str): _description_
+        release_info (ReleaseInfo): _description_
+        clinical_synid (str): _description_
+        overwrite_partition (bool): _description_
+    """
     ensure_schema(conn, database=database, schema=CLINICAL_SCHEMA)
 
     for clinical_file in syn.getChildren(clinical_synid):
@@ -139,19 +214,20 @@ def upload_clinical_tables_stacked(
         if not raw_name.endswith(".csv") or raw_name not in CLINICAL_FILES:
             continue
 
-        #table = get_clinical_table_name(raw_name)
         table = CLINICAL_FILES[raw_name]
         ent = syn.get(clinical_file["id"])
 
         df = pd.read_csv(ent.path, sep=",", comment="#", low_memory=False)
         if df.empty:
-            logger.warning(f"[{release_info.cohort} {release_info.release}] Empty clinical file: {raw_name}")
+            logger.warning(
+                f"[{release_info.cohort} {release_info.release}] Empty clinical file: {raw_name}"
+            )
             continue
-        
+
         # remove cohort column to avoid dups if it exists
         if "cohort" in df.columns:
-            df = df.drop(columns = ["cohort"])
-            
+            df = df.drop(columns=["cohort"])
+
         df = add_bpc_metadata(df, release_info=release_info, source_file=raw_name)
 
         if overwrite_partition:
@@ -166,13 +242,23 @@ def upload_clinical_tables_stacked(
 
 
 def upload_cbioportal_tables_stacked(
-    conn,
+    conn: "snowflake.connector.SnowflakeConnection",
     syn: synapseclient.Synapse,
     database: str,
     release_info: ReleaseInfo,
     cbioportal_synid: str,
     overwrite_partition: bool,
 ) -> None:
+    """_summary_
+
+    Args:
+        conn (snowflake.connector.SnowflakeConnection): _description_
+        syn (synapseclient.Synapse): _description_
+        database (str): _description_
+        release_info (ReleaseInfo): _description_
+        cbioportal_synid (str): _description_
+        overwrite_partition (bool): _description_
+    """
     ensure_schema(conn, database=database, schema=CBIOPORTAL_SCHEMA)
 
     cohort = release_info.cohort
@@ -180,10 +266,12 @@ def upload_cbioportal_tables_stacked(
     for cbioportal_file in syn.getChildren(cbioportal_synid):
         raw_name = cbioportal_file["name"]
 
-        if raw_name.startswith(CBIOPORTAL_EXCLUDE_PREFIXES) or raw_name not in CBIOPORTAL_FILES:
+        if (
+            raw_name.startswith(CBIOPORTAL_EXCLUDE_PREFIXES)
+            or raw_name not in CBIOPORTAL_FILES
+        ):
             continue
-        
-        #table = get_cbioportal_table_name(raw_name, cohort)
+
         table = CBIOPORTAL_FILES[raw_name]
 
         sep = "\t" if raw_name.endswith(".txt") else ","
@@ -191,7 +279,9 @@ def upload_cbioportal_tables_stacked(
 
         df = pd.read_csv(ent.path, sep=sep, comment="#", low_memory=False)
         if df.empty:
-            logger.warning(f"[{cohort} {release_info.release}] Empty cbioportal file: {raw_name}")
+            logger.warning(
+                f"[{cohort} {release_info.release}] Empty cbioportal file: {raw_name}"
+            )
             continue
 
         df = add_bpc_metadata(df, release_info=release_info, source_file=raw_name)
@@ -208,8 +298,8 @@ def upload_cbioportal_tables_stacked(
 
 
 def push_bpc_release_to_snowflake(
-    syn,
-    conn,
+    syn: synapseclient.Synapse,
+    conn: "snowflake.connector.SnowflakeConnection",
     database: str,
     cohort: str,
     version: str,
@@ -217,8 +307,22 @@ def push_bpc_release_to_snowflake(
     cbioportal_synid: str,
     overwrite_partition: bool,
 ) -> None:
+    """_summary_
+
+    Args:
+        syn (synapseclient.Synapse): _description_
+        conn (snowflake.connector.SnowflakeConnection): _description_
+        database (str): _description_
+        cohort (str): _description_
+        version (str): _description_
+        clinical_synid (str): _description_
+        cbioportal_synid (str): _description_
+        overwrite_partition (bool): _description_
+    """
     release_info = parse_bpc_version(cohort=cohort, version=version)
-    logger.info(f"Processing cohort={release_info.cohort}, release={release_info.release}")
+    logger.info(
+        f"Processing cohort={release_info.cohort}, release={release_info.release}"
+    )
 
     upload_clinical_tables_stacked(
         conn=conn,
@@ -229,17 +333,24 @@ def push_bpc_release_to_snowflake(
         overwrite_partition=overwrite_partition,
     )
 
-    #upload_cbioportal_tables_stacked(
-    #    conn=conn,
-    #    syn=syn,
-    #    database=database,
-    #    release_info=release_info,
-    #    cbioportal_synid=cbioportal_synid,
-    #    overwrite_partition=overwrite_partition,
-    #)
+    upload_cbioportal_tables_stacked(
+        conn=conn,
+        syn=syn,
+        database=database,
+        release_info=release_info,
+        cbioportal_synid=cbioportal_synid,
+        overwrite_partition=overwrite_partition,
+    )
 
 
 def main(database: str, overwrite_partition: bool, conn=None) -> None:
+    """_summary_
+
+    Args:
+        database (str): _description_
+        overwrite_partition (bool): _description_
+        conn (_type_, optional): _description_. Defaults to None.
+    """
     syn = synapseclient.login()
 
     script_dir = os.path.dirname(__file__)
@@ -273,7 +384,9 @@ def main(database: str, overwrite_partition: bool, conn=None) -> None:
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Run the GENIE BPC ELT pipeline (stacked).")
+    parser = argparse.ArgumentParser(
+        description="Run the GENIE BPC ELT pipeline (stacked)."
+    )
     parser.add_argument(
         "--database",
         type=str,
