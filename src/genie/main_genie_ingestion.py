@@ -1,4 +1,3 @@
-#!/usr/bin/env python
 """MAIN GENIE ingestion pipeline"""
 
 import argparse
@@ -33,6 +32,20 @@ FILEFORMATS = {
 
 
 class ReleaseInfo(NamedTuple):
+    """
+    Information parsed from a genie release identifier.
+
+    Attributes
+    ----------
+    release : str
+        Full release string (e.g., "17.1-consortium", "17.0-public").
+    release_type : str
+        Type of release usually just "public" or "consortium"
+    major_version : int
+        Major version number (e.g. 17).
+    minor_version : int
+        Minor version number (e.g. 2).
+    """
     release: str
     release_type: str
     major_version: int
@@ -41,14 +54,14 @@ class ReleaseInfo(NamedTuple):
 
 def parse_release_folder(folder_name: str) -> ReleaseInfo:
     """Synapse release folder name is typically: {major}.{minor}-{release_type}
-      e.g. "19.3-consortium"
+      e.g. "19.3-consortium", and the folder path is typically Releases/Release 17
 
     Args:
-        folder_name (str): _description_
+        folder_name (str): name of the folder to parse for into on Synapse
 
     Raises:
-        ValueError: _description_
-        ValueError: _description_
+        ValueError: throws error if folder name doesn't match the above expected
+        ValueError: throws error if version format doesn't match the above expected
 
     Returns:
         ReleaseInfo(release, release_type, major_version, minor_version)
@@ -81,7 +94,17 @@ def get_release_file_map(
     release_folder_synid: str,
 ) -> Dict[str, synapseclient.Entity]:
     """
-    Return mapping: {filename -> Synapse entity} for only the fileformats we ingest.
+    Return a mapping of structured GENIE data file names to Synapse entities
+        {filename -> Synapse entity}
+        We only accept the files that are in FILEFORMATS
+
+    Args:
+        syn (synapseclient.Synapse): synapse client connection
+        synid (str): Synapse id of the folder entity to search for files
+
+    Returns:
+        Dict[str, synapseclient.Entity]: dictionary of the release file name linked to
+            its synapse file entity
     """
     release_files = syn.getChildren(
         release_folder_synid, includeTypes=["file", "folder", "link"]
@@ -98,12 +121,12 @@ def get_release_file_map(
 def ensure_schema(
     conn: "snowflake.connector.SnowflakeConnection", database: str, schema: str
 ) -> None:
-    """_summary_
+    """Creates the Snowflake schema in the given database
 
     Args:
-        conn (snowflake.connector.SnowflakeConnection): _description_
-        database (str): _description_
-        schema (str): _description_
+        conn (snowflake.connector.SnowflakeConnection): Snowflake connection
+        database (str): Name of the Snowflake database to create schema in
+        schema (str): Name of the schema to create in the Snowflake database
     """
     with conn.cursor() as cs:
         cs.execute(f"USE DATABASE {database};")
@@ -115,12 +138,13 @@ def ensure_schema(
 def delete_existing_partition(
     conn: "snowflake.connector.SnowflakeConnection", table: str, release: str
 ) -> None:
-    """_summary_
+    """Deletes the partition of the Snowflake table filtering on 
+        the release. This is only used when overwriting existing partitions.
 
     Args:
-        conn (snowflake.connector.SnowflakeConnection): _description_
-        table (str): _description_
-        release (str): _description_
+        conn (snowflake.connector.SnowflakeConnection): Snowflake connection
+        table (str): Name of the Snowflake table to delete from
+        release (str): Name of the release to filter on
     """
     with conn.cursor() as cs:
         cs.execute(f"DELETE FROM {table} WHERE RELEASE = %s", (release,))
@@ -129,15 +153,19 @@ def delete_existing_partition(
 def append_df(
     conn: "snowflake.connector.SnowflakeConnection", df: pd.DataFrame, table: str
 ) -> None:
-    """_summary_
+    """Appends the table to snowflake. We only append when uploading results 
+    (using overwrite = False) here because if we overwrite Snowflake tables,
+    Snowflake will overwrite everything to just include this data from a specific release 
+    but because we append multiple releases in a table, we wouldn't want that. 
+    We'd just want to overwrite each release which we handle in delete_existing_partition.
 
     Args:
-        conn (snowflake.connector.SnowflakeConnection): _description_
-        df (pd.DataFrame): _description_
-        table (str): _description_
+        conn (snowflake.connector.SnowflakeConnection): Snowflake connection
+        df (pd.DataFrame): the input data to append to a Snowflake table
+        table (str): name of the Snowflake table to append to
 
     Raises:
-        RuntimeError: _description_
+        RuntimeError: making sure the code fails even for silent errors
     """
     success, nchunks, nrows, _ = write_pandas(
         conn,

@@ -2,14 +2,9 @@ import pandas as pd
 import pytest
 from unittest.mock import patch, MagicMock
 
-# Adjust import path/module name to match your repo
-# e.g. from src.genie import main_genie_ingest
 from src.genie import main_genie_ingestion as ingest
 
 
-# ----------------------------
-# parse_release_folder
-# ----------------------------
 @pytest.mark.parametrize(
     "folder_name, expected_release, expected_type, major, minor",
     [
@@ -44,9 +39,6 @@ def test_parse_release_folder_invalid(folder_name):
         ingest.parse_release_folder(folder_name)
 
 
-# ----------------------------
-# get_release_file_map
-# ----------------------------
 def test_get_release_file_map_filters_to_configured_fileformats_only():
     mock_syn = MagicMock()
     mock_syn.getChildren.return_value = [
@@ -79,9 +71,6 @@ def test_get_release_file_map_returns_empty_when_no_wanted_files():
     mock_syn.get.assert_not_called()
 
 
-# ----------------------------
-# ensure_schema / delete_existing_partition / append_df
-# ----------------------------
 def test_ensure_schema_executes_expected_sql_and_logs():
     conn = MagicMock(name="conn")
     cs = MagicMock(name="cursor")
@@ -132,9 +121,6 @@ def test_append_df_logs_success_rowcount_and_chunks():
     mock_logger.info.assert_any_call("Appended 3 rows to 'TBL' (2 chunks).")
 
 
-# ----------------------------
-# is_valid_release_path
-# ----------------------------
 @pytest.mark.parametrize(
     "release_path, expected",
     [
@@ -149,9 +135,6 @@ def test_is_valid_release_path_returns_expected(release_path, expected):
     assert ingest.is_valid_release_path(release_path) == expected
 
 
-# ----------------------------
-# push_release_to_snowflake
-# ----------------------------
 def test_push_release_to_snowflake_skips_when_no_configured_fileformats_found():
     syn = MagicMock()
     conn = MagicMock()
@@ -274,9 +257,6 @@ def test_push_release_to_snowflake_overwrite_partition_deletes_then_appends():
     mock_append.assert_called_once()
 
 
-# ----------------------------
-# main
-# ----------------------------
 def test_main_walks_releases_skips_invalid_paths_and_closes_conn_when_not_injected():
     mock_syn = MagicMock()
     mock_conn_obj = MagicMock()
