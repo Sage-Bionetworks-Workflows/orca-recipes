@@ -110,6 +110,23 @@ def ensure_schema(
     logger.info(f"Using schema: {database}.{schema}")
 
 
+def partition_exists(
+    conn: "snowflake.connector.SnowflakeConnection",
+    table: str,
+    cohort: str,
+    release: str,
+) -> bool:
+    """
+    Returns True if the table already has at least one row for (COHORT, RELEASE).
+    """
+    with conn.cursor() as cs:
+        cs.execute(
+            f"SELECT 1 FROM {table} WHERE COHORT = %s AND RELEASE = %s LIMIT 1",
+            (cohort, release),
+        )
+        return cs.fetchone() is not None
+
+
 def delete_existing_partition(
     conn: "snowflake.connector.SnowflakeConnection",
     table: str,
@@ -233,11 +250,23 @@ def upload_clinical_tables_stacked(
         if overwrite_partition:
             delete_existing_partition(
                 conn,
-                table_fqn=f"{CLINICAL_SCHEMA}.{table}",
+                table=f"{CLINICAL_SCHEMA}.{table}",
                 cohort=release_info.cohort,
                 release=release_info.release,
             )
-
+        else:
+            # If partition already exists, do nothing
+            if partition_exists(
+                conn,
+                table=f"{CLINICAL_SCHEMA}.{table}",
+                cohort=release_info.cohort,
+                release=release_info.release,
+            ):
+                logger.info(
+                    f"[{release_info.cohort} {release_info.release}] "
+                    f"Partition already exists in {table}; skipping (overwrite_partition=False)."
+                )
+                continue
         append_df(conn, df=df, table=table)
 
 

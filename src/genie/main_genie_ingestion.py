@@ -7,9 +7,9 @@ from typing import Dict, NamedTuple
 
 
 import pandas as pd
+from snowflake.connector.pandas_tools import write_pandas
 import synapseclient
 import synapseutils as synu
-from snowflake.connector.pandas_tools import write_pandas
 
 from snowflake_utils import get_connection, logger
 
@@ -135,6 +135,30 @@ def ensure_schema(
         logger.info(f"Using schema: {schema}")
 
 
+def partition_exists(
+    conn: "snowflake.connector.SnowflakeConnection",
+    table: str,
+    release: str,
+) -> bool:
+    """Checks if the partition exists for the given release
+
+    Args:
+        conn (snowflake.connector.SnowflakeConnection): snowflake connection
+        table (str): Name of the table to check
+        release (str): Name of the release to filter on
+
+    Returns:
+        bool: returns True if the table already has at least one row for the 
+            given release.
+    """
+    with conn.cursor() as cs:
+        cs.execute(
+            f"SELECT 1 FROM {table} WHERE RELEASE = %s LIMIT 1",
+            (release),
+        )
+        return cs.fetchone() is not None
+    
+
 def delete_existing_partition(
     conn: "snowflake.connector.SnowflakeConnection", table: str, release: str
 ) -> None:
@@ -252,11 +276,23 @@ def push_release_to_snowflake(
         df["MAJOR_VERSION"] = release_info.major_version
         df["MINOR_VERSION"] = release_info.minor_version
         df["INGESTED_AT"] = datetime.now(timezone.utc)
+        
         if overwrite_partition:
             delete_existing_partition(
                 conn, table=target_table, release=release_info.release
             )
-
+        else:
+            # If partition already exists, do nothing
+            if partition_exists(
+                conn,
+                table=target_table,
+                release=release_info.release,
+            ):
+                logger.info(
+                    f"[{release_info.cohort} {release_info.release}] "
+                    f"Partition already exists in {target_table}; skipping (overwrite_partition=False)."
+                )
+                continue
         append_df(conn, df=df, table=target_table)
         logger.info(
             f"[{release_folder_name}] Loaded {syn_filename} into MAIN.{target_table} (RELEASE={release_info.release})."
