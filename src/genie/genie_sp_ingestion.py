@@ -5,6 +5,7 @@ Reads YAML config for cohorts, fetches Synapse files, and writes to Snowflake.
 """
 
 import argparse
+from datetime import datetime, timezone
 import os
 
 import yaml
@@ -59,6 +60,10 @@ def process_cohort(
         if df.empty:
             logger.warning(f"Skipping empty clinical file: {file_entity['name']}")
             continue
+        
+        # add metadata columns
+        df["RELEASE"] = schema_name
+        df["INGESTED_AT"] = datetime.now(timezone.utc)
 
         # Write DataFrame to Snowflake
         write_to_snowflake(
