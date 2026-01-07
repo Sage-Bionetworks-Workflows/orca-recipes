@@ -1,4 +1,4 @@
-# Genie ELT scripts
+# Genie Ingestion scripts
 
 Ingestion scripts for loading in the GENIE database in Snowflake
 
@@ -13,20 +13,20 @@ Main GENIE releases are automatically ingested.
 
 ## Example Usage
 
-Run ingestion to Snowflake to the genie dev database. for Genie Sponsored Projects (SP). This will also overwrite any pre-existing data in the tables in the GENIE_DEV database and create new tablesn for new data when applicable.
+Run ingestion to Snowflake to the genie dev database. for Genie Sponsored Projects (SP). This will also overwrite any pre-existing data in the tables in the GENIE_DEV database and create new tables for new data when applicable.
 
 ```bash
-python3 src/genie/genie_sp_elt.py --database GENIE_DEV --overwrite
+python3 src/genie/genie_sp_ingesion.py --database GENIE_DEV --overwrite
 ```
 
 Run ingestion to Snowflake for Genie Biopharma Collaborative (BPC) Project to the genie dev database. This will not overwrite any pre-existing data in the tables in the GENIE_DEV database and will instead skip. This will still create new tables for new data when applicable.
 
 ```bash
-python3 src/genie/genie_bpc_elt.py --database GENIE_DEV
+python3 src/genie/genie_bpc_ingestion.py --database GENIE_DEV 
 ```
 
 Run ingestion to Snowflake for Main Genie Project to the genie dev database.
 
 ```bash
-python3 src/genie/main_genie_elt.py --database GENIE_DEV --overwrite
+python3 src/genie/main_genie_ingestion.py --database GENIE_DEV --overwrite-partition
 ```
