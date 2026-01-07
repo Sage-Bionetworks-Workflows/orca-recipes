@@ -2,7 +2,7 @@ import pytest
 from unittest.mock import MagicMock, patch, call
 import pandas as pd
 
-from src.genie import genie_sp_elt
+from src.genie import genie_sp_ingestion as ingest
 
 
 @pytest.fixture
@@ -50,13 +50,13 @@ def test_process_cohort_single(mock_syn, mock_conn, cohort_config_single):
     """
     cursor = mock_conn.cursor.return_value.__enter__.return_value
 
-    with patch.object(genie_sp_elt, "pd") as mock_pd, \
-         patch.object(genie_sp_elt, "write_to_snowflake") as mock_write:
+    with patch.object(ingest, "pd") as mock_pd, \
+         patch.object(ingest, "write_to_snowflake") as mock_write:
 
         df = pd.DataFrame({"a": [1, 2]})
         mock_pd.read_csv.return_value = df
 
-        genie_sp_elt.process_cohort(
+        ingest.process_cohort(
             syn=mock_syn,
             conn=mock_conn,
             cohort_config=cohort_config_single,
@@ -91,13 +91,13 @@ def test_process_cohort_file_list(mock_syn, mock_conn, cohort_config_list):
     List file_synid keeps overwrite as provided.
     Expect 4 reads/writes.
     """
-    with patch.object(genie_sp_elt, "pd") as mock_pd, \
-         patch.object(genie_sp_elt, "write_to_snowflake") as mock_write:
+    with patch.object(ingest, "pd") as mock_pd, \
+         patch.object(ingest, "write_to_snowflake") as mock_write:
 
         df = pd.DataFrame({"a": [1]})
         mock_pd.read_csv.return_value = df
 
-        genie_sp_elt.process_cohort(
+        ingest.process_cohort(
             syn=mock_syn,
             conn=mock_conn,
             cohort_config=cohort_config_list,
@@ -122,12 +122,12 @@ def test_process_cohort_skips_empty_files(mock_syn, mock_conn, cohort_config_sin
     Empty dataframe should skip write_to_snowflake.
     Still reads both files.
     """
-    with patch.object(genie_sp_elt, "pd") as mock_pd, \
-         patch.object(genie_sp_elt, "write_to_snowflake") as mock_write:
+    with patch.object(ingest, "pd") as mock_pd, \
+         patch.object(ingest, "write_to_snowflake") as mock_write:
 
         mock_pd.read_csv.return_value = pd.DataFrame()  # empty => df.empty True
 
-        genie_sp_elt.process_cohort(
+        ingest.process_cohort(
             syn=mock_syn,
             conn=mock_conn,
             cohort_config=cohort_config_single,
