@@ -72,7 +72,7 @@ def build_patient_sample_tracking_table():
         SELECT DISTINCT
             m.SAMPLE_ID,
             m.PATIENT_ID,
-            m.RELEASE,
+            m.RELEASE as RELEASE_NAME,
             'MAIN_GENIE' AS RELEASE_PROJECT_TYPE,
             'Yes' AS IN_LATEST_RELEASE
         FROM GENIE_DEV.MAIN.CLINICAL_SAMPLE m
@@ -103,7 +103,7 @@ def build_patient_sample_tracking_table():
         SELECT DISTINCT
             b.CPT_GENIE_SAMPLE_ID AS SAMPLE_ID,
             b.RECORD_ID AS PATIENT_ID,
-            b.RELEASE,
+            b.RELEASE as RELEASE_NAME,
             'BPC_' || TO_VARCHAR(b.COHORT) AS RELEASE_PROJECT_TYPE,
             CASE
             WHEN EXISTS (
@@ -125,7 +125,7 @@ def build_patient_sample_tracking_table():
         /* -------------------------------------------------------------------------
         6) Build Sponsored Project (SP) sample-patient pairs for a specific SP
             dataset/table (example: AKT1).
-            - RELEASE and RELEASE_PROJECT_TYPE are hard-coded for this SP.
+            - RELEASE_NAME and RELEASE_PROJECT_TYPE are hard-coded for this SP.
             - IN_LATEST_RELEASE indicates whether that SP pair also appears in the
             latest MAIN GENIE pairs (main_genie_keys).
         ---------------------------------------------------------------------------*/
@@ -133,7 +133,7 @@ def build_patient_sample_tracking_table():
         SELECT DISTINCT
             s.SAMPLE_ID,
             s.PATIENT_ID,
-            'AKT1' AS RELEASE,
+            'AKT1' AS RELEASE_NAME,
             'SP_AKT1' AS RELEASE_PROJECT_TYPE,
             CASE
             WHEN EXISTS (
