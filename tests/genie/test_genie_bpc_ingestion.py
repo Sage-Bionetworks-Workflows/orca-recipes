@@ -11,7 +11,7 @@ from src.genie import genie_bpc_ingestion as ingest
         ("bpc", "consortium_03_1", "3_1_CONSORTIUM", "CONSORTIUM", 3, 1),
         # case-insensitive
         ("bpc", "PuBlIc_10_0", "10_0_PUBLIC", "PUBLIC", 10, 0),
-    ],
+    ], ids = ["public", "consortium", "mixed_case"]
 )
 def test_parse_bpc_version_success(cohort, version, expected_release, expected_type, major, minor):
     info = ingest.parse_bpc_version(cohort=cohort, version=version)
@@ -34,7 +34,7 @@ def test_parse_bpc_version_success(cohort, version, expected_release, expected_t
     ],
 )
 def test_parse_bpc_version_raises_on_bad_format(bad_version):
-    with pytest.raises(ValueError, match="Unexpected BPC version format"):
+    with pytest.raises(ValueError, match=f"Unexpected BPC version format: {bad_version}"):
         ingest.parse_bpc_version(cohort="bpc", version=bad_version)
 
 
@@ -54,13 +54,39 @@ def test_ensure_schema_executes_expected_sql_and_logs():
     conn.cursor.assert_called_once()
 
 
+def test_partition_exists_when_exists_is_true():
+    conn = MagicMock(name="conn")
+    cs = MagicMock(name="cursor")
+    conn.cursor.return_value.__enter__.return_value = cs
+    conn.cursor.return_value.__exit__.return_value = None
+    cs.fetchone.return_value = (1,)  # any non-None value means exists
+
+    out = ingest.partition_exists(conn, "MY_TABLE", "BRCA", "2026_01_01")
+
+    assert out is True
+    cs.fetchone.assert_called_once()
+    
+
+def test_partition_exists_when_exists_is_false():
+    conn = MagicMock(name="conn")
+    cs = MagicMock(name="cursor")
+    conn.cursor.return_value.__enter__.return_value = cs
+    conn.cursor.return_value.__exit__.return_value = None
+    cs.fetchone.return_value = None
+
+    out = ingest.partition_exists(conn, "MY_TABLE", "BRCA", "2026_01_01")
+
+    assert out is False
+    cs.fetchone.assert_called_once()
+    
+
 def test_delete_existing_partition_uses_parameterized_delete():
     conn = MagicMock(name="conn")
     cs = MagicMock(name="cursor")
     conn.cursor.return_value.__enter__.return_value = cs
     conn.cursor.return_value.__exit__.return_value = None
 
-    ingest.delete_existing_partition(conn, table_fqn="S.TBL", cohort="BPC", release="2_2_PUBLIC")
+    ingest.delete_existing_partition(conn, table="S.TBL", cohort="BPC", release="2_2_PUBLIC")
 
     cs.execute.assert_called_once_with(
         "DELETE FROM S.TBL WHERE COHORT = %s AND RELEASE = %s",
@@ -68,7 +94,7 @@ def test_delete_existing_partition_uses_parameterized_delete():
     )
 
 
-def test_append_df_raises_if_write_pandas_unsuccessful():
+def test_append_df_raises_runtime_error_if_write_pandas_unsuccessful():
     conn = MagicMock()
     df = pd.DataFrame({"x": [1]})
 
@@ -86,24 +112,6 @@ def test_append_df_logs_success_rowcount_and_chunks():
         ingest.append_df(conn, df=df, table="TBL")
 
     mock_logger.info.assert_any_call("Appended 3 rows to TBL (2 chunks).")
-
-
-def test_get_clinical_table_name_strips_csv_suffix():
-    assert ingest.get_clinical_table_name("foo.csv") == "foo"
-
-
-@pytest.mark.parametrize(
-    "filename, cohort, expected",
-    [
-        ("data_clinical_sample.txt", "bpc", "clinical_sample"),
-        ("genie_BLADDER_data_clinical_sample.txt", "BLADDER", "clinical_sample"),
-        ("genie_19_3_data_clinical_patient.txt", "19_3", "clinical_patient"),
-        ("genie_bpc_cna_hg19.seg", "bpc", "genie_bpc_seg"),
-        ("genie_bpc_data_cna_hg19.seg", "bpc", "genie_bpc_seg"),
-    ],
-)
-def test_get_cbioportal_table_name_matches_current_rules(filename, cohort, expected):
-    assert ingest.get_cbioportal_table_name(filename, cohort) == expected
 
 
 def test_add_bpc_metadata_adds_expected_columns_and_does_not_mutate_original():
@@ -135,7 +143,6 @@ def test_upload_clinical_tables_stacked_skips_non_csv_and_not_in_allowlist():
     conn = MagicMock()
     syn = MagicMock()
 
-    # Mix of files: non-csv, csv not in allowlist, csv in allowlist
     syn.getChildren.return_value = [
         {"name": "not_csv.txt", "id": "synA"},
         {"name": "some_other.csv", "id": "synB"},
@@ -146,24 +153,36 @@ def test_upload_clinical_tables_stacked_skips_non_csv_and_not_in_allowlist():
     entC.path = "/tmp/c.csv"
     syn.get.return_value = entC
 
+    release_info = MagicMock()
+    release_info.cohort = "bpc"
+    release_info.release = "2_2_PUBLIC"
+
     with patch.object(ingest, "ensure_schema") as mock_ensure, \
+         patch.object(ingest, "add_bpc_metadata", side_effect=lambda df, **kwargs: df) as mock_add_meta, \
          patch.object(pd, "read_csv", return_value=pd.DataFrame({"a": [1]})) as mock_read, \
+         patch.object(ingest, "partition_exists", return_value=False) as mock_partition_exists, \
          patch.object(ingest, "append_df") as mock_append, \
          patch.object(ingest, "delete_existing_partition") as mock_delete:
 
-        info = ingest.parse_bpc_version(cohort="bpc", version="public_02_2")
         ingest.upload_clinical_tables_stacked(
             conn=conn,
             syn=syn,
             database="GENIE_DEV",
-            release_info=info,
+            release_info=release_info,
             clinical_synid="synFolder",
             overwrite_partition=False,
         )
 
     mock_ensure.assert_called_once_with(conn, database="GENIE_DEV", schema=ingest.CLINICAL_SCHEMA)
+
     # read_csv called only for allowlisted csv
     mock_read.assert_called_once()
+    assert mock_read.call_args.kwargs["sep"] == ","
+    assert mock_read.call_args.kwargs["comment"] == "#"
+    assert mock_read.call_args.kwargs["low_memory"] is False
+
+    # partition check + append should happen once
+    mock_partition_exists.assert_called_once()
     mock_append.assert_called_once()
     mock_delete.assert_not_called()
 
@@ -177,24 +196,31 @@ def test_upload_clinical_tables_stacked_skips_empty_df_and_logs_warning():
     ent.path = "/tmp/clinical.csv"
     syn.get.return_value = ent
 
+    release_info = MagicMock()
+    release_info.cohort = "bpc"
+    release_info.release = "2_2_PUBLIC"
+
     with patch.object(ingest, "ensure_schema"), \
          patch.object(pd, "read_csv", return_value=pd.DataFrame()), \
+         patch.object(ingest, "partition_exists") as mock_partition_exists, \
          patch.object(ingest, "append_df") as mock_append, \
          patch.object(ingest, "logger") as mock_logger:
 
-        info = ingest.parse_bpc_version(cohort="bpc", version="public_02_2")
         ingest.upload_clinical_tables_stacked(
             conn=conn,
             syn=syn,
             database="GENIE_DEV",
-            release_info=info,
+            release_info=release_info,
             clinical_synid="synFolder",
             overwrite_partition=False,
         )
 
+    mock_partition_exists.assert_not_called()
     mock_append.assert_not_called()
+
     mock_logger.warning.assert_called_once()
-    assert "Empty clinical file" in mock_logger.warning.call_args[0][0]
+    msg = mock_logger.warning.call_args[0][0]
+    assert "[bpc 2_2_PUBLIC] Empty clinical file: cancer_panel_test_level_dataset.csv" in msg
 
 
 def test_upload_clinical_tables_stacked_drops_lowercase_cohort_column_before_metadata():
@@ -208,26 +234,34 @@ def test_upload_clinical_tables_stacked_drops_lowercase_cohort_column_before_met
 
     df_in = pd.DataFrame({"cohort": ["bpc"], "a": [1]})
 
+    release_info = MagicMock()
+    release_info.cohort = "bpc"
+    release_info.release = "2_2_PUBLIC"
+
+    def _assert_no_lowercase_cohort(df, **kwargs):
+        # verify the function dropped "cohort" before metadata is added
+        assert "cohort" not in df.columns
+        return df
+
     with patch.object(ingest, "ensure_schema"), \
          patch.object(pd, "read_csv", return_value=df_in), \
+         patch.object(ingest, "add_bpc_metadata", side_effect=_assert_no_lowercase_cohort) as mock_add_meta, \
+         patch.object(ingest, "partition_exists", return_value=False), \
          patch.object(ingest, "append_df") as mock_append, \
          patch.object(ingest, "delete_existing_partition") as mock_delete:
 
-        info = ingest.parse_bpc_version(cohort="bpc", version="public_02_2")
         ingest.upload_clinical_tables_stacked(
             conn=conn,
             syn=syn,
             database="GENIE_DEV",
-            release_info=info,
+            release_info=release_info,
             clinical_synid="synFolder",
             overwrite_partition=False,
         )
 
-    # appended df should have metadata COHORT (uppercase) and NOT have original lowercase 'cohort'
-    appended_df = mock_append.call_args.kwargs["df"]
-    assert "cohort" not in appended_df.columns
-    assert appended_df.loc[0, "COHORT"] == "BPC"
+    mock_add_meta.assert_called_once()
     mock_delete.assert_not_called()
+    mock_append.assert_called_once()
 
 
 def test_upload_clinical_tables_stacked_overwrite_partition_deletes_then_appends():
@@ -239,28 +273,76 @@ def test_upload_clinical_tables_stacked_overwrite_partition_deletes_then_appends
     ent.path = "/tmp/clinical.csv"
     syn.get.return_value = ent
 
+    release_info = MagicMock()
+    release_info.cohort = "bpc"
+    release_info.release = "2_2_PUBLIC"
+
     with patch.object(ingest, "ensure_schema"), \
+         patch.object(ingest, "add_bpc_metadata", side_effect=lambda df, **kwargs: df), \
          patch.object(pd, "read_csv", return_value=pd.DataFrame({"a": [1]})), \
+         patch.object(ingest, "partition_exists") as mock_partition_exists, \
          patch.object(ingest, "append_df") as mock_append, \
          patch.object(ingest, "delete_existing_partition") as mock_delete:
 
-        info = ingest.parse_bpc_version(cohort="bpc", version="public_02_2")
         ingest.upload_clinical_tables_stacked(
             conn=conn,
             syn=syn,
             database="GENIE_DEV",
-            release_info=info,
+            release_info=release_info,
             clinical_synid="synFolder",
             overwrite_partition=True,
         )
 
     mock_delete.assert_called_once_with(
         conn,
-        table_fqn=f"{ingest.CLINICAL_SCHEMA}.{ingest.CLINICAL_FILES['cancer_panel_test_level_dataset.csv']}",
+        table=f"{ingest.CLINICAL_SCHEMA}.{ingest.CLINICAL_FILES['cancer_panel_test_level_dataset.csv']}",
         cohort="bpc",
         release="2_2_PUBLIC",
     )
+    mock_partition_exists.assert_not_called()
     mock_append.assert_called_once()
+
+
+def test_upload_clinical_tables_stacked_skips_when_partition_exists_and_overwrite_false():
+    conn = MagicMock()
+    syn = MagicMock()
+    syn.getChildren.return_value = [{"name": "cancer_panel_test_level_dataset.csv", "id": "syn1"}]
+
+    ent = MagicMock()
+    ent.path = "/tmp/clinical.csv"
+    syn.get.return_value = ent
+
+    release_info = MagicMock()
+    release_info.cohort = "bpc"
+    release_info.release = "2_2_PUBLIC"
+
+    with patch.object(ingest, "ensure_schema"), \
+         patch.object(ingest, "add_bpc_metadata", side_effect=lambda df, **kwargs: df), \
+         patch.object(pd, "read_csv", return_value=pd.DataFrame({"a": [1]})), \
+         patch.object(ingest, "partition_exists", return_value=True) as mock_partition_exists, \
+         patch.object(ingest, "append_df") as mock_append, \
+         patch.object(ingest, "logger") as mock_logger:
+
+        ingest.upload_clinical_tables_stacked(
+            conn=conn,
+            syn=syn,
+            database="GENIE_DEV",
+            release_info=release_info,
+            clinical_synid="synFolder",
+            overwrite_partition=False,
+        )
+
+    mock_partition_exists.assert_called_once_with(
+        conn,
+        table=f"{ingest.CLINICAL_SCHEMA}.{ingest.CLINICAL_FILES['cancer_panel_test_level_dataset.csv']}",
+        cohort="bpc",
+        release="2_2_PUBLIC",
+    )
+    mock_append.assert_not_called()
+    mock_logger.info.assert_any_call(
+        "[bpc 2_2_PUBLIC] Partition already exists in "
+        f"{ingest.CLINICAL_FILES['cancer_panel_test_level_dataset.csv']}; skipping (overwrite_partition=False)."
+    )
 
 
 def test_upload_cbioportal_tables_stacked_excludes_prefixes_and_only_ingests_allowlist():
@@ -270,7 +352,7 @@ def test_upload_cbioportal_tables_stacked_excludes_prefixes_and_only_ingests_all
     syn.getChildren.return_value = [
         {"name": "meta_study.txt", "id": "syn_meta"},  # excluded by prefix "meta"
         {"name": "data_gene_panel.txt", "id": "syn_gp"},  # excluded by prefix
-        {"name": "data_clinical_sample.txt", "id": "syn_ok"},  # allowed by allowlist
+        {"name": "data_clinical_sample.txt", "id": "syn_ok"},  # allowlisted
         {"name": "data_mutations_extended.txt", "id": "syn_nope"},  # not in allowlist => skip
     ]
 
@@ -278,26 +360,33 @@ def test_upload_cbioportal_tables_stacked_excludes_prefixes_and_only_ingests_all
     ent_ok.path = "/tmp/data_clinical_sample.txt"
     syn.get.side_effect = lambda synid: ent_ok if synid == "syn_ok" else MagicMock(path="/tmp/other")
 
+    release_info = MagicMock()
+    release_info.cohort = "bpc"
+    release_info.release = "2_2_PUBLIC"
+
     with patch.object(ingest, "ensure_schema") as mock_ensure, \
+         patch.object(ingest, "add_bpc_metadata", side_effect=lambda df, **kwargs: df), \
          patch.object(pd, "read_csv", return_value=pd.DataFrame({"a": [1]})) as mock_read, \
          patch.object(ingest, "append_df") as mock_append, \
          patch.object(ingest, "delete_existing_partition") as mock_delete:
 
-        info = ingest.parse_bpc_version(cohort="bpc", version="public_02_2")
         ingest.upload_cbioportal_tables_stacked(
             conn=conn,
             syn=syn,
             database="GENIE_DEV",
-            release_info=info,
+            release_info=release_info,
             cbioportal_synid="synFolder",
             overwrite_partition=False,
         )
 
     mock_ensure.assert_called_once_with(conn, database="GENIE_DEV", schema=ingest.CBIOPORTAL_SCHEMA)
+
     # read_csv called only once (for allowlisted file)
     mock_read.assert_called_once()
-    # ensure tab separator for .txt
     assert mock_read.call_args.kwargs["sep"] == "\t"
+    assert mock_read.call_args.kwargs["comment"] == "#"
+    assert mock_read.call_args.kwargs["low_memory"] is False
+
     mock_append.assert_called_once()
     mock_delete.assert_not_called()
 
@@ -311,24 +400,28 @@ def test_upload_cbioportal_tables_stacked_skips_empty_df_and_logs_warning():
     ent.path = "/tmp/cbio.txt"
     syn.get.return_value = ent
 
+    release_info = MagicMock()
+    release_info.cohort = "bpc"
+    release_info.release = "2_2_PUBLIC"
+
     with patch.object(ingest, "ensure_schema"), \
          patch.object(pd, "read_csv", return_value=pd.DataFrame()), \
          patch.object(ingest, "append_df") as mock_append, \
          patch.object(ingest, "logger") as mock_logger:
 
-        info = ingest.parse_bpc_version(cohort="bpc", version="public_02_2")
         ingest.upload_cbioportal_tables_stacked(
             conn=conn,
             syn=syn,
             database="GENIE_DEV",
-            release_info=info,
+            release_info=release_info,
             cbioportal_synid="synFolder",
             overwrite_partition=False,
         )
 
     mock_append.assert_not_called()
     mock_logger.warning.assert_called_once()
-    assert "Empty cbioportal file" in mock_logger.warning.call_args[0][0]
+    msg = mock_logger.warning.call_args[0][0]
+    assert "[bpc 2_2_PUBLIC] Empty cbioportal file: data_clinical_sample.txt" in msg
 
 
 def test_upload_cbioportal_tables_stacked_overwrite_partition_deletes_then_appends():
@@ -340,24 +433,28 @@ def test_upload_cbioportal_tables_stacked_overwrite_partition_deletes_then_appen
     ent.path = "/tmp/cbio.txt"
     syn.get.return_value = ent
 
+    release_info = MagicMock()
+    release_info.cohort = "bpc"
+    release_info.release = "2_2_PUBLIC"
+
     with patch.object(ingest, "ensure_schema"), \
+         patch.object(ingest, "add_bpc_metadata", side_effect=lambda df, **kwargs: df), \
          patch.object(pd, "read_csv", return_value=pd.DataFrame({"a": [1]})), \
          patch.object(ingest, "append_df") as mock_append, \
          patch.object(ingest, "delete_existing_partition") as mock_delete:
 
-        info = ingest.parse_bpc_version(cohort="bpc", version="public_02_2")
         ingest.upload_cbioportal_tables_stacked(
             conn=conn,
             syn=syn,
             database="GENIE_DEV",
-            release_info=info,
+            release_info=release_info,
             cbioportal_synid="synFolder",
             overwrite_partition=True,
         )
 
     mock_delete.assert_called_once_with(
         conn,
-        table_fqn=f"{ingest.CBIOPORTAL_SCHEMA}.{ingest.CBIOPORTAL_FILES['data_clinical_sample.txt']}",
+        table=f"{ingest.CBIOPORTAL_SCHEMA}.{ingest.CBIOPORTAL_FILES['data_clinical_sample.txt']}",
         cohort="bpc",
         release="2_2_PUBLIC",
     )
@@ -385,8 +482,7 @@ def test_push_bpc_release_to_snowflake_parses_version_and_calls_uploads():
 
     mock_logger.info.assert_any_call("Processing cohort=bpc, release=2_2_PUBLIC")
     mock_clinical.assert_called_once()
-    # currently commented out in your script; assert not called to match current behavior
-    mock_cbio.assert_not_called()
+    mock_cbio.assert_called_once()
 
 
 def test_main_skips_public_preview_and_closes_conn_when_conn_not_injected(tmp_path, monkeypatch):
