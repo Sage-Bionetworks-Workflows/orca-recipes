@@ -63,7 +63,7 @@ def parse_bpc_version(cohort: str, version: str) -> ReleaseInfo:
     """Parses the ReleaseInfo information from the release folder
     where the release folder is expected to be of the format:
     XX.X-consortium or XX.X-public
-    
+
     E.g:
      2.1-consortium
 
@@ -197,7 +197,7 @@ def add_bpc_metadata(
     source_file: str,
 ) -> pd.DataFrame:
     """Adds the BPC metadata to the uploaded table
-        partition prior to upload. The metadata was collected 
+        partition prior to upload. The metadata was collected
         earlier in parse_bpc_version but also includes
         ingestion time and source file.
 
@@ -295,8 +295,15 @@ def upload_cbioportal_tables_stacked(
     cbioportal_synid: str,
     overwrite_partition: bool,
 ) -> None:
-    """Retrieves cBioPortal files from Synaspe and then
+    """Retrieves cBioPortal files from Synapse and then
        uploads the data to tables on Snowflake, skipping excluded prefixes.
+
+      If overwrite_partition is True, it will delete
+        the partition of data for that release-cohort and then append the new
+        partition of data to the Snowflake table
+      If overwrite_partition is False and the table partition
+        for that subset of data (by release and cohort) already exists, the code will
+        skip and move onto the next file
 
     Args:
         conn (snowflake.connector.SnowflakeConnection): snowflake connection
@@ -355,17 +362,19 @@ def push_bpc_release_to_snowflake(
     cbioportal_synid: str,
     overwrite_partition: bool,
 ) -> None:
-    """_summary_
+    """Contains the lower level functions to extract the
+        BPC release metadata and then read/upload the
+        clinical files and the cbioportal files
 
     Args:
-        syn (synapseclient.Synapse): _description_
-        conn (snowflake.connector.SnowflakeConnection): _description_
-        database (str): _description_
-        cohort (str): _description_
-        version (str): _description_
-        clinical_synid (str): _description_
-        cbioportal_synid (str): _description_
-        overwrite_partition (bool): _description_
+        syn (synapseclient.Synapse): synapse client connection
+        conn (snowflake.connector.SnowflakeConnection): snowflake connection
+        database (str): name of the database
+        cohort (str): name of the cohort
+        version (str): release version
+        clinical_synid (str): Synapse id of the clinical files folder
+        cbioportal_synid (str): Synapse id of the cbioportal files folder
+        overwrite_partition (bool): Whether or not to override the partition
     """
     release_info = parse_bpc_version(cohort=cohort, version=version)
     logger.info(
@@ -392,17 +401,17 @@ def push_bpc_release_to_snowflake(
 
 
 def main(database: str, overwrite_partition: bool, conn=None) -> None:
-    """ Main function - loops through the
-        cohorts in the yaml, gets the metadata 
-        information such as synapse ids of the folders 
-        containing the files to ingest. 
+    """Main function - loops through the
+        cohorts in the yaml, gets the metadata
+        information such as synapse ids of the folders
+        containing the files to ingest.
         For BPC there are two for each cohort:
             - clinical files folder
             - cbioportal files folder
 
     Args:
         database (str): Database table to run ELT commands in
-        overwrite_partition (bool): Whether to overwrite table data or 
+        overwrite_partition (bool): Whether to overwrite table data or
             not for the given partition
         conn (snowflake.connector.SnowflakeConnection): Optional Snowflake
             connection injected externally (e.g. Airflow)

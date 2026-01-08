@@ -13,9 +13,11 @@ from src.genie import main_genie_ingestion as ingest
         ("01.2-public", "1_2_PUBLIC", "PUBLIC", 1, 2),
         ("19.3-CoNsOrTiUm", "19_3_CONSORTIUM", "CONSORTIUM", 19, 3),
     ],
-    ids = ["consortium", "public", "single_digit_release", "mixed_case"]
+    ids=["consortium", "public", "single_digit_release", "mixed_case"],
 )
-def test_parse_release_folder_valid(folder_name, expected_release, expected_type, major, minor):
+def test_parse_release_folder_valid(
+    folder_name, expected_release, expected_type, major, minor
+):
     info = ingest.parse_release_folder(folder_name)
     assert info.release == expected_release
     assert info.release_type == expected_type
@@ -26,29 +28,30 @@ def test_parse_release_folder_valid(folder_name, expected_release, expected_type
 @pytest.mark.parametrize(
     "folder_name",
     [
-        "19.3consortium",      # missing "-"
-        "19.3-consortium-x",   # too many segments
-        "",                    # empty
+        "19.3consortium",  # missing "-"
+        "19.3-consortium-x",  # too many segments
+        "",  # empty
     ],
 )
 def test_parse_release_folder_invalid(folder_name):
-    with pytest.raises(ValueError, match = f"Unexpected folder name format: {folder_name}"):
+    with pytest.raises(
+        ValueError, match=f"Unexpected folder name format: {folder_name}"
+    ):
         ingest.parse_release_folder(folder_name)
 
 
 @pytest.mark.parametrize(
     "folder_name",
     [
-        "v19.3-consortium",    # version part not numeric
-        "19-consortium",       # version missing minor
-       #"19.3-",               # missing release type
-        "-consortium",         # missing version
+        "v19.3-consortium",  # version part not numeric
+        "19-consortium",  # version missing minor
+        # "19.3-",               # missing release type
+        "-consortium",  # missing version
     ],
 )
 def test_parse_release_folder_invalid_version_format(folder_name):
-    with pytest.raises(ValueError, match = f"Unexpected version format: {folder_name}"):
+    with pytest.raises(ValueError, match=f"Unexpected version format: {folder_name}"):
         ingest.parse_release_folder(folder_name)
-    
 
 
 def test_get_release_file_map_filters_to_configured_fileformats_only():
@@ -110,7 +113,7 @@ def test_partition_exists_when_exists_is_true():
 
     assert out is True
     cs.fetchone.assert_called_once()
-    
+
 
 def test_partition_exists_when_exists_is_false():
     conn = MagicMock(name="conn")
@@ -131,7 +134,9 @@ def test_delete_existing_partition_uses_parameterized_delete():
     conn.cursor.return_value.__enter__.return_value = cs
     conn.cursor.return_value.__exit__.return_value = None
 
-    ingest.delete_existing_partition(conn, table="CLINICAL_SAMPLE", release="19_3_PUBLIC")
+    ingest.delete_existing_partition(
+        conn, table="CLINICAL_SAMPLE", release="19_3_PUBLIC"
+    )
 
     cs.execute.assert_called_once_with(
         "DELETE FROM CLINICAL_SAMPLE WHERE RELEASE = %s",
@@ -152,8 +157,9 @@ def test_append_df_logs_success_rowcount_and_chunks():
     conn = MagicMock()
     df = pd.DataFrame({"x": [1, 2, 3]})
 
-    with patch.object(ingest, "write_pandas", return_value=(True, 2, 3, None)), \
-         patch.object(ingest, "logger") as mock_logger:
+    with patch.object(
+        ingest, "write_pandas", return_value=(True, 2, 3, None)
+    ), patch.object(ingest, "logger") as mock_logger:
         ingest.append_df(conn, df=df, table="TBL")
 
     mock_logger.info.assert_any_call("Appended 3 rows to 'TBL' (2 chunks).")
@@ -163,9 +169,9 @@ def test_append_df_logs_success_rowcount_and_chunks():
     "release_path, expected",
     [
         (("Releases/Release 17", "synX"), True),
-        (("Releases/Release 16", "synX"), False),   # skipped list
-        (("Releases/Release 00", "synX"), False),   # skipped list
-        (("Release 17", "synX"), False),            # not enough levels
+        (("Releases/Release 16", "synX"), False),  # skipped list
+        (("Releases/Release 00", "synX"), False),  # skipped list
+        (("Release 17", "synX"), False),  # not enough levels
         (("Releases/Release 17/Extra", "synX"), False),  # too many levels
     ],
 )
@@ -183,10 +189,13 @@ def test_push_release_to_snowflake_skips_when_no_configured_fileformats_found():
     release_info.major_version = 19
     release_info.minor_version = 3
 
-    with patch.object(ingest, "parse_release_folder", return_value=release_info), \
-         patch.object(ingest, "get_release_file_map", return_value={}), \
-         patch.object(ingest, "ensure_schema") as mock_ensure, \
-         patch.object(ingest, "logger") as mock_logger:
+    with patch.object(
+        ingest, "parse_release_folder", return_value=release_info
+    ), patch.object(ingest, "get_release_file_map", return_value={}), patch.object(
+        ingest, "ensure_schema"
+    ) as mock_ensure, patch.object(
+        ingest, "logger"
+    ) as mock_logger:
 
         ingest.push_release_to_snowflake(
             syn=syn,
@@ -217,14 +226,23 @@ def test_push_release_to_snowflake_success_appends_and_adds_metadata_when_partit
     release_info.major_version = 19
     release_info.minor_version = 3
 
-    with patch.object(ingest, "parse_release_folder", return_value=release_info), \
-         patch.object(ingest, "get_release_file_map", return_value=file_map), \
-         patch.object(ingest, "ensure_schema") as mock_ensure, \
-         patch.object(ingest.pd, "read_csv", return_value=pd.DataFrame({"a": [1]})) as mock_read, \
-         patch.object(ingest, "partition_exists", return_value=False) as mock_partition_exists, \
-         patch.object(ingest, "append_df") as mock_append, \
-         patch.object(ingest, "delete_existing_partition") as mock_delete, \
-         patch.object(ingest, "logger") as mock_logger:
+    with patch.object(
+        ingest, "parse_release_folder", return_value=release_info
+    ), patch.object(
+        ingest, "get_release_file_map", return_value=file_map
+    ), patch.object(
+        ingest, "ensure_schema"
+    ) as mock_ensure, patch.object(
+        ingest.pd, "read_csv", return_value=pd.DataFrame({"a": [1]})
+    ) as mock_read, patch.object(
+        ingest, "partition_exists", return_value=False
+    ) as mock_partition_exists, patch.object(
+        ingest, "append_df"
+    ) as mock_append, patch.object(
+        ingest, "delete_existing_partition"
+    ) as mock_delete, patch.object(
+        ingest, "logger"
+    ) as mock_logger:
 
         ingest.push_release_to_snowflake(
             syn=syn,
@@ -274,14 +292,23 @@ def test_push_release_to_snowflake_skips_when_partition_exists_and_overwrite_fal
     release_info.major_version = 19
     release_info.minor_version = 3
 
-    with patch.object(ingest, "parse_release_folder", return_value=release_info), \
-         patch.object(ingest, "get_release_file_map", return_value=file_map), \
-         patch.object(ingest, "ensure_schema"), \
-         patch.object(ingest.pd, "read_csv", return_value=pd.DataFrame({"a": [1]})), \
-         patch.object(ingest, "partition_exists", return_value=True) as mock_partition_exists, \
-         patch.object(ingest, "append_df") as mock_append, \
-         patch.object(ingest, "delete_existing_partition") as mock_delete, \
-         patch.object(ingest, "logger") as mock_logger:
+    with patch.object(
+        ingest, "parse_release_folder", return_value=release_info
+    ), patch.object(
+        ingest, "get_release_file_map", return_value=file_map
+    ), patch.object(
+        ingest, "ensure_schema"
+    ), patch.object(
+        ingest.pd, "read_csv", return_value=pd.DataFrame({"a": [1]})
+    ), patch.object(
+        ingest, "partition_exists", return_value=True
+    ) as mock_partition_exists, patch.object(
+        ingest, "append_df"
+    ) as mock_append, patch.object(
+        ingest, "delete_existing_partition"
+    ) as mock_delete, patch.object(
+        ingest, "logger"
+    ) as mock_logger:
 
         ingest.push_release_to_snowflake(
             syn=syn,
@@ -317,13 +344,21 @@ def test_push_release_to_snowflake_skips_empty_df_and_does_not_append():
     release_info.major_version = 19
     release_info.minor_version = 3
 
-    with patch.object(ingest, "parse_release_folder", return_value=release_info), \
-         patch.object(ingest, "get_release_file_map", return_value=file_map), \
-         patch.object(ingest, "ensure_schema"), \
-         patch.object(ingest.pd, "read_csv", return_value=pd.DataFrame()), \
-         patch.object(ingest, "partition_exists") as mock_partition_exists, \
-         patch.object(ingest, "append_df") as mock_append, \
-         patch.object(ingest, "logger") as mock_logger:
+    with patch.object(
+        ingest, "parse_release_folder", return_value=release_info
+    ), patch.object(
+        ingest, "get_release_file_map", return_value=file_map
+    ), patch.object(
+        ingest, "ensure_schema"
+    ), patch.object(
+        ingest.pd, "read_csv", return_value=pd.DataFrame()
+    ), patch.object(
+        ingest, "partition_exists"
+    ) as mock_partition_exists, patch.object(
+        ingest, "append_df"
+    ) as mock_append, patch.object(
+        ingest, "logger"
+    ) as mock_logger:
 
         ingest.push_release_to_snowflake(
             syn=syn,
@@ -338,7 +373,10 @@ def test_push_release_to_snowflake_skips_empty_df_and_does_not_append():
     mock_append.assert_not_called()
 
     mock_logger.warning.assert_called_once()
-    assert "Empty file data_clinical_sample.txt; skipping." in mock_logger.warning.call_args[0][0]
+    assert (
+        "Empty file data_clinical_sample.txt; skipping."
+        in mock_logger.warning.call_args[0][0]
+    )
 
 
 def test_push_release_to_snowflake_overwrite_partition_deletes_then_appends():
@@ -355,13 +393,21 @@ def test_push_release_to_snowflake_overwrite_partition_deletes_then_appends():
     release_info.major_version = 20
     release_info.minor_version = 0
 
-    with patch.object(ingest, "parse_release_folder", return_value=release_info), \
-         patch.object(ingest, "get_release_file_map", return_value=file_map), \
-         patch.object(ingest, "ensure_schema"), \
-         patch.object(ingest.pd, "read_csv", return_value=pd.DataFrame({"a": [1]})), \
-         patch.object(ingest, "partition_exists") as mock_partition_exists, \
-         patch.object(ingest, "append_df") as mock_append, \
-         patch.object(ingest, "delete_existing_partition") as mock_delete:
+    with patch.object(
+        ingest, "parse_release_folder", return_value=release_info
+    ), patch.object(
+        ingest, "get_release_file_map", return_value=file_map
+    ), patch.object(
+        ingest, "ensure_schema"
+    ), patch.object(
+        ingest.pd, "read_csv", return_value=pd.DataFrame({"a": [1]})
+    ), patch.object(
+        ingest, "partition_exists"
+    ) as mock_partition_exists, patch.object(
+        ingest, "append_df"
+    ) as mock_append, patch.object(
+        ingest, "delete_existing_partition"
+    ) as mock_delete:
 
         ingest.push_release_to_snowflake(
             syn=syn,
@@ -372,7 +418,9 @@ def test_push_release_to_snowflake_overwrite_partition_deletes_then_appends():
             overwrite_partition=True,
         )
 
-    mock_delete.assert_called_once_with(conn, table="CLINICAL_SAMPLE", release="20_0_PUBLIC")
+    mock_delete.assert_called_once_with(
+        conn, table="CLINICAL_SAMPLE", release="20_0_PUBLIC"
+    )
     mock_partition_exists.assert_not_called()
     mock_append.assert_called_once()
 
@@ -384,15 +432,30 @@ def test_main_walks_releases_skips_invalid_paths_and_closes_conn_when_not_inject
     # synu.walk yields: (dirpath, dirnames, filenames)
     # Here dirpath is a tuple: (path_str, synId)
     walk_output = [
-        (("Releases/Release 16", "synOld"), [("19.3-consortium", "synR1")], []),  # skipped
-        (("Releases/Release 17", "synNew"), [("19.3-consortium", "synR2")], []),  # processed
-        (("Releases/Release 17/Extra", "synBad"), [("20.0-public", "synR3")], []),  # invalid
+        (
+            ("Releases/Release 16", "synOld"),
+            [("19.3-consortium", "synR1")],
+            [],
+        ),  # skipped
+        (
+            ("Releases/Release 17", "synNew"),
+            [("19.3-consortium", "synR2")],
+            [],
+        ),  # processed
+        (
+            ("Releases/Release 17/Extra", "synBad"),
+            [("20.0-public", "synR3")],
+            [],
+        ),  # invalid
     ]
 
-    with patch.object(ingest.synapseclient, "login", return_value=mock_syn), \
-         patch.object(ingest, "get_connection", return_value=mock_conn_obj), \
-         patch.object(ingest.synu, "walk", return_value=walk_output), \
-         patch.object(ingest, "push_release_to_snowflake") as mock_push:
+    with patch.object(
+        ingest.synapseclient, "login", return_value=mock_syn
+    ), patch.object(ingest, "get_connection", return_value=mock_conn_obj), patch.object(
+        ingest.synu, "walk", return_value=walk_output
+    ), patch.object(
+        ingest, "push_release_to_snowflake"
+    ) as mock_push:
 
         ingest.main(database="GENIE_DEV", overwrite_partition=False, conn=None)
 
@@ -418,10 +481,15 @@ def test_main_does_not_close_conn_when_injected():
         (("Releases/Release 17", "synNew"), [("19.3-consortium", "synR2")], []),
     ]
 
-    with patch.object(ingest.synapseclient, "login", return_value=mock_syn), \
-         patch.object(ingest, "get_connection", return_value=conn_obj) as mock_get_conn, \
-         patch.object(ingest.synu, "walk", return_value=walk_output), \
-         patch.object(ingest, "push_release_to_snowflake") as mock_push:
+    with patch.object(
+        ingest.synapseclient, "login", return_value=mock_syn
+    ), patch.object(
+        ingest, "get_connection", return_value=conn_obj
+    ) as mock_get_conn, patch.object(
+        ingest.synu, "walk", return_value=walk_output
+    ), patch.object(
+        ingest, "push_release_to_snowflake"
+    ) as mock_push:
 
         ingest.main(database="GENIE_DEV", overwrite_partition=True, conn=injected_conn)
 

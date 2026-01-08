@@ -15,11 +15,23 @@ from snowflake_utils import get_connection, logger
 
 # releases too old and not categorized into public vs consortium
 RELEASES_TO_SKIP = [
-  "Release 00", "Release 01", "Release 02", "Release 03",
-  "Release 04", "Release 05", "Release 06", "Release 07",
-  "Release 08", "Release 09", "Release 10", "Release 11",
-  "Release 12", "Release 13", "Release 14", "Release 15",
-  "Release 16",
+    "Release 00",
+    "Release 01",
+    "Release 02",
+    "Release 03",
+    "Release 04",
+    "Release 05",
+    "Release 06",
+    "Release 07",
+    "Release 08",
+    "Release 09",
+    "Release 10",
+    "Release 11",
+    "Release 12",
+    "Release 13",
+    "Release 14",
+    "Release 15",
+    "Release 16",
 ]
 
 PROJECT_SYNID = "syn7492881"
@@ -46,6 +58,7 @@ class ReleaseInfo(NamedTuple):
     minor_version : int
         Minor version number (e.g. 2).
     """
+
     release: str
     release_type: str
     major_version: int
@@ -110,7 +123,7 @@ def get_release_file_map(
         release_folder_synid, includeTypes=["file", "folder", "link"]
     )
     wanted = set(FILEFORMATS.keys())
-    release_file_map : Dict[str, synapseclient.Entity] = {
+    release_file_map: Dict[str, synapseclient.Entity] = {
         release_file["name"]: syn.get(release_file["id"], followLink=True)
         for release_file in release_files
         if release_file["name"] in wanted
@@ -148,7 +161,7 @@ def partition_exists(
         release (str): Name of the release to filter on
 
     Returns:
-        bool: returns True if the table already has at least one row for the 
+        bool: returns True if the table already has at least one row for the
             given release.
     """
     with conn.cursor() as cs:
@@ -157,12 +170,12 @@ def partition_exists(
             (release),
         )
         return cs.fetchone() is not None
-    
+
 
 def delete_existing_partition(
     conn: "snowflake.connector.SnowflakeConnection", table: str, release: str
 ) -> None:
-    """Deletes the partition of the Snowflake table filtering on 
+    """Deletes the partition of the Snowflake table filtering on
         the release. This is only used when overwriting existing partitions.
 
     Args:
@@ -177,10 +190,10 @@ def delete_existing_partition(
 def append_df(
     conn: "snowflake.connector.SnowflakeConnection", df: pd.DataFrame, table: str
 ) -> None:
-    """Appends the table to snowflake. We only append when uploading results 
+    """Appends the table to snowflake. We only append when uploading results
     (using overwrite = False) here because if we overwrite Snowflake tables,
-    Snowflake will overwrite everything to just include this data from a specific release 
-    but because we append multiple releases in a table, we wouldn't want that. 
+    Snowflake will overwrite everything to just include this data from a specific release
+    but because we append multiple releases in a table, we wouldn't want that.
     We'd just want to overwrite each release which we handle in delete_existing_partition.
 
     Args:
@@ -241,6 +254,13 @@ def push_release_to_snowflake(
       - find the file(s) we care about
       - stack into MAIN.<TARGET_TABLE>
 
+      If overwrite_partition is True, it will delete
+        the partition of data for that release and then append the new
+        partition of data to the Snowflake table
+      If overwrite_partition is False and the table partition
+        for that subset of data (by release) already exists, the code will
+        skip and move onto the next file
+
     Args:
         syn (synapseclient.Synapse): _description_
         conn (snowflake.connector.SnowflakeConnection): _description_
@@ -276,7 +296,7 @@ def push_release_to_snowflake(
         df["MAJOR_VERSION"] = release_info.major_version
         df["MINOR_VERSION"] = release_info.minor_version
         df["INGESTED_AT"] = datetime.now(timezone.utc)
-        
+
         if overwrite_partition:
             delete_existing_partition(
                 conn, table=target_table, release=release_info.release

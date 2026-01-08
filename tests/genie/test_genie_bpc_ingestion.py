@@ -4,6 +4,7 @@ from unittest.mock import MagicMock, patch
 
 from src.genie import genie_bpc_ingestion as ingest
 
+
 @pytest.mark.parametrize(
     "cohort, version, expected_release, expected_type, major, minor",
     [
@@ -11,9 +12,12 @@ from src.genie import genie_bpc_ingestion as ingest
         ("bpc", "consortium_03_1", "3_1_CONSORTIUM", "CONSORTIUM", 3, 1),
         # case-insensitive
         ("bpc", "PuBlIc_10_0", "10_0_PUBLIC", "PUBLIC", 10, 0),
-    ], ids = ["public", "consortium", "mixed_case"]
+    ],
+    ids=["public", "consortium", "mixed_case"],
 )
-def test_parse_bpc_version_success(cohort, version, expected_release, expected_type, major, minor):
+def test_parse_bpc_version_success(
+    cohort, version, expected_release, expected_type, major, minor
+):
     info = ingest.parse_bpc_version(cohort=cohort, version=version)
     assert info.cohort == cohort
     assert info.release == expected_release
@@ -34,7 +38,9 @@ def test_parse_bpc_version_success(cohort, version, expected_release, expected_t
     ],
 )
 def test_parse_bpc_version_raises_on_bad_format(bad_version):
-    with pytest.raises(ValueError, match=f"Unexpected BPC version format: {bad_version}"):
+    with pytest.raises(
+        ValueError, match=f"Unexpected BPC version format: {bad_version}"
+    ):
         ingest.parse_bpc_version(cohort="bpc", version=bad_version)
 
 
@@ -48,7 +54,9 @@ def test_ensure_schema_executes_expected_sql_and_logs():
         ingest.ensure_schema(conn, database="GENIE_DEV", schema="SOME_SCHEMA")
 
     cs.execute.assert_any_call("USE DATABASE GENIE_DEV;")
-    cs.execute.assert_any_call("CREATE SCHEMA IF NOT EXISTS SOME_SCHEMA WITH MANAGED ACCESS;")
+    cs.execute.assert_any_call(
+        "CREATE SCHEMA IF NOT EXISTS SOME_SCHEMA WITH MANAGED ACCESS;"
+    )
     cs.execute.assert_any_call("USE SCHEMA SOME_SCHEMA;")
     mock_logger.info.assert_any_call("Using schema: GENIE_DEV.SOME_SCHEMA")
     conn.cursor.assert_called_once()
@@ -65,7 +73,7 @@ def test_partition_exists_when_exists_is_true():
 
     assert out is True
     cs.fetchone.assert_called_once()
-    
+
 
 def test_partition_exists_when_exists_is_false():
     conn = MagicMock(name="conn")
@@ -78,7 +86,7 @@ def test_partition_exists_when_exists_is_false():
 
     assert out is False
     cs.fetchone.assert_called_once()
-    
+
 
 def test_delete_existing_partition_uses_parameterized_delete():
     conn = MagicMock(name="conn")
@@ -86,7 +94,9 @@ def test_delete_existing_partition_uses_parameterized_delete():
     conn.cursor.return_value.__enter__.return_value = cs
     conn.cursor.return_value.__exit__.return_value = None
 
-    ingest.delete_existing_partition(conn, table="S.TBL", cohort="BPC", release="2_2_PUBLIC")
+    ingest.delete_existing_partition(
+        conn, table="S.TBL", cohort="BPC", release="2_2_PUBLIC"
+    )
 
     cs.execute.assert_called_once_with(
         "DELETE FROM S.TBL WHERE COHORT = %s AND RELEASE = %s",
@@ -107,8 +117,9 @@ def test_append_df_logs_success_rowcount_and_chunks():
     conn = MagicMock()
     df = pd.DataFrame({"x": [1, 2, 3]})
 
-    with patch.object(ingest, "write_pandas", return_value=(True, 2, 3, None)), \
-         patch.object(ingest, "logger") as mock_logger:
+    with patch.object(
+        ingest, "write_pandas", return_value=(True, 2, 3, None)
+    ), patch.object(ingest, "logger") as mock_logger:
         ingest.append_df(conn, df=df, table="TBL")
 
     mock_logger.info.assert_any_call("Appended 3 rows to TBL (2 chunks).")
@@ -157,12 +168,17 @@ def test_upload_clinical_tables_stacked_skips_non_csv_and_not_in_allowlist():
     release_info.cohort = "bpc"
     release_info.release = "2_2_PUBLIC"
 
-    with patch.object(ingest, "ensure_schema") as mock_ensure, \
-         patch.object(ingest, "add_bpc_metadata", side_effect=lambda df, **kwargs: df) as mock_add_meta, \
-         patch.object(pd, "read_csv", return_value=pd.DataFrame({"a": [1]})) as mock_read, \
-         patch.object(ingest, "partition_exists", return_value=False) as mock_partition_exists, \
-         patch.object(ingest, "append_df") as mock_append, \
-         patch.object(ingest, "delete_existing_partition") as mock_delete:
+    with patch.object(ingest, "ensure_schema") as mock_ensure, patch.object(
+        ingest, "add_bpc_metadata", side_effect=lambda df, **kwargs: df
+    ) as mock_add_meta, patch.object(
+        pd, "read_csv", return_value=pd.DataFrame({"a": [1]})
+    ) as mock_read, patch.object(
+        ingest, "partition_exists", return_value=False
+    ) as mock_partition_exists, patch.object(
+        ingest, "append_df"
+    ) as mock_append, patch.object(
+        ingest, "delete_existing_partition"
+    ) as mock_delete:
 
         ingest.upload_clinical_tables_stacked(
             conn=conn,
@@ -173,7 +189,9 @@ def test_upload_clinical_tables_stacked_skips_non_csv_and_not_in_allowlist():
             overwrite_partition=False,
         )
 
-    mock_ensure.assert_called_once_with(conn, database="GENIE_DEV", schema=ingest.CLINICAL_SCHEMA)
+    mock_ensure.assert_called_once_with(
+        conn, database="GENIE_DEV", schema=ingest.CLINICAL_SCHEMA
+    )
 
     # read_csv called only for allowlisted csv
     mock_read.assert_called_once()
@@ -190,7 +208,9 @@ def test_upload_clinical_tables_stacked_skips_non_csv_and_not_in_allowlist():
 def test_upload_clinical_tables_stacked_skips_empty_df_and_logs_warning():
     conn = MagicMock()
     syn = MagicMock()
-    syn.getChildren.return_value = [{"name": "cancer_panel_test_level_dataset.csv", "id": "syn1"}]
+    syn.getChildren.return_value = [
+        {"name": "cancer_panel_test_level_dataset.csv", "id": "syn1"}
+    ]
 
     ent = MagicMock()
     ent.path = "/tmp/clinical.csv"
@@ -200,11 +220,13 @@ def test_upload_clinical_tables_stacked_skips_empty_df_and_logs_warning():
     release_info.cohort = "bpc"
     release_info.release = "2_2_PUBLIC"
 
-    with patch.object(ingest, "ensure_schema"), \
-         patch.object(pd, "read_csv", return_value=pd.DataFrame()), \
-         patch.object(ingest, "partition_exists") as mock_partition_exists, \
-         patch.object(ingest, "append_df") as mock_append, \
-         patch.object(ingest, "logger") as mock_logger:
+    with patch.object(ingest, "ensure_schema"), patch.object(
+        pd, "read_csv", return_value=pd.DataFrame()
+    ), patch.object(ingest, "partition_exists") as mock_partition_exists, patch.object(
+        ingest, "append_df"
+    ) as mock_append, patch.object(
+        ingest, "logger"
+    ) as mock_logger:
 
         ingest.upload_clinical_tables_stacked(
             conn=conn,
@@ -220,13 +242,18 @@ def test_upload_clinical_tables_stacked_skips_empty_df_and_logs_warning():
 
     mock_logger.warning.assert_called_once()
     msg = mock_logger.warning.call_args[0][0]
-    assert "[bpc 2_2_PUBLIC] Empty clinical file: cancer_panel_test_level_dataset.csv" in msg
+    assert (
+        "[bpc 2_2_PUBLIC] Empty clinical file: cancer_panel_test_level_dataset.csv"
+        in msg
+    )
 
 
 def test_upload_clinical_tables_stacked_drops_lowercase_cohort_column_before_metadata():
     conn = MagicMock()
     syn = MagicMock()
-    syn.getChildren.return_value = [{"name": "cancer_panel_test_level_dataset.csv", "id": "syn1"}]
+    syn.getChildren.return_value = [
+        {"name": "cancer_panel_test_level_dataset.csv", "id": "syn1"}
+    ]
 
     ent = MagicMock()
     ent.path = "/tmp/clinical.csv"
@@ -243,12 +270,17 @@ def test_upload_clinical_tables_stacked_drops_lowercase_cohort_column_before_met
         assert "cohort" not in df.columns
         return df
 
-    with patch.object(ingest, "ensure_schema"), \
-         patch.object(pd, "read_csv", return_value=df_in), \
-         patch.object(ingest, "add_bpc_metadata", side_effect=_assert_no_lowercase_cohort) as mock_add_meta, \
-         patch.object(ingest, "partition_exists", return_value=False), \
-         patch.object(ingest, "append_df") as mock_append, \
-         patch.object(ingest, "delete_existing_partition") as mock_delete:
+    with patch.object(ingest, "ensure_schema"), patch.object(
+        pd, "read_csv", return_value=df_in
+    ), patch.object(
+        ingest, "add_bpc_metadata", side_effect=_assert_no_lowercase_cohort
+    ) as mock_add_meta, patch.object(
+        ingest, "partition_exists", return_value=False
+    ), patch.object(
+        ingest, "append_df"
+    ) as mock_append, patch.object(
+        ingest, "delete_existing_partition"
+    ) as mock_delete:
 
         ingest.upload_clinical_tables_stacked(
             conn=conn,
@@ -267,7 +299,9 @@ def test_upload_clinical_tables_stacked_drops_lowercase_cohort_column_before_met
 def test_upload_clinical_tables_stacked_overwrite_partition_deletes_then_appends():
     conn = MagicMock()
     syn = MagicMock()
-    syn.getChildren.return_value = [{"name": "cancer_panel_test_level_dataset.csv", "id": "syn1"}]
+    syn.getChildren.return_value = [
+        {"name": "cancer_panel_test_level_dataset.csv", "id": "syn1"}
+    ]
 
     ent = MagicMock()
     ent.path = "/tmp/clinical.csv"
@@ -277,12 +311,17 @@ def test_upload_clinical_tables_stacked_overwrite_partition_deletes_then_appends
     release_info.cohort = "bpc"
     release_info.release = "2_2_PUBLIC"
 
-    with patch.object(ingest, "ensure_schema"), \
-         patch.object(ingest, "add_bpc_metadata", side_effect=lambda df, **kwargs: df), \
-         patch.object(pd, "read_csv", return_value=pd.DataFrame({"a": [1]})), \
-         patch.object(ingest, "partition_exists") as mock_partition_exists, \
-         patch.object(ingest, "append_df") as mock_append, \
-         patch.object(ingest, "delete_existing_partition") as mock_delete:
+    with patch.object(ingest, "ensure_schema"), patch.object(
+        ingest, "add_bpc_metadata", side_effect=lambda df, **kwargs: df
+    ), patch.object(
+        pd, "read_csv", return_value=pd.DataFrame({"a": [1]})
+    ), patch.object(
+        ingest, "partition_exists"
+    ) as mock_partition_exists, patch.object(
+        ingest, "append_df"
+    ) as mock_append, patch.object(
+        ingest, "delete_existing_partition"
+    ) as mock_delete:
 
         ingest.upload_clinical_tables_stacked(
             conn=conn,
@@ -306,7 +345,9 @@ def test_upload_clinical_tables_stacked_overwrite_partition_deletes_then_appends
 def test_upload_clinical_tables_stacked_skips_when_partition_exists_and_overwrite_false():
     conn = MagicMock()
     syn = MagicMock()
-    syn.getChildren.return_value = [{"name": "cancer_panel_test_level_dataset.csv", "id": "syn1"}]
+    syn.getChildren.return_value = [
+        {"name": "cancer_panel_test_level_dataset.csv", "id": "syn1"}
+    ]
 
     ent = MagicMock()
     ent.path = "/tmp/clinical.csv"
@@ -316,12 +357,17 @@ def test_upload_clinical_tables_stacked_skips_when_partition_exists_and_overwrit
     release_info.cohort = "bpc"
     release_info.release = "2_2_PUBLIC"
 
-    with patch.object(ingest, "ensure_schema"), \
-         patch.object(ingest, "add_bpc_metadata", side_effect=lambda df, **kwargs: df), \
-         patch.object(pd, "read_csv", return_value=pd.DataFrame({"a": [1]})), \
-         patch.object(ingest, "partition_exists", return_value=True) as mock_partition_exists, \
-         patch.object(ingest, "append_df") as mock_append, \
-         patch.object(ingest, "logger") as mock_logger:
+    with patch.object(ingest, "ensure_schema"), patch.object(
+        ingest, "add_bpc_metadata", side_effect=lambda df, **kwargs: df
+    ), patch.object(
+        pd, "read_csv", return_value=pd.DataFrame({"a": [1]})
+    ), patch.object(
+        ingest, "partition_exists", return_value=True
+    ) as mock_partition_exists, patch.object(
+        ingest, "append_df"
+    ) as mock_append, patch.object(
+        ingest, "logger"
+    ) as mock_logger:
 
         ingest.upload_clinical_tables_stacked(
             conn=conn,
@@ -353,22 +399,31 @@ def test_upload_cbioportal_tables_stacked_excludes_prefixes_and_only_ingests_all
         {"name": "meta_study.txt", "id": "syn_meta"},  # excluded by prefix "meta"
         {"name": "data_gene_panel.txt", "id": "syn_gp"},  # excluded by prefix
         {"name": "data_clinical_sample.txt", "id": "syn_ok"},  # allowlisted
-        {"name": "data_mutations_extended.txt", "id": "syn_nope"},  # not in allowlist => skip
+        {
+            "name": "data_mutations_extended.txt",
+            "id": "syn_nope",
+        },  # not in allowlist => skip
     ]
 
     ent_ok = MagicMock()
     ent_ok.path = "/tmp/data_clinical_sample.txt"
-    syn.get.side_effect = lambda synid: ent_ok if synid == "syn_ok" else MagicMock(path="/tmp/other")
+    syn.get.side_effect = lambda synid: (
+        ent_ok if synid == "syn_ok" else MagicMock(path="/tmp/other")
+    )
 
     release_info = MagicMock()
     release_info.cohort = "bpc"
     release_info.release = "2_2_PUBLIC"
 
-    with patch.object(ingest, "ensure_schema") as mock_ensure, \
-         patch.object(ingest, "add_bpc_metadata", side_effect=lambda df, **kwargs: df), \
-         patch.object(pd, "read_csv", return_value=pd.DataFrame({"a": [1]})) as mock_read, \
-         patch.object(ingest, "append_df") as mock_append, \
-         patch.object(ingest, "delete_existing_partition") as mock_delete:
+    with patch.object(ingest, "ensure_schema") as mock_ensure, patch.object(
+        ingest, "add_bpc_metadata", side_effect=lambda df, **kwargs: df
+    ), patch.object(
+        pd, "read_csv", return_value=pd.DataFrame({"a": [1]})
+    ) as mock_read, patch.object(
+        ingest, "append_df"
+    ) as mock_append, patch.object(
+        ingest, "delete_existing_partition"
+    ) as mock_delete:
 
         ingest.upload_cbioportal_tables_stacked(
             conn=conn,
@@ -379,7 +434,9 @@ def test_upload_cbioportal_tables_stacked_excludes_prefixes_and_only_ingests_all
             overwrite_partition=False,
         )
 
-    mock_ensure.assert_called_once_with(conn, database="GENIE_DEV", schema=ingest.CBIOPORTAL_SCHEMA)
+    mock_ensure.assert_called_once_with(
+        conn, database="GENIE_DEV", schema=ingest.CBIOPORTAL_SCHEMA
+    )
 
     # read_csv called only once (for allowlisted file)
     mock_read.assert_called_once()
@@ -404,10 +461,11 @@ def test_upload_cbioportal_tables_stacked_skips_empty_df_and_logs_warning():
     release_info.cohort = "bpc"
     release_info.release = "2_2_PUBLIC"
 
-    with patch.object(ingest, "ensure_schema"), \
-         patch.object(pd, "read_csv", return_value=pd.DataFrame()), \
-         patch.object(ingest, "append_df") as mock_append, \
-         patch.object(ingest, "logger") as mock_logger:
+    with patch.object(ingest, "ensure_schema"), patch.object(
+        pd, "read_csv", return_value=pd.DataFrame()
+    ), patch.object(ingest, "append_df") as mock_append, patch.object(
+        ingest, "logger"
+    ) as mock_logger:
 
         ingest.upload_cbioportal_tables_stacked(
             conn=conn,
@@ -437,11 +495,15 @@ def test_upload_cbioportal_tables_stacked_overwrite_partition_deletes_then_appen
     release_info.cohort = "bpc"
     release_info.release = "2_2_PUBLIC"
 
-    with patch.object(ingest, "ensure_schema"), \
-         patch.object(ingest, "add_bpc_metadata", side_effect=lambda df, **kwargs: df), \
-         patch.object(pd, "read_csv", return_value=pd.DataFrame({"a": [1]})), \
-         patch.object(ingest, "append_df") as mock_append, \
-         patch.object(ingest, "delete_existing_partition") as mock_delete:
+    with patch.object(ingest, "ensure_schema"), patch.object(
+        ingest, "add_bpc_metadata", side_effect=lambda df, **kwargs: df
+    ), patch.object(
+        pd, "read_csv", return_value=pd.DataFrame({"a": [1]})
+    ), patch.object(
+        ingest, "append_df"
+    ) as mock_append, patch.object(
+        ingest, "delete_existing_partition"
+    ) as mock_delete:
 
         ingest.upload_cbioportal_tables_stacked(
             conn=conn,
@@ -465,9 +527,13 @@ def test_push_bpc_release_to_snowflake_parses_version_and_calls_uploads():
     syn = MagicMock()
     conn = MagicMock()
 
-    with patch.object(ingest, "upload_clinical_tables_stacked") as mock_clinical, \
-         patch.object(ingest, "upload_cbioportal_tables_stacked") as mock_cbio, \
-         patch.object(ingest, "logger") as mock_logger:
+    with patch.object(
+        ingest, "upload_clinical_tables_stacked"
+    ) as mock_clinical, patch.object(
+        ingest, "upload_cbioportal_tables_stacked"
+    ) as mock_cbio, patch.object(
+        ingest, "logger"
+    ) as mock_logger:
 
         ingest.push_bpc_release_to_snowflake(
             syn=syn,
@@ -485,7 +551,9 @@ def test_push_bpc_release_to_snowflake_parses_version_and_calls_uploads():
     mock_cbio.assert_called_once()
 
 
-def test_main_skips_public_preview_and_closes_conn_when_conn_not_injected(tmp_path, monkeypatch):
+def test_main_skips_public_preview_and_closes_conn_when_conn_not_injected(
+    tmp_path, monkeypatch
+):
     """
     - main() reads yaml; we patch open/yaml.safe_load to return our controlled cohorts
     - if conn is NOT injected (conn=None), it should close the connection in finally
@@ -510,11 +578,15 @@ def test_main_skips_public_preview_and_closes_conn_when_conn_not_injected(tmp_pa
     mock_conn_obj = MagicMock()
 
     # patch login, yaml, connection getter, and the push call
-    with patch.object(ingest.synapseclient, "login", return_value=mock_syn), \
-         patch.object(ingest.yaml, "safe_load", return_value=fake_cohorts), \
-         patch("builtins.open", new_callable=MagicMock), \
-         patch.object(ingest, "get_connection", return_value=mock_conn_obj), \
-         patch.object(ingest, "push_bpc_release_to_snowflake") as mock_push:
+    with patch.object(
+        ingest.synapseclient, "login", return_value=mock_syn
+    ), patch.object(ingest.yaml, "safe_load", return_value=fake_cohorts), patch(
+        "builtins.open", new_callable=MagicMock
+    ), patch.object(
+        ingest, "get_connection", return_value=mock_conn_obj
+    ), patch.object(
+        ingest, "push_bpc_release_to_snowflake"
+    ) as mock_push:
 
         ingest.main(database="GENIE_DEV", overwrite_partition=False, conn=None)
 
@@ -542,11 +614,15 @@ def test_main_does_not_close_when_conn_injected():
     injected_conn = MagicMock(name="injected_conn")
     returned_conn_obj = MagicMock(name="returned_conn_obj")
 
-    with patch.object(ingest.synapseclient, "login", return_value=MagicMock()), \
-         patch.object(ingest.yaml, "safe_load", return_value=fake_cohorts), \
-         patch("builtins.open", new_callable=MagicMock), \
-         patch.object(ingest, "get_connection", return_value=returned_conn_obj) as mock_get_conn, \
-         patch.object(ingest, "push_bpc_release_to_snowflake") as mock_push:
+    with patch.object(
+        ingest.synapseclient, "login", return_value=MagicMock()
+    ), patch.object(ingest.yaml, "safe_load", return_value=fake_cohorts), patch(
+        "builtins.open", new_callable=MagicMock
+    ), patch.object(
+        ingest, "get_connection", return_value=returned_conn_obj
+    ) as mock_get_conn, patch.object(
+        ingest, "push_bpc_release_to_snowflake"
+    ) as mock_push:
 
         ingest.main(database="GENIE_DEV", overwrite_partition=True, conn=injected_conn)
 

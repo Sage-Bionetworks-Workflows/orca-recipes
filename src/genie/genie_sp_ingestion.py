@@ -17,15 +17,15 @@ from snowflake_utils import get_connection, write_to_snowflake, logger
 
 def process_cohort(
     syn: synapseclient.Synapse,
-    conn : "snowflake.connector.SnowflakeConnection",
+    conn: "snowflake.connector.SnowflakeConnection",
     cohort_config: dict,
     database: str,
     overwrite: bool,
 ):
-    """ Process a single cohort:
+    """Process a single cohort:
       - Download files from Synapse
       - Use specified patient_id_key and sample_id_key
-      - Write to Snowflake table 
+      - Write to Snowflake table
 
     Args:
         syn (synapseclient.Synapse): synapse client connection
@@ -42,9 +42,7 @@ def process_cohort(
 
     with conn.cursor() as cs:
         cs.execute(f"USE DATABASE {database};")
-        cs.execute(
-            f"CREATE SCHEMA IF NOT EXISTS {schema_name} WITH MANAGED ACCESS;"
-        )
+        cs.execute(f"CREATE SCHEMA IF NOT EXISTS {schema_name} WITH MANAGED ACCESS;")
         cs.execute(f"USE SCHEMA {schema_name}")
 
     # Ensure file_synids is a list
@@ -56,11 +54,11 @@ def process_cohort(
         # Download the file(s)
         file_entity = syn.get(synid, downloadLocation="/tmp", followLink=True)
         sep = "\t" if table_name == "cbioportal_clinical_sample" else ","
-        df = pd.read_csv(file_entity.path, sep=sep, low_memory=False, comment = "#")
+        df = pd.read_csv(file_entity.path, sep=sep, low_memory=False, comment="#")
         if df.empty:
             logger.warning(f"Skipping empty clinical file: {file_entity['name']}")
             continue
-        
+
         # add metadata columns
         df["RELEASE"] = schema_name
         df["INGESTED_AT"] = datetime.now(timezone.utc)
@@ -71,13 +69,11 @@ def process_cohort(
             table_df=df,
             table_name=table_name,
             overwrite=overwrite,
-            write_pandas_kwargs={"quote_identifiers":False},
+            write_pandas_kwargs={"quote_identifiers": False},
         )
         # set overwrite to False if there are multiple files to write to one table (after the first)
         overwrite = False
-        logger.info(
-            f"[{schema_name}] Wrote {len(df)} rows to table '{table_name}'"
-        )
+        logger.info(f"[{schema_name}] Wrote {len(df)} rows to table '{table_name}'")
 
 
 def main(
@@ -87,9 +83,9 @@ def main(
 ):
     """
         Main function - loops through the
-        releases in the yaml, gets the metadata 
-        information such as synapse ids of the files 
-        to ingest. 
+        releases in the yaml, gets the metadata
+        information such as synapse ids of the files
+        to ingest.
 
     Args:
         overwrite (bool): Whether to overwrite table data or not
@@ -101,7 +97,7 @@ def main(
 
     script_dir = os.path.dirname(__file__)
     yaml_path = os.path.join(script_dir, "genie_sp_releases.yaml")
-    
+
     conn_obj = get_connection(conn=conn)
     try:
         with open(yaml_path, "r") as f:
