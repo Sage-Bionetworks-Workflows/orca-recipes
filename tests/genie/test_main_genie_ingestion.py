@@ -13,6 +13,7 @@ from src.genie import main_genie_ingestion as ingest
         ("01.2-public", "1_2_PUBLIC", "PUBLIC", 1, 2),
         ("19.3-CoNsOrTiUm", "19_3_CONSORTIUM", "CONSORTIUM", 19, 3),
     ],
+    ids = ["consortium", "public", "single_digit_release", "mixed_case"]
 )
 def test_parse_release_folder_valid(folder_name, expected_release, expected_type, major, minor):
     info = ingest.parse_release_folder(folder_name)
@@ -27,16 +28,27 @@ def test_parse_release_folder_valid(folder_name, expected_release, expected_type
     [
         "19.3consortium",      # missing "-"
         "19.3-consortium-x",   # too many segments
-        "v19.3-consortium",    # version part not numeric
-        "19-consortium",       # version missing minor
-        "19.3-",               # missing release type
-        "-consortium",         # missing version
         "",                    # empty
     ],
 )
 def test_parse_release_folder_invalid(folder_name):
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match = f"Unexpected folder name format: {folder_name}"):
         ingest.parse_release_folder(folder_name)
+
+
+@pytest.mark.parametrize(
+    "folder_name",
+    [
+        "v19.3-consortium",    # version part not numeric
+        "19-consortium",       # version missing minor
+       #"19.3-",               # missing release type
+        "-consortium",         # missing version
+    ],
+)
+def test_parse_release_folder_invalid_version_format(folder_name):
+    with pytest.raises(ValueError, match = f"Unexpected version format: {folder_name}"):
+        ingest.parse_release_folder(folder_name)
+    
 
 
 def test_get_release_file_map_filters_to_configured_fileformats_only():
@@ -85,6 +97,32 @@ def test_ensure_schema_executes_expected_sql_and_logs():
     cs.execute.assert_any_call("USE SCHEMA MAIN;")
     mock_logger.info.assert_any_call("Using schema: MAIN")
     conn.cursor.assert_called_once()
+
+
+def test_partition_exists_when_exists_is_true():
+    conn = MagicMock(name="conn")
+    cs = MagicMock(name="cursor")
+    conn.cursor.return_value.__enter__.return_value = cs
+    conn.cursor.return_value.__exit__.return_value = None
+    cs.fetchone.return_value = (1,)  # any non-None value means exists
+
+    out = ingest.partition_exists(conn, "MY_TABLE", "2026_01_01")
+
+    assert out is True
+    cs.fetchone.assert_called_once()
+    
+
+def test_partition_exists_when_exists_is_false():
+    conn = MagicMock(name="conn")
+    cs = MagicMock(name="cursor")
+    conn.cursor.return_value.__enter__.return_value = cs
+    conn.cursor.return_value.__exit__.return_value = None
+    cs.fetchone.return_value = None
+
+    out = ingest.partition_exists(conn, "MY_TABLE", "2026_01_01")
+
+    assert out is False
+    cs.fetchone.assert_called_once()
 
 
 def test_delete_existing_partition_uses_parameterized_delete():
@@ -139,7 +177,14 @@ def test_push_release_to_snowflake_skips_when_no_configured_fileformats_found():
     syn = MagicMock()
     conn = MagicMock()
 
-    with patch.object(ingest, "get_release_file_map", return_value={}), \
+    release_info = MagicMock()
+    release_info.release = "19_3_CONSORTIUM"
+    release_info.release_type = "CONSORTIUM"
+    release_info.major_version = 19
+    release_info.minor_version = 3
+
+    with patch.object(ingest, "parse_release_folder", return_value=release_info), \
+         patch.object(ingest, "get_release_file_map", return_value={}), \
          patch.object(ingest, "ensure_schema") as mock_ensure, \
          patch.object(ingest, "logger") as mock_logger:
 
@@ -158,18 +203,25 @@ def test_push_release_to_snowflake_skips_when_no_configured_fileformats_found():
     )
 
 
-def test_push_release_to_snowflake_success_appends_and_adds_metadata():
+def test_push_release_to_snowflake_success_appends_and_adds_metadata_when_partition_missing():
     syn = MagicMock()
     conn = MagicMock()
 
     ent = MagicMock()
     ent.path = "file.txt"
-
     file_map = {"data_clinical_sample.txt": ent}
 
-    with patch.object(ingest, "get_release_file_map", return_value=file_map), \
+    release_info = MagicMock()
+    release_info.release = "19_3_CONSORTIUM"
+    release_info.release_type = "CONSORTIUM"
+    release_info.major_version = 19
+    release_info.minor_version = 3
+
+    with patch.object(ingest, "parse_release_folder", return_value=release_info), \
+         patch.object(ingest, "get_release_file_map", return_value=file_map), \
          patch.object(ingest, "ensure_schema") as mock_ensure, \
          patch.object(ingest.pd, "read_csv", return_value=pd.DataFrame({"a": [1]})) as mock_read, \
+         patch.object(ingest, "partition_exists", return_value=False) as mock_partition_exists, \
          patch.object(ingest, "append_df") as mock_append, \
          patch.object(ingest, "delete_existing_partition") as mock_delete, \
          patch.object(ingest, "logger") as mock_logger:
@@ -186,8 +238,14 @@ def test_push_release_to_snowflake_success_appends_and_adds_metadata():
     mock_ensure.assert_called_once_with(conn, database="GENIE_DEV", schema="MAIN")
     mock_read.assert_called_once()
     assert mock_read.call_args.kwargs["sep"] == "\t"
+    assert mock_read.call_args.kwargs["comment"] == "#"
+    assert mock_read.call_args.kwargs["low_memory"] is False
 
     mock_delete.assert_not_called()
+    mock_partition_exists.assert_called_once_with(
+        conn, table="CLINICAL_SAMPLE", release="19_3_CONSORTIUM"
+    )
+
     mock_append.assert_called_once()
 
     appended_df = mock_append.call_args.kwargs["df"]
@@ -202,6 +260,49 @@ def test_push_release_to_snowflake_success_appends_and_adds_metadata():
     )
 
 
+def test_push_release_to_snowflake_skips_when_partition_exists_and_overwrite_false():
+    syn = MagicMock()
+    conn = MagicMock()
+
+    ent = MagicMock()
+    ent.path = "file.txt"
+    file_map = {"data_clinical_sample.txt": ent}
+
+    release_info = MagicMock()
+    release_info.release = "19_3_CONSORTIUM"
+    release_info.release_type = "CONSORTIUM"
+    release_info.major_version = 19
+    release_info.minor_version = 3
+
+    with patch.object(ingest, "parse_release_folder", return_value=release_info), \
+         patch.object(ingest, "get_release_file_map", return_value=file_map), \
+         patch.object(ingest, "ensure_schema"), \
+         patch.object(ingest.pd, "read_csv", return_value=pd.DataFrame({"a": [1]})), \
+         patch.object(ingest, "partition_exists", return_value=True) as mock_partition_exists, \
+         patch.object(ingest, "append_df") as mock_append, \
+         patch.object(ingest, "delete_existing_partition") as mock_delete, \
+         patch.object(ingest, "logger") as mock_logger:
+
+        ingest.push_release_to_snowflake(
+            syn=syn,
+            conn=conn,
+            release_folder_synid="synFolder",
+            release_folder_name="19.3-consortium",
+            database="GENIE_DEV",
+            overwrite_partition=False,
+        )
+
+    mock_delete.assert_not_called()
+    mock_partition_exists.assert_called_once_with(
+        conn, table="CLINICAL_SAMPLE", release="19_3_CONSORTIUM"
+    )
+    mock_append.assert_not_called()
+
+    mock_logger.info.assert_any_call(
+        "[19_3_CONSORTIUM] Partition already exists in CLINICAL_SAMPLE; skipping (overwrite_partition=False)."
+    )
+
+
 def test_push_release_to_snowflake_skips_empty_df_and_does_not_append():
     syn = MagicMock()
     conn = MagicMock()
@@ -210,9 +311,17 @@ def test_push_release_to_snowflake_skips_empty_df_and_does_not_append():
     ent.path = "file.txt"
     file_map = {"data_clinical_sample.txt": ent}
 
-    with patch.object(ingest, "get_release_file_map", return_value=file_map), \
+    release_info = MagicMock()
+    release_info.release = "19_3_CONSORTIUM"
+    release_info.release_type = "CONSORTIUM"
+    release_info.major_version = 19
+    release_info.minor_version = 3
+
+    with patch.object(ingest, "parse_release_folder", return_value=release_info), \
+         patch.object(ingest, "get_release_file_map", return_value=file_map), \
          patch.object(ingest, "ensure_schema"), \
          patch.object(ingest.pd, "read_csv", return_value=pd.DataFrame()), \
+         patch.object(ingest, "partition_exists") as mock_partition_exists, \
          patch.object(ingest, "append_df") as mock_append, \
          patch.object(ingest, "logger") as mock_logger:
 
@@ -225,7 +334,9 @@ def test_push_release_to_snowflake_skips_empty_df_and_does_not_append():
             overwrite_partition=False,
         )
 
+    mock_partition_exists.assert_not_called()
     mock_append.assert_not_called()
+
     mock_logger.warning.assert_called_once()
     assert "Empty file data_clinical_sample.txt; skipping." in mock_logger.warning.call_args[0][0]
 
@@ -238,9 +349,17 @@ def test_push_release_to_snowflake_overwrite_partition_deletes_then_appends():
     ent.path = "file.txt"
     file_map = {"data_clinical_sample.txt": ent}
 
-    with patch.object(ingest, "get_release_file_map", return_value=file_map), \
+    release_info = MagicMock()
+    release_info.release = "20_0_PUBLIC"
+    release_info.release_type = "PUBLIC"
+    release_info.major_version = 20
+    release_info.minor_version = 0
+
+    with patch.object(ingest, "parse_release_folder", return_value=release_info), \
+         patch.object(ingest, "get_release_file_map", return_value=file_map), \
          patch.object(ingest, "ensure_schema"), \
          patch.object(ingest.pd, "read_csv", return_value=pd.DataFrame({"a": [1]})), \
+         patch.object(ingest, "partition_exists") as mock_partition_exists, \
          patch.object(ingest, "append_df") as mock_append, \
          patch.object(ingest, "delete_existing_partition") as mock_delete:
 
@@ -254,6 +373,7 @@ def test_push_release_to_snowflake_overwrite_partition_deletes_then_appends():
         )
 
     mock_delete.assert_called_once_with(conn, table="CLINICAL_SAMPLE", release="20_0_PUBLIC")
+    mock_partition_exists.assert_not_called()
     mock_append.assert_called_once()
 
 

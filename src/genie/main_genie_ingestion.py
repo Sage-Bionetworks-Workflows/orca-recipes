@@ -54,7 +54,7 @@ class ReleaseInfo(NamedTuple):
 
 def parse_release_folder(folder_name: str) -> ReleaseInfo:
     """Synapse release folder name is typically: {major}.{minor}-{release_type}
-      e.g. "19.3-consortium", and the folder path is typically Releases/Release 17
+      e.g. "19.3-consortium"
 
     Args:
         folder_name (str): name of the folder to parse for into on Synapse
@@ -289,7 +289,7 @@ def push_release_to_snowflake(
                 release=release_info.release,
             ):
                 logger.info(
-                    f"[{release_info.cohort} {release_info.release}] "
+                    f"[{release_info.release}] "
                     f"Partition already exists in {target_table}; skipping (overwrite_partition=False)."
                 )
                 continue
