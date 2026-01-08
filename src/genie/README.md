@@ -4,7 +4,7 @@ Ingestion scripts for loading in the GENIE database in Snowflake
 
 ## How to Use
 
-You will need to be a developer on the genie projects and have access to all of the expected accesses in order to run anything in this module. See [GENIE - Getting Started](https://sagebionetworks.jira.com/wiki/spaces/DPE/pages/2552037385/Genie) for more information.
+You will need to be a developer on the genie projects and have access to all of the expected access in order to run anything in this module. See [GENIE - Getting Started](https://sagebionetworks.jira.com/wiki/spaces/DPE/pages/2552037385/Genie) for more information.
 
 - Modify the [genie_bpc_releases yaml](src/genie/genie_bpc_releases.yaml) when a new BPC release has been QC'ed and approved for release for a given cohort. Create a PR to push the changes.
 - Modify the [genie_sp_releases yaml](src/genie/genie_sp_releases.yaml) when a new SP release has been QC'ed and approved for release. Create a PR to push the changes.
