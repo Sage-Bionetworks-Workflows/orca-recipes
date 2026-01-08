@@ -2,7 +2,7 @@ import pytest
 from unittest.mock import MagicMock, patch, call
 import pandas as pd
 
-from src.genie import genie_sp_elt
+from src.genie import genie_sp_ingestion as ingest
 
 
 @pytest.fixture
@@ -17,7 +17,7 @@ def mock_syn():
     syn = MagicMock()
     syn.getChildren.return_value = [
         {"id": "file1", "name": "f1.tsv"},
-        {"id": "file2", "name": "f2.tsv"}
+        {"id": "file2", "name": "f2.tsv"},
     ]
     file_entity = MagicMock()
     file_entity.path = "/tmp/file.tsv"
@@ -27,11 +27,7 @@ def mock_syn():
 
 @pytest.fixture
 def cohort_config_single():
-    return {
-        "cohort": "test_cohort",
-        "table_name": "test_table",
-        "file_synid": "syn123"
-    }
+    return {"cohort": "test_cohort", "table_name": "test_table", "file_synid": "syn123"}
 
 
 @pytest.fixture
@@ -39,7 +35,7 @@ def cohort_config_list():
     return {
         "cohort": "test_cohort_list",
         "table_name": "test_table",
-        "file_synid": ["syn1", "syn2"]
+        "file_synid": ["syn1", "syn2"],
     }
 
 
@@ -50,18 +46,19 @@ def test_process_cohort_single(mock_syn, mock_conn, cohort_config_single):
     """
     cursor = mock_conn.cursor.return_value.__enter__.return_value
 
-    with patch.object(genie_sp_elt, "pd") as mock_pd, \
-         patch.object(genie_sp_elt, "write_to_snowflake") as mock_write:
+    with patch.object(ingest, "pd") as mock_pd, patch.object(
+        ingest, "write_to_snowflake"
+    ) as mock_write:
 
         df = pd.DataFrame({"a": [1, 2]})
         mock_pd.read_csv.return_value = df
 
-        genie_sp_elt.process_cohort(
+        ingest.process_cohort(
             syn=mock_syn,
             conn=mock_conn,
             cohort_config=cohort_config_single,
             database="TEST_DB",
-            overwrite=True,   # should be ignored / forced False internally
+            overwrite=True,  # should be ignored / forced False internally
         )
 
         # 1 files
@@ -91,18 +88,19 @@ def test_process_cohort_file_list(mock_syn, mock_conn, cohort_config_list):
     List file_synid keeps overwrite as provided.
     Expect 4 reads/writes.
     """
-    with patch.object(genie_sp_elt, "pd") as mock_pd, \
-         patch.object(genie_sp_elt, "write_to_snowflake") as mock_write:
+    with patch.object(ingest, "pd") as mock_pd, patch.object(
+        ingest, "write_to_snowflake"
+    ) as mock_write:
 
         df = pd.DataFrame({"a": [1]})
         mock_pd.read_csv.return_value = df
 
-        genie_sp_elt.process_cohort(
+        ingest.process_cohort(
             syn=mock_syn,
             conn=mock_conn,
             cohort_config=cohort_config_list,
             database="TEST_DB",
-            overwrite=False
+            overwrite=False,
         )
 
         # 2 files
@@ -122,17 +120,18 @@ def test_process_cohort_skips_empty_files(mock_syn, mock_conn, cohort_config_sin
     Empty dataframe should skip write_to_snowflake.
     Still reads both files.
     """
-    with patch.object(genie_sp_elt, "pd") as mock_pd, \
-         patch.object(genie_sp_elt, "write_to_snowflake") as mock_write:
+    with patch.object(ingest, "pd") as mock_pd, patch.object(
+        ingest, "write_to_snowflake"
+    ) as mock_write:
 
         mock_pd.read_csv.return_value = pd.DataFrame()  # empty => df.empty True
 
-        genie_sp_elt.process_cohort(
+        ingest.process_cohort(
             syn=mock_syn,
             conn=mock_conn,
             cohort_config=cohort_config_single,
             database="TEST_DB",
-            overwrite=True
+            overwrite=True,
         )
 
         assert mock_pd.read_csv.call_count == 1

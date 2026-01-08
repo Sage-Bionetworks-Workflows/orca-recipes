@@ -3,7 +3,7 @@ from unittest.mock import patch, MagicMock
 import pandas as pd
 import pytest
 
-from src.snowflake_utils import get_cursor, get_connection, table_exists, write_to_snowflake
+import src.snowflake_utils.snowflake_utils as sf
 
 
 class TestConnector:
@@ -16,6 +16,8 @@ class TestConnector:
             "SNOWFLAKE_SCHEMA": "schema",
             "SNOWFLAKE_ROLE": "SYSADMIN",
             "SNOWFLAKE_WAREHOUSE": "compute_xsmall",
+            "SNOWFLAKE_PRIVATE_KEY_FILE": "something.pem",
+            "SNOWFLAKE_PRIVATE_KEY_FILE_PWD": "password",
         }
         for k, v in env_vars.items():
             monkeypatch.setenv(k, v)
@@ -26,7 +28,7 @@ class TestConnector:
         with patch(
             "snowflake.connector.connect", return_value=mock_conn
         ) as mock_connect:
-            conn = get_connection()
+            conn = sf.get_connection()
             assert conn == mock_conn
             mock_connect.assert_called_once()
 
@@ -35,18 +37,17 @@ class TestConnector:
         monkeypatch.delenv("SNOWFLAKE_USER", raising=False)
 
         with pytest.raises(EnvironmentError):
-            get_connection()
+            sf.get_connection()
 
     def test_get_connection_fails(self, monkeypatch):
         # Set required env vars
         vars = [
             "SNOWFLAKE_USER",
-            "SNOWFLAKE_PASSWORD",
+            "SNOWFLAKE_PRIVATE_KEY_FILE",
+            "SNOWFLAKE_PRIVATE_KEY_FILE_PWD",
             "SNOWFLAKE_ACCOUNT",
-            "SNOWFLAKE_DATABASE",
-            "SNOWFLAKE_SCHEMA",
-            "SNOWFLAKE_ROLE",
             "SNOWFLAKE_WAREHOUSE",
+            "SNOWFLAKE_ROLE",
         ]
         for v in vars:
             monkeypatch.setenv(v, "x")
@@ -54,7 +55,7 @@ class TestConnector:
         # Patch the correct namespace and simulate failure
         with patch("snowflake.connector.connect", side_effect=Exception("bad creds")):
             with pytest.raises(Exception, match="bad creds"):
-                get_connection()
+                sf.get_connection()
 
 
 class TestCursor:
@@ -81,10 +82,8 @@ class TestCursor:
         conn, cursor_cm, cursor = self._make_conn_and_cursor()
 
         # patch create_local_connection so we can assert it's NOT called
-        with patch(
-            "snowflake_utils.snowflake_utils.create_local_connection"
-        ) as mock_create_local:
-            with get_cursor(conn=conn) as cs:
+        with patch.object(sf, "create_local_connection") as mock_create_local:
+            with sf.get_cursor(conn=conn) as cs:
                 # yielded cursor should be the __enter__ result
                 assert cs is cursor
 
@@ -105,14 +104,15 @@ class TestCursor:
         """
         local_conn, cursor_cm, cursor = self._make_conn_and_cursor()
 
-        with patch, object(
-            "snowflake_utils.snowflake_utils.create_local_connection",
+        with patch.object(
+            sf,
+            "create_local_connection",
             return_value=local_conn,
         ) as mock_create_local:
-            with get_cursor(conn=None) as cs:
+            with sf.get_cursor(conn=None) as cs:
                 assert cs is cursor
 
-            mock_create_local.assert_called_once()
+        mock_create_local.assert_called_once()
 
         # Cursor context manager used
         local_conn.cursor.assert_called_once()
@@ -129,18 +129,12 @@ class TestCursor:
         """
         local_conn, cursor_cm, cursor = self._make_conn_and_cursor()
 
-        with patch(
-            "snowflake_utils.snowflake_utils.create_local_connection",
-            return_value=local_conn,
-        ):
+        with patch.object(sf, "create_local_connection", return_value=local_conn):
             with pytest.raises(RuntimeError):
-                with get_cursor() as cs:
+                with sf.get_cursor() as cs:
                     assert cs is cursor
                     raise RuntimeError("boom")
-
-        # still closes connection
         local_conn.close.assert_called_once()
-        # and still exited cursor CM
         cursor_cm.__exit__.assert_called_once()
 
 
@@ -151,7 +145,7 @@ class TestUtils:
         mock_conn = MagicMock(schema="s", database="d")
         mock_conn.cursor.return_value = mock_cursor
 
-        assert table_exists(mock_conn, "tbl") is True
+        assert sf.table_exists(mock_conn, "tbl") is True
 
     def test_table_exists_false(self):
         mock_cursor = MagicMock()
@@ -159,34 +153,38 @@ class TestUtils:
         mock_conn = MagicMock(schema="s", database="d")
         mock_conn.cursor.return_value = mock_cursor
 
-        assert table_exists(mock_conn, "tbl") is False
+        assert sf.table_exists(mock_conn, "tbl") is False
 
     def test_write_to_snowflake_success(self):
         df = pd.DataFrame({"a": [1]})
         conn = MagicMock()
 
-        with patch("snowflake_utils.table_exists", return_value=False), patch(
-            "snowflake_utils.snowflake_utils.write_pandas",
+        with patch.object(sf, "table_exists", return_value=False), patch.object(
+            sf,
+            "write_pandas",
             return_value=(True, 1, 1, None),
         ) as mock_wp:
-            write_to_snowflake(conn, df, "t1", overwrite=True)
+            sf.write_to_snowflake(conn, df, "t1", overwrite=True)
             mock_wp.assert_called_once()
 
     def test_write_to_snowflake_skip(self):
         df = pd.DataFrame({"a": [1]})
         conn = MagicMock()
 
-        with patch("snowflake_utils.table_exists", return_value=True), patch(
-            "snowflake_utils.snowflake_utils.write_pandas",
+        with patch.object(sf, "table_exists", return_value=True), patch.object(
+            sf,
+            "write_pandas",
             return_value=(True, 1, 1, None),
         ) as mock_wp:
-            write_to_snowflake(conn, df, "t1", overwrite=False)
+            sf.write_to_snowflake(conn, df, "t1", overwrite=False)
             mock_wp.assert_not_called()
 
     def test_write_to_snowflake_invalid_kwargs(self):
         df = pd.DataFrame({"a": [1]})
         conn = MagicMock()
 
-        with patch("snowflake_utils.table_exists", return_value=False):
+        with patch.object(sf, "table_exists", return_value=False):
             with pytest.raises(ValueError):
-                write_to_snowflake(conn, df, "t1", write_pandas_kwargs={"bad_arg": 1})
+                sf.write_to_snowflake(
+                    conn, df, "t1", write_pandas_kwargs={"bad_arg": 1}
+                )
