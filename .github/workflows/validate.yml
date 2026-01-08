@@ -31,4 +31,3 @@ jobs:
       - name: Run tests
         run: |
           PYTHONPATH=src python -m pytest tests/ -v --tb=short
-          python -m pytest tests/ -v --tb=short
