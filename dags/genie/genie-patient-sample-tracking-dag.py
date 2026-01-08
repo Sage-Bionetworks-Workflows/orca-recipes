@@ -7,6 +7,8 @@ from airflow.decorators import dag, task
 from airflow.models.param import Param
 from airflow.providers.snowflake.hooks.snowflake import SnowflakeHook
 from orca.services.synapse import SynapseHook
+from airflow.utils.db import provide_session
+from airflow.models import XCom
 
 PATIENT_SAMPLE_TRACKING_TABLE_SYNID = "syn71708167"
 
@@ -178,8 +180,7 @@ def build_patient_sample_tracking_table():
         """
         df = hook.get_pandas_df(sql)
 
-        # Make XCom-safe (list of dicts)
-        return df.to_dict(orient="records")
+        #return df.to_dict(orient="records")
 
     @task(task_id="validate_patient_sample_tracking")
     def validate_patient_sample_tracking_query(rows: List[Dict]) -> List[Dict]:
@@ -239,10 +240,17 @@ def build_patient_sample_tracking_table():
 
         # Store dataframe into the existing Synapse table (schema already exists)
         syn.store(synapseclient.Table(PATIENT_SAMPLE_TRACKING_TABLE_SYNID, df))
+        
 
-    rows = query_patient_sample_tracking()
+    @provide_session
+    def cleanup_xcom(session=None):
+        session.query(XCom).filter(XCom.dag_id == "build_patient_sample_tracking_table").delete()
+
+
+    #rows = query_patient_sample_tracking()
     #validated_rows = validate_patient_sample_tracking_query(rows)
-    push_results_to_synapse_table(rows)
+    #push_results_to_synapse_table(rows)
+    cleanup_xcom()
 
 
 build_patient_sample_tracking_table()
