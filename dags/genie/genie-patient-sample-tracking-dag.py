@@ -303,8 +303,7 @@ def build_patient_sample_tracking_table():
         SELECT * FROM sp_ntrk_pairs;
         """
         df = hook.get_pandas_df(sql)
-        
-        
+
         # 2) Light validation (no missing / blank values)
         if df.empty:
             raise ValueError("Query returned zero rows")
@@ -320,22 +319,37 @@ def build_patient_sample_tracking_table():
 
         bad_cols = sorted(set(null_cols + blank_cols))
         if bad_cols:
-            raise ValueError(f"Validation failed: missing/blank values in columns: {bad_cols}")
+            raise ValueError(
+                f"Validation failed: missing/blank values in columns: {bad_cols}"
+            )
 
         # Optional: enforce required cols exist
-        required = ["SAMPLE_ID", "PATIENT_ID", "RELEASE", "RELEASE_PROJECT_TYPE", "IN_LATEST_RELEASE"]
+        required = [
+            "SAMPLE_ID",
+            "PATIENT_ID",
+            "RELEASE",
+            "RELEASE_PROJECT_TYPE",
+            "IN_LATEST_RELEASE",
+        ]
         missing = [c for c in required if c not in df.columns]
         if missing:
             raise ValueError(f"Validation failed: missing required columns: {missing}")
 
-        # 3) Upload to Synapse table
+        # 3) Delete all rows in current table and upload new results to Synapse table
         syn = SynapseHook(context["params"]["synapse_conn_id"]).client
-        syn.store(synapseclient.Table(PATIENT_SAMPLE_TRACKING_TABLE_SYNID, df))
-
+        results = syn.tableQuery(
+            f"SELECT * FROM {PATIENT_SAMPLE_TRACKING_TABLE_SYNID}"
+        ).asDataFrame()
+        syn.delete(synapseclient.Table(PATIENT_SAMPLE_TRACKING_TABLE_SYNID, results))
+        syn.store(
+            synapseclient.Table(schema=PATIENT_SAMPLE_TRACKING_TABLE_SYNID, values=df)
+        )
 
     @provide_session
     def cleanup_xcom(session=None):
-        session.query(XCom).filter(XCom.dag_id == "build_patient_sample_tracking_table").delete()
+        session.query(XCom).filter(
+            XCom.dag_id == "build_patient_sample_tracking_table"
+        ).delete()
 
     query_validate_and_upload()
     cleanup_xcom()
