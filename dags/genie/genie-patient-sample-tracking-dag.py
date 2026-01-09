@@ -137,12 +137,18 @@ def build_patient_sample_tracking_table():
         ),
         /* -------------------------------------------------------------------------
         6) Build Sponsored Project (SP) sample-patient pairs for a specific SP
-            dataset/table (example: AKT1).
+            dataset/table (example: AKT1) for all SP projects.
             - RELEASE_NAME and RELEASE_PROJECT_TYPE are hard-coded for this SP.
             - IN_LATEST_RELEASE indicates whether that SP pair also appears in the
             latest MAIN GENIE pairs (main_genie_keys).
+            - Each new SP project will need to be added here as each SP project's table
+            data can be vastly different
         ---------------------------------------------------------------------------*/
-        sp_pairs AS (
+        
+        /* --------------
+          AKT1 SP project
+        ----------------*/
+        sp_akt1_pairs AS (
         SELECT DISTINCT
             s.SAMPLE_ID,
             s.PATIENT_ID,
@@ -160,8 +166,119 @@ def build_patient_sample_tracking_table():
         FROM GENIE_DEV.AKT1.CBIOPORTAL_CLINICAL_SAMPLE s
         WHERE s.SAMPLE_ID IS NOT NULL
             AND s.PATIENT_ID IS NOT NULL
-        )
+        ),
+        /* -------------------
+          BRCA DDR SP project
+        ---------------------*/
+        sp_brca_ddr_pairs AS (
+        SELECT DISTINCT
+            s.SAMPLE_ID,
+            s.PATIENT_ID,
+            'BRCA_DDR' AS RELEASE_NAME,
+            'SP_BRCA_DDR' AS RELEASE_PROJECT_TYPE,
+            CASE
+            WHEN EXISTS (
+                SELECT 1
+                FROM main_genie_keys k
+                WHERE k.SAMPLE_ID = s.SAMPLE_ID
+                AND k.PATIENT_ID = s.PATIENT_ID
+            )
+            THEN 'Yes' ELSE 'No'
+            END AS IN_LATEST_RELEASE
+        FROM GENIE_DEV.BRCA_DDR.REDCAP_EXPORT s
+        WHERE s.SAMPLE_ID IS NOT NULL
+            AND s.PATIENT_ID IS NOT NULL
+        ),
+        /* -------------------
+          ERBB2 SP project
+        ---------------------*/
+        sp_erbb2_pairs AS (
+        SELECT DISTINCT
+            s.SAMPLE_ID,
+            s.PATIENT_ID,
+            'ERBB2' AS RELEASE_NAME,
+            'SP_ERBB2' AS RELEASE_PROJECT_TYPE,
+            CASE
+            WHEN EXISTS (
+                SELECT 1
+                FROM main_genie_keys k
+                WHERE k.SAMPLE_ID = s.SAMPLE_ID
+                AND k.PATIENT_ID = s.PATIENT_ID
+            )
+            THEN 'Yes' ELSE 'No'
+            END AS IN_LATEST_RELEASE
+        FROM GENIE_DEV.ERBB2.CBIOPORTAL_CLINICAL_SAMPLE s
+        WHERE s.SAMPLE_ID IS NOT NULL
+            AND s.PATIENT_ID IS NOT NULL
+        ),
+        /* -------------------
+          FGFE SP project
+        ---------------------*/        
+        sp_fgfe_pairs AS (
+        SELECT DISTINCT
+            s.SAMPLE_ID,
+            s.PATIENT_ID,
+            'FGFE4' AS RELEASE_NAME,
+            'SP_FGFE4' AS RELEASE_PROJECT_TYPE,
+            CASE
+            WHEN EXISTS (
+                SELECT 1
+                FROM main_genie_keys k
+                WHERE k.SAMPLE_ID = s.SAMPLE_ID
+                AND k.PATIENT_ID = s.PATIENT_ID
+            )
+            THEN 'Yes' ELSE 'No'
+            END AS IN_LATEST_RELEASE
+        FROM GENIE_DEV.FGFE4.CBIOPORTAL_CLINICAL_SAMPLE s
+        WHERE s.SAMPLE_ID IS NOT NULL
+            AND s.PATIENT_ID IS NOT NULL
+        ),
 
+        /* -------------------
+          KRAS SP project
+        ---------------------*/   
+        sp_kras_pairs AS (
+        SELECT DISTINCT
+            s.SAMPLE_ID,
+            s.GENIE_PATIENT_ID as PATIENT_ID,
+            'KRAS' AS RELEASE_NAME,
+            'SP_KRAS' AS RELEASE_PROJECT_TYPE,
+            CASE
+            WHEN EXISTS (
+                SELECT 1
+                FROM main_genie_keys k
+                WHERE k.SAMPLE_ID = s.SAMPLE_ID
+                AND k.PATIENT_ID = s.GENIE_PATIENT_ID
+            )
+            THEN 'Yes' ELSE 'No'
+            END AS IN_LATEST_RELEASE
+        FROM GENIE_DEV.KRAS.REDCAP_EXPORT s
+        WHERE s.SAMPLE_ID IS NOT NULL
+            AND s.GENIE_PATIENT_ID IS NOT NULL
+        ),
+
+        /* -------------------
+          NTRK SP project
+        ---------------------*/   
+        sp_ntrk_pairs AS (
+        SELECT DISTINCT
+            s.CPT_GENIE_SAMPLE_ID as SAMPLE_ID,
+            s.RECORD_ID as PATIENT_ID,
+            'NTRK' AS RELEASE_NAME,
+            'SP_NTRK' AS RELEASE_PROJECT_TYPE,
+            CASE
+            WHEN EXISTS (
+                SELECT 1
+                FROM main_genie_keys k
+                WHERE k.SAMPLE_ID = s.CPT_GENIE_SAMPLE_ID
+                AND k.PATIENT_ID = s.RECORD_ID
+            )
+            THEN 'Yes' ELSE 'No'
+            END AS IN_LATEST_RELEASE
+        FROM GENIE_DEV.NTRK.CANCER_PANEL_TEST s
+        WHERE s.CPT_GENIE_SAMPLE_ID IS NOT NULL
+            AND s.RECORD_ID IS NOT NULL
+        )
         /* -------------------------------------------------------------------------
         7) Combine all project-type pair sets into one unified result.
             - UNION ALL keeps duplicates across project types (if they exist) while
@@ -169,14 +286,21 @@ def build_patient_sample_tracking_table():
             - Final WHERE currently filters to MAIN_GENIE only (so BPC/SP rows are
             computed but then excluded).
         ---------------------------------------------------------------------------*/
-        SELECT *
-        FROM (
         SELECT * FROM bpc_pairs
-        UNION ALL
+            UNION ALL
         SELECT * FROM main_genie_pairs
-        UNION ALL
-        SELECT * FROM sp_pairs
-        )
+            UNION ALL
+        SELECT * FROM sp_akt1_pairs
+            UNION ALL
+        SELECT * FROM sp_brca_ddr_pairs
+            UNION ALL
+        SELECT * FROM sp_erbb2_pairs
+            UNION ALL
+        SELECT * FROM sp_fgfe_pairs
+            UNION ALL
+        SELECT * FROM sp_kras_pairs
+            UNION ALL
+        SELECT * FROM sp_ntrk_pairs;
         """
         df = hook.get_pandas_df(sql)
         
