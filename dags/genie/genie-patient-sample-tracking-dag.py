@@ -30,8 +30,8 @@ dag_params = {
 )
 def build_patient_sample_tracking_table():
 
-    @task(task_id="query_patient_sample_tracking")
-    def query_patient_sample_tracking(**context) -> List[Dict]:
+    @task(task_id="query_validate_and_upload")
+    def query_validate_and_upload(**context) -> List[Dict]:
         """Runs a snowflake query that queries the main genie, BPC and SP
         snowflake clincial tables for the required patient-sample tracking
         fields and values for further validation and then upload
@@ -179,77 +179,41 @@ def build_patient_sample_tracking_table():
         )
         """
         df = hook.get_pandas_df(sql)
-
-        #return df.to_dict(orient="records")
-
-    @task(task_id="validate_patient_sample_tracking")
-    def validate_patient_sample_tracking_query(rows: List[Dict]) -> List[Dict]:
-        """Do some light validation of the patient-sample tracking query
-
-        Args:
-            rows (list[dict]): 
-
-        Raises:
-            ValueError: _description_
-            ValueError: _description_
-            ValueError: _description_
-
-        Returns:
-            list[dict]: _description_
-        """
-        df = pd.DataFrame(rows)
-
-        # check for required columns
-        required_cols = [
-            "SAMPLE_ID",
-            "PATIENT_ID",
-            "RELEASE_NAME",
-            "RELEASE_PROJECT_TYPE",
-            "IN_LATEST_RELEASE",
-        ]
-        missing_cols = [c for c in required_cols if c not in df.columns]
-        if missing_cols:
-            raise ValueError(f"Missing required columns: {missing_cols}")
-
-        # check for any missingness
-        if df.isna().any().any():
-            bad_cols = df.columns[df.isna().any()].tolist()
-            raise ValueError(f"Found missing values in columns: {bad_cols}")
-
-        # enforce uniqueness of (SAMPLE_ID, PATIENT_ID, RELEASE_PROJECT_TYPE)
-        key_cols = ["SAMPLE_ID", "PATIENT_ID", "RELEASE_PROJECT_TYPE"]
-        dupes = df[df.duplicated(key_cols, keep=False)]
-        if not dupes.empty:
-            raise ValueError(f"Found duplicate keys ({key_cols}): {len(dupes)} rows")
-
-        return rows  # pass through unchanged if valid
-
-    @task(task_id="push_results_to_synapse_table")
-    def push_results_to_synapse_table(rows: List[Dict], **context) -> None:
-        """Pushes the queried patient-sample tracking rows (once validated)
-        to the corresponding Synapse table for external use and analyses
-
-        Args:
-            rows (List[Dict]): the input queried rows that are now
-                validated
-        """
-        df = pd.DataFrame(rows)
-
-        syn_hook = SynapseHook(context["params"]["synapse_conn_id"])
-        syn = syn_hook.client
-
-        # Store dataframe into the existing Synapse table (schema already exists)
-        syn.store(synapseclient.Table(PATIENT_SAMPLE_TRACKING_TABLE_SYNID, df))
         
+        
+        # 2) Light validation (no missing / blank values)
+        if df.empty:
+            raise ValueError("Query returned zero rows")
+
+        # NULL checks
+        null_cols = df.columns[df.isna().any()].tolist()
+
+        # Blank string checks (common)
+        blank_cols = []
+        for col in df.select_dtypes(include="object"):
+            if (df[col].astype(str).str.strip() == "").any():
+                blank_cols.append(col)
+
+        bad_cols = sorted(set(null_cols + blank_cols))
+        if bad_cols:
+            raise ValueError(f"Validation failed: missing/blank values in columns: {bad_cols}")
+
+        # Optional: enforce required cols exist
+        required = ["SAMPLE_ID", "PATIENT_ID", "RELEASE", "RELEASE_PROJECT_TYPE", "IN_LATEST_RELEASE"]
+        missing = [c for c in required if c not in df.columns]
+        if missing:
+            raise ValueError(f"Validation failed: missing required columns: {missing}")
+
+        # 3) Upload to Synapse table
+        syn = SynapseHook(context["params"]["synapse_conn_id"]).client
+        syn.store(synapseclient.Table(PATIENT_SAMPLE_TRACKING_TABLE_SYNID, df))
+
 
     @provide_session
     def cleanup_xcom(session=None):
         session.query(XCom).filter(XCom.dag_id == "build_patient_sample_tracking_table").delete()
 
-
-    #rows = query_patient_sample_tracking()
-    #validated_rows = validate_patient_sample_tracking_query(rows)
-    #push_results_to_synapse_table(rows)
+    query_validate_and_upload()
     cleanup_xcom()
 
 
