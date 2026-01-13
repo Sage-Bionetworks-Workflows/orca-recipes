@@ -2,7 +2,7 @@
 
 ## How to Use
 
-The functions in these scripts are meant to be imported into relevant DAGs to make it easier to connect to Snowflake when you want to have separate custom modules to write code that involves Snowflake outside of the DAGs themselves
+The functions in these scripts are meant to be imported into custom modules (outside of an Airflow DAG) that plan to use Snowflake connections locally or through Airflow (DAGs). This allows you flexibility in your code (that needs to connect to Snowflake) being able to run outside of Airflow and also inside Airflow DAGs
 
 
 ## Example Usage
@@ -43,7 +43,7 @@ cs = get_cursor()
 
 ### Connecting to snowflake via Airflow's SnowflakeHook in your code
 
-Add the following code to your python script(s)
+Add the following code to your python script(s):
 
 ```python
 from snowflake_utils import get_connection
@@ -65,7 +65,7 @@ Then in your DAG you would just pass in the conn object from Airflow:
 ```
 from airflow.providers.snowflake.hooks.snowflake import SnowflakeHook
 
-from genie import main_genie_elt   # <-- your script
+from genie import main_genie_ingestion   # <-- your script
 
 dag_params = {
     "snowflake_conn_id": Param("YOUR_SNOWFLAKE_CONNECTION_STRING", type="string"),
@@ -85,7 +85,7 @@ def test_snowflake_utils_dag():
         ... # other code
 
         # call your ELT with the Airflow-owned conn
-        main_genie_elt.main(
+        main_genie_ingestion.main(
             synid=synid,
             overwrite=overwrite,
             database=database,

@@ -91,10 +91,11 @@ def get_cursor(
     conn: Optional[snowflake.connector.SnowflakeConnection] = None,
 ) -> Iterator[snowflake.connector.cursor.SnowflakeCursor]:
     """Yields a Snowflake cursor.
-        - If conn is passed (Airflow), we do NOT close it.
+        - If conn is passed (Airflow), we do NOT close it because Airflow's SnowHook
+        will handle the connection from there on
         - If conn is None (local), we create one and close the connection.
 
-        This is useful the code only needs to use the snowflake cursor
+        This is useful if the code only needs to use the snowflake cursor
         functions (not a connection object)
 
     Args:
