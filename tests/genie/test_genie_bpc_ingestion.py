@@ -548,7 +548,7 @@ def test_push_bpc_release_to_snowflake_parses_version_and_calls_uploads():
 
     mock_logger.info.assert_any_call("Processing cohort=bpc, release=2_2_PUBLIC")
     mock_clinical.assert_called_once()
-    mock_cbio.assert_called_once()
+    mock_cbio.assert_not_called()
 
 
 def test_main_skips_public_preview_and_closes_conn_when_conn_not_injected(

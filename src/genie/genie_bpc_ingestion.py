@@ -385,6 +385,13 @@ def push_bpc_release_to_snowflake(
     """Contains the lower level functions to extract the
         BPC release metadata and then read/upload the
         clinical files and the cbioportal files
+        
+        NOTE: Excluding cbioportal files ingestion for now 
+        due to the scope of the patient-sample tracking work
+        as we can get clinical patient
+        AND sample ids from both clinical cancer panel test file
+        and cbioportal's clinical sample file. In the future 
+        if we need to ingest more data, we can include this.
 
     Args:
         syn (synapseclient.Synapse): synapse client connection
@@ -407,15 +414,6 @@ def push_bpc_release_to_snowflake(
         database=database,
         release_info=release_info,
         clinical_synid=clinical_synid,
-        overwrite_partition=overwrite_partition,
-    )
-
-    upload_cbioportal_tables_stacked(
-        conn=conn,
-        syn=syn,
-        database=database,
-        release_info=release_info,
-        cbioportal_synid=cbioportal_synid,
         overwrite_partition=overwrite_partition,
     )
 
