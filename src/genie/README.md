@@ -19,7 +19,7 @@ Run ingestion to Snowflake to the genie dev database. for Genie Sponsored Projec
 python3 src/genie/genie_sp_ingesion.py --database GENIE_DEV --overwrite
 ```
 
-Run ingestion to Snowflake for Genie Biopharma Collaborative (BPC) Project to the genie dev database. This will not overwrite any pre-existing data in the tables in the GENIE_DEV database and will instead skip. This will still create new tables for new data when applicable.
+Run ingestion to Snowflake for Genie Biopharma Collaborative (BPC) Project to the genie dev database. This will not overwrite any pre-existing data in the tables in the GENIE_DEV database and will instead skip writing to the table if it already exists. This will still create new tables for new data when applicable.
 
 ```bash
 python3 src/genie/genie_bpc_ingestion.py --database GENIE_DEV 
