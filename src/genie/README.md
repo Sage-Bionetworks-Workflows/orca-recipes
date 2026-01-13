@@ -1,6 +1,41 @@
 # Genie Ingestion scripts
 
-Ingestion scripts for loading in the GENIE database in Snowflake
+Ingestion scripts for loading in the GENIE database in Snowflake. Note that
+you can have multiple records per patient-sample pairs per table for the Main Genie and BPC ingestions as we ingest multiple releases per table.
+
+- Main genie will be the most automated in ingesting new releases. There will be one schema where all of the releases (public and consortium) are stacked into one table called `CLINICAL_SAMPLE`
+
+So a `CLINICAL_SAMPLE` table for main genie would look like:
+| SAMPLE_ID | PATIENT_ID | RELEASE | RELEASE_TYPE | MAJOR_VERSION | MINOR_VERSION | OTHER_COLUMNS | 
+|-----------|------------|---------|--------------|---------------|---------------|---------------|
+| GENIE-SAGE-1-1 | GENIE-SAGE-1 | 17_2_CONSORTIUM | CONSORTIUM | 17 | 2 | ... |
+| GENIE-SAGE-1-2 | GENIE-SAGE-1 | 17_2_CONSORTIUM | CONSORTIUM | 17 | 2 | ... |
+| GENIE-SAGE-1-1 | GENIE-SAGE-1 | 17_0_PUBLIC | PUBLIC | 17 | 0 | ... |
+| GENIE-SAGE-1-2 | GENIE-SAGE-1 | 17_0_PUBLIC | PUBLIC | 17 | 0 | ... |
+| GENIE-SAGE-1-1 | GENIE-SAGE-1 | 17_3_CONSORTIUM | CONSORTIUM | 17 | 3 | ... |
+
+
+- Genie BPC will need a config update to ingest releases. This is due to the structure of the BPC projects
+A `CANCER_PANEL_TEST` table for BPC will look like the above for main genie but with an addition `COHORT` column:
+
+| SAMPLE_ID | PATIENT_ID | COHORT | RELEASE | RELEASE_TYPE | MAJOR_VERSION | MINOR_VERSION | OTHER_COLUMNS | 
+|-----------|------------|---------|---------|--------------|---------------|---------------|---------------|
+| GENIE-SAGE-1-1 | GENIE-SAGE-1 | BRCA | 2_2_CONSORTIUM | CONSORTIUM | 2 | 2 | ... |
+| GENIE-SAGE-1-2 | GENIE-SAGE-1 | BRCA | 2_2_CONSORTIUM | CONSORTIUM | 2 | 2 | ... |
+| GENIE-SAGE-1-1 | GENIE-SAGE-1 | BRCA | 2_0_PUBLIC | PUBLIC | 2 | 0 | ... |
+| GENIE-SAGE-1-2 | GENIE-SAGE-1 | BRCA | 2_0_PUBLIC | PUBLIC | 2 | 0 | ... |
+| GENIE-SAGE-1-1 | GENIE-SAGE-1 | BRCA | 2_1_CONSORTIUM | CONSORTIUM | 2 | 1 | ... |
+ 
+
+- Genie SP will only ingest the clinical files as the rest as not as relevant. There will be one schema-table per SP project because each project's clinical table fields are too vastly differently for them to be stacked into the same table. As a result, downstream our query to put all of the tables together will be more complicated.
+
+| SAMPLE_ID | PATIENT_ID | RELEASE | OTHER_COLUMNS | 
+|-----------|------------|---------|---------|
+| GENIE-SAGE-1-1 | GENIE-SAGE-1 | SP_PROJECT_NAME | ... |
+| GENIE-SAGE-1-2 | GENIE-SAGE-1 | SP_PROJECT_NAME | ... |
+| GENIE-SAGE-1-1 | GENIE-SAGE-1 | SP_PROJECT_NAME | ... |
+| GENIE-SAGE-1-2 | GENIE-SAGE-1 | SP_PROJECT_NAME | ... |
+| GENIE-SAGE-1-1 | GENIE-SAGE-1 | SP_PROJECT_NAME | ... |
 
 ## How to Use
 
