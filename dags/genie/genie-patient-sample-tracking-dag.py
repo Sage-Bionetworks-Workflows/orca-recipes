@@ -20,6 +20,69 @@ dag_params = {
 }
 
 
+def validate_patient_sample_results(df : pd.DataFrame) -> None:
+    """
+    Perform lightweight validation on a patient-sample query result DataFrame.
+
+    This function is intended as a check before writing query results
+    to downstream storage (e.g., Synapse). It verifies that:
+
+    1) The DataFrame is not empty.
+    2) No columns contain NULL/NaN values.
+    3) No string/object columns contain blank (empty or whitespace-only) values.
+    4) All required columns are present.
+    5) There are no duplicate rows based on the required columns.
+
+    Args:
+        df (pd.DataFrame): Query results containing sample-patient pair records.
+
+    Raises:
+        ValueError: If the DataFrame contains zero rows.
+        ValueError: If any column contains NULL/NaN values or blank string values.
+        ValueError: If any required columns are missing from the DataFrame.
+        ValueError: If duplicate rows are found based on the required columns.
+    """
+    if df.empty:
+        raise ValueError("Query returned zero rows")
+
+    # NULL checks
+    null_cols = df.columns[df.isna().any()].tolist()
+
+    # Blank string checks (common)
+    blank_cols = []
+    for col in df.select_dtypes(include="object"):
+        if (df[col].astype(str).str.strip() == "").any():
+            blank_cols.append(col)
+
+    bad_cols = sorted(set(null_cols + blank_cols))
+    if bad_cols:
+        raise ValueError(
+            f"Validation failed: missing/blank values in columns: {bad_cols}"
+        )
+
+    # Enforce required cols exist
+    required = [
+        "SAMPLE_ID",
+        "PATIENT_ID",
+        "RELEASE",
+        "RELEASE_PROJECT_TYPE",
+        "IN_LATEST_RELEASE",
+    ]
+    missing = [c for c in required if c not in df.columns]
+    if missing:
+        raise ValueError(f"Validation failed: missing required columns: {missing}")
+    
+    # Duplicate check based on required columns
+    dup_mask = df.duplicated(subset=required, keep=False)
+    if dup_mask.any():
+        dup_count = int(dup_mask.sum())
+        raise ValueError(
+            f"Validation failed: found {dup_count} duplicate rows based on required columns: {required}"
+        )
+    
+
+    
+
 @dag(
     schedule_interval="0 1,17 * * *",
     start_date=datetime(2025, 1, 1),
@@ -303,39 +366,9 @@ def build_patient_sample_tracking_table():
         SELECT * FROM sp_ntrk_pairs;
         """
         df = hook.get_pandas_df(sql)
+        validate_patient_sample_results(df)
 
-        # 2) Light validation (no missing / blank values)
-        if df.empty:
-            raise ValueError("Query returned zero rows")
-
-        # NULL checks
-        null_cols = df.columns[df.isna().any()].tolist()
-
-        # Blank string checks (common)
-        blank_cols = []
-        for col in df.select_dtypes(include="object"):
-            if (df[col].astype(str).str.strip() == "").any():
-                blank_cols.append(col)
-
-        bad_cols = sorted(set(null_cols + blank_cols))
-        if bad_cols:
-            raise ValueError(
-                f"Validation failed: missing/blank values in columns: {bad_cols}"
-            )
-
-        # Optional: enforce required cols exist
-        required = [
-            "SAMPLE_ID",
-            "PATIENT_ID",
-            "RELEASE",
-            "RELEASE_PROJECT_TYPE",
-            "IN_LATEST_RELEASE",
-        ]
-        missing = [c for c in required if c not in df.columns]
-        if missing:
-            raise ValueError(f"Validation failed: missing required columns: {missing}")
-
-        # 3) Delete all rows in current table and upload new results to Synapse table
+        # Delete all rows in current table and upload new results to Synapse table
         syn = SynapseHook(context["params"]["synapse_conn_id"]).client
         results = syn.tableQuery(
             f"SELECT * FROM {PATIENT_SAMPLE_TRACKING_TABLE_SYNID}"
