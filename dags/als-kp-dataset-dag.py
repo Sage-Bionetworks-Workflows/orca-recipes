@@ -265,19 +265,19 @@ def select_latest_versions(datasets: List[Dict[str, Any]]) -> List[Dict[str, Any
 
     # For each ALS group, select the best version
     for als_number, versions in als_groups.items():
-        # Sort by date (desc), then by priority (desc)
+        # Sort by priority (desc), then by date (desc)
         best_version = max(
             versions,
             key=lambda x: (
-                datetime.strptime(x["date_str"], "%Y_%m_%d"),
                 x["priority"],
+                datetime.strptime(x["date_str"], "%Y_%m_%d"),
             ),
         )
 
         selected_datasets.append(best_version["dataset"])
         print(
             f"Selected {best_version['dataset_code']} for {als_number} "
-            f"(date: {best_version['date_str']}, priority: {best_version['priority']})"
+            f"(priority: {best_version['priority']}, date: {best_version['date_str']})"
         )
 
     return selected_datasets
@@ -344,7 +344,7 @@ def transform_data(data: Dict[str, Any], **context) -> List[Dict[str, Any]]:
 def select_latest_cpath_versions(
     transformed_items: List[Dict[str, Any]], **context
 ) -> List[Dict[str, Any]]:
-    """Select the latest version of each dataset from C-Path data based on date and priority."""
+    """Select the latest version of each dataset from C-Path data based on priority and date."""
     print(f"Selecting latest versions from {len(transformed_items)} C-Path datasets...")
     selected_items = select_latest_versions(transformed_items)
     print(f"Selected {len(selected_items)} latest dataset versions.")
@@ -417,14 +417,14 @@ def identify_dataset_actions(
                 existing = existing_datasets[als_number]
                 existing_date = datetime.strptime(existing['date_str'], '%Y_%m_%d')
 
-                # Prioritize date, then priority. Also update for same date/priority for annotation changes.
+                # Prioritize priority (version), then date. Also update for same priority/date for annotation changes.
                 should_update = (
-                    new_date > existing_date
-                    or (new_date == existing_date and new_priority > existing["priority"])
+                    new_priority > existing["priority"]
+                    or (new_priority == existing["priority"] and new_date >= existing_date)
                 )
 
                 if should_update:
-                    is_version_upgrade = (new_date > existing_date) or (new_priority > existing["priority"])
+                    is_version_upgrade = (new_priority > existing["priority"]) or (new_date > existing_date)
                     upgrade_type = "version" if is_version_upgrade else "annotation"
                     datasets_to_update.append({
                         'new_data': item,
