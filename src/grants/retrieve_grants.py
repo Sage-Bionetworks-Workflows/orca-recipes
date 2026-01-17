@@ -1,9 +1,11 @@
+from datetime import datetime
+from dateutil.relativedelta import relativedelta
 import os
+import re
+
 import pandas as pd
 import requests
 import snowflake.connector
-from datetime import datetime
-from dateutil.relativedelta import relativedelta
 from snowflake.connector.pandas_tools import write_pandas
 import synapseclient
 from synapseclient import Synapse
@@ -13,7 +15,24 @@ syn = Synapse()
 syn.login(silent=True)
 
 
-def step1_a_retrieve_federal_grants(api_url, request_body):
+def step1_a_retrieve_federal_grants(api_url: str, request_body: dict) -> dict:
+    """Retrieve federal grant records from a remote API endpoint.
+
+    Sends a POST request with a JSON payload to the specified API endpoint
+    and returns the value of the ``data`` field from the JSON response.
+
+    Args:
+        api_url (str): The full URL of the API endpoint used to retrieve
+            federal grant data.
+        request_body (Dict[str, Any]): A JSON-serializable dictionary
+            containing the request payload (e.g., filters, pagination,
+            or query parameters required by the API).
+
+    Returns:
+        dict: The contents of the
+        ``"data"`` field from the API response. The exact structure depends
+        on the API but typically contains federal grant records.
+    """
     headers = {"Content-Type": "application/json"}
 
     response = requests.post(api_url, json=request_body, headers=headers)
@@ -33,7 +52,7 @@ def step1_b_retrieve_non_federal_grants_from_synapse() -> pd.DataFrame:
     return df
 
 
-def step2_preliminary_filter(grants_data):
+def step2_preliminary_filter(grants_data: dict):
     """
     Filters by:
     1. Closing date for grant proposal
@@ -60,7 +79,7 @@ def step2_preliminary_filter(grants_data):
     return eligible_grants
 
 
-def fetch_opportunity_details(opportunity_id):
+def fetch_opportunity_details(opportunity_id: int):
     """Fetch opportunity details from Grants.gov API"""
     headers = {"Content-Type": "application/json"}
     response = requests.post(
@@ -71,7 +90,7 @@ def fetch_opportunity_details(opportunity_id):
     return response.json()["data"]
 
 
-def extract_opportunity_fields(opportunity_details):
+def extract_opportunity_fields(opportunity_details: dict):
     """Filter opportunity details to get the required fields based on the data model"""
     synopsis = opportunity_details.get("synopsis", {})
 
@@ -102,7 +121,6 @@ def extract_opportunity_fields(opportunity_details):
             grant_duration = None
 
     # Create DataFrame from dictionary (single row) - values must be in lists
-    import re
 
     print("funding amount:", funding_amount)
     converted_funding_amount = (
@@ -128,13 +146,13 @@ def extract_opportunity_fields(opportunity_details):
     return opportunity_details_df
 
 
-def step3_append_grant_details(grants_data):
+def step3_append_grant_details(grants_data: dict):
     """Append grant details to the grants data."""
     grants_df = pd.DataFrame()
     for grant in grants_data:
         opportunity_id = grant["id"]
         grant_details = fetch_opportunity_details(opportunity_id)
-        grant_details = extracrt_opportunity_fields(grant_details)
+        grant_details = extract_opportunity_fields(grant_details)
         grants_df = pd.concat([grants_df, grant_details], ignore_index=True)
     return grants_df
 
