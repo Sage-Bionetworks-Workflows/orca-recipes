@@ -67,7 +67,7 @@ def fetch_opportunity_details(opportunity_id):
     response = requests.post("https://api.grants.gov/v1/api/fetchOpportunity", headers=headers, json={"opportunityId": opportunity_id})
     return response.json()['data']
 
-def extracrt_opportunity_fields(opportunity_details):
+def extract_opportunity_fields(opportunity_details):
     """Filter opportunity details to get the required fields based on the data model"""
     synopsis = opportunity_details.get('synopsis', {})
     
