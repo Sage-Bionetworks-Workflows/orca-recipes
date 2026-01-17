@@ -1,7 +1,7 @@
 apache-airflow-providers-amazon ~=9.2.0
 apache-airflow-providers-celery >=3.10.0
 apache-airflow-providers-snowflake ~=6.0.0
-snowflake-connector-python ~=3.13.2
+snowflake-connector-python ~=3.15.0
 py-orca[all] == 1.5.2
 pandas <3.0.0
 slack-sdk >=3.27
@@ -9,3 +9,4 @@ pendulum~=3.0.0
 jsonata-python ~=0.5.3
 boto3 >=1.7.0,<2.0
 requests ~=2.31
+PyYAML ~=6.0.3
