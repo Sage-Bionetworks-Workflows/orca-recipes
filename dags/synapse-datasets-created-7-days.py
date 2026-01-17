@@ -170,7 +170,7 @@ def datasets_or_projects_created_7_days() -> None:
                 data_type = row.content_type
             else:
                 data_type = row.node_type
-            printed_message = f"{index+1}. <https://www.synapse.org/#!Synapse:syn{row.id}|*{row.name}*> (Type: {data_type}, Created on: {row.created_on}, Created by: <https://www.synapse.org/Profile:{row.created_by}/profile|{row.user_name_full_name}>, Public: {row.is_public})\n\n"
+            printed_message = f"{index+1}. <https://www.synapse.org/Synapse:syn{row.id}|*{row.name}*> (Type: {data_type}, Created on: {row.created_on}, Created by: <https://www.synapse.org/Profile:{row.created_by}/profile|{row.user_name_full_name}>, Public: {row.is_public})\n\n"
             if row.is_public:
                 public_ds_message += printed_message
             else:

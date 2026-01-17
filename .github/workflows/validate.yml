@@ -24,6 +24,10 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements-dev.txt
           
+      - name: Install airflow deps
+        run: |
+          pip install -r requirements-airflow.txt
+          
       - name: Run tests
         run: |
-          python -m pytest tests/ -v --tb=short
+          PYTHONPATH=src python -m pytest tests/ -v --tb=short
