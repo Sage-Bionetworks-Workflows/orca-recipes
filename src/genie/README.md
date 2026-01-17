@@ -6,6 +6,7 @@ you can have multiple records per patient-sample pairs per table for the Main Ge
 - Main genie will be the most automated in ingesting new releases. There will be one schema where all of the releases (public and consortium) are stacked into one table called `CLINICAL_SAMPLE`
 
 So a `CLINICAL_SAMPLE` table for main genie would look like:
+
 | SAMPLE_ID | PATIENT_ID | RELEASE | RELEASE_TYPE | MAJOR_VERSION | MINOR_VERSION | OTHER_COLUMNS | 
 |-----------|------------|---------|--------------|---------------|---------------|---------------|
 | GENIE-SAGE-1-1 | GENIE-SAGE-1 | 17_2_CONSORTIUM | CONSORTIUM | 17 | 2 | ... |
