@@ -10,7 +10,7 @@ from orca.services.synapse import SynapseHook
 from airflow.utils.db import provide_session
 from airflow.models import XCom
 
-PATIENT_SAMPLE_TRACKING_TABLE_SYNID = "syn71708167"
+PATIENT_SAMPLE_TRACKING_TABLE_SYNID = "syn72246564"
 
 dag_params = {
     "snowflake_genie_service_conn": Param(
