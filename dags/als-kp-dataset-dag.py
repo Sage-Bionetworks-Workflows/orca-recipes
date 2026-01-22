@@ -161,22 +161,24 @@ def transform_with_jsonata(
 
 
 
-def parse_dataset_code(dataset_code: str) -> Tuple[str, str, str]:
-    """Parse dataset code to extract ALS number, prefix, and date.
+def parse_dataset_code(dataset_code: str) -> Tuple[str, str]:
+    """Parse dataset code to extract ALS number and data model type.
 
     Args:
-        dataset_code: e.g., "src_als1003_2025_04_17", "fv1_als1001_2025_02_26"
+        dataset_code: e.g., "sdtm_als1003", "omop_als1001", "src_als1004"
 
     Returns:
-        Tuple of (als_number, prefix, date_str)
+        Tuple of (als_number, data_model_type)
+        e.g., ("als1003", "sdtm")
 
     Raises:
         ValueError: If dataset code format is invalid
     """
     import re
 
-    # Pattern to match: prefix_als{number}_{date}
-    pattern = r'^(src_|fm[12]_|fv[123]_)(als\d+)_(\d{4}_\d{2}_\d{2})$'
+    # Pattern to match: <type>_als{number}
+    # Where type is one of: src, omop, sdtm, send, adam
+    pattern = r'^(src|omop|sdtm|send|adam)_(als\d+)$'
     match = re.match(pattern, dataset_code)
 
     if not match:
@@ -184,15 +186,14 @@ def parse_dataset_code(dataset_code: str) -> Tuple[str, str, str]:
         if als_match:
             als_number = als_match.group(1)
             print(f"Warning: Dataset code '{dataset_code}' has an unexpected format. "
-                  f"Using '{als_number}' with default prefix and date.")
-            return als_number, 'unknown', '1970_01_01'
+                  f"Using '{als_number}' with 'unknown' data model type.")
+            return als_number, 'unknown'
         raise ValueError(f"Invalid dataset code format: {dataset_code}")
 
-    prefix = match.group(1).rstrip('_')  # Remove trailing underscore
+    data_model_type = match.group(1)
     als_number = match.group(2)
-    date_str = match.group(3)
 
-    return als_number, prefix, date_str
+    return als_number, data_model_type
 
 
 def extract_dataset_code_from_url(url: str) -> str:
@@ -209,36 +210,48 @@ def extract_dataset_code_from_url(url: str) -> str:
     return url.split("/")[-1]
 
 
-def get_version_priority(prefix: str) -> int:
-    """Get priority score for dataset prefix (higher = better).
+def clean_dataset_name(name: str) -> str:
+    """Clean dataset name to comply with Synapse naming requirements.
 
-    Priority: fv3 > fv2 > fv1 > fm2 > fm1 > src
+    Synapse dataset names may only contain: letters, numbers, spaces, underscores,
+    hyphens, periods, plus signs, apostrophes, and parentheses.
+
+    Args:
+        name: Original dataset name (e.g., "Study Name [SDTM]")
+
+    Returns:
+        Cleaned name (e.g., "Study Name (SDTM)")
     """
-    priority_map = {
-        'fv3': 6,
-        'fv2': 5,
-        'fv1': 4,
-        'fm2': 3,
-        'fm1': 2,
-        'src': 1
-    }
-    return priority_map.get(prefix, 0)
+    # Replace square brackets with parentheses (preserves information)
+    cleaned = name.replace('[', '(').replace(']', ')')
+
+    # Remove any other invalid characters (keeping only allowed ones)
+    # Allowed: letters, numbers, spaces, _, -, ., +, ', ()
+    import re
+    cleaned = re.sub(r'[^\w\s\-\.+\'()]', '', cleaned)
+
+    # Clean up any multiple spaces
+    cleaned = ' '.join(cleaned.split())
+
+    return cleaned
 
 
 def select_latest_versions(datasets: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """Select the latest and greatest version for each ALS dataset group.
+    """Select unique datasets by type_dataset_id combination.
+
+    Since each dataset code (e.g., sdtm_als1003) is now a stable pointer to the latest
+    maintained version, we simply deduplicate by type_dataset_id. Each ALS dataset may
+    exist in multiple data model formats (e.g., sdtm_als1003, omop_als1003), and we
+    keep all of them.
 
     Args:
         datasets: List of dataset items with 'url' field containing dataset codes
 
     Returns:
-        List of selected datasets (one per ALS number)
+        List of unique datasets (one per type_dataset_id combination)
     """
-    from collections import defaultdict
-    from datetime import datetime
-
-    # Group datasets by ALS number
-    als_groups = defaultdict(list)
+    # Track unique type_dataset_id combinations
+    seen_dataset_codes = {}
 
     for dataset in datasets:
         url = dataset.get("url", "")
@@ -249,36 +262,23 @@ def select_latest_versions(datasets: List[Dict[str, Any]]) -> List[Dict[str, Any
             continue
 
         try:
-            als_number, prefix, date_str = parse_dataset_code(dataset_code)
-            als_groups[als_number].append({
-                'dataset': dataset,
-                'prefix': prefix,
-                'date_str': date_str,
-                'priority': get_version_priority(prefix),
-                'dataset_code': dataset_code
-            })
+            als_number, data_model_type = parse_dataset_code(dataset_code)
+            type_dataset_id = f"{data_model_type}_{als_number}"
+
+            # Since C-Path only returns one record per type_dataset_id,
+            # we should not see duplicates. But if we do, keep the first one.
+            if type_dataset_id not in seen_dataset_codes:
+                seen_dataset_codes[type_dataset_id] = dataset
+                print(f"Included dataset: {dataset_code} ({data_model_type} format)")
+            else:
+                print(f"Warning: Duplicate type_dataset_id found: {type_dataset_id}, keeping first occurrence")
+
         except ValueError as e:
             print(f"Skipping dataset with invalid code: {dataset_code}, error: {e}")
             continue
 
-    selected_datasets = []
-
-    # For each ALS group, select the best version
-    for als_number, versions in als_groups.items():
-        # Sort by priority (desc), then by date (desc)
-        best_version = max(
-            versions,
-            key=lambda x: (
-                x["priority"],
-                datetime.strptime(x["date_str"], "%Y_%m_%d"),
-            ),
-        )
-
-        selected_datasets.append(best_version["dataset"])
-        print(
-            f"Selected {best_version['dataset_code']} for {als_number} "
-            f"(priority: {best_version['priority']}, date: {best_version['date_str']})"
-        )
+    selected_datasets = list(seen_dataset_codes.values())
+    print(f"Total unique datasets after deduplication: {len(selected_datasets)}")
 
     return selected_datasets
 
@@ -351,10 +351,13 @@ def select_latest_cpath_versions(
     return selected_items
 
 def get_existing_als_datasets(syn_hook, collection_id: str) -> Dict[str, Dict[str, Any]]:
-    """Get all existing ALS datasets from the collection, grouped by ALS number.
+    """Get all existing ALS datasets from the collection, grouped by type_dataset_id.
+
     Returns:
-        Dict mapping als_number -> dataset_info with fields:
-        - synapse_id, dataset_code, prefix, priority, date_str, sameAs
+        Dict mapping type_dataset_id -> dataset_info with fields:
+        - synapse_id, dataset_code, data_model_type, als_number, sameAs, url
+
+    Example keys: "sdtm_als1003", "omop_als1001", "src_als1004"
     """
     synapse_client = syn_hook.client
     query_str = f"SELECT * FROM {collection_id} WHERE publisher='Critical Path Institute'"
@@ -370,13 +373,14 @@ def get_existing_als_datasets(syn_hook, collection_id: str) -> Dict[str, Dict[st
             continue
 
         try:
-            als_number, prefix, date_str = parse_dataset_code(dataset_code)
-            existing_datasets[als_number] = {
+            als_number, data_model_type = parse_dataset_code(dataset_code)
+            type_dataset_id = f"{data_model_type}_{als_number}"
+
+            existing_datasets[type_dataset_id] = {
                 'synapse_id': row['id'],
                 'dataset_code': dataset_code,
-                'prefix': prefix,
-                'priority': get_version_priority(prefix),
-                'date_str': date_str,
+                'data_model_type': data_model_type,
+                'als_number': als_number,
                 'sameAs': row['sameAs'],
                 'url': row['url']
             }
@@ -390,12 +394,17 @@ def get_existing_als_datasets(syn_hook, collection_id: str) -> Dict[str, Dict[st
 def identify_dataset_actions(
     selected_items: List[Dict[str, Any]], **context
 ) -> Dict[str, List[Dict[str, Any]]]:
-    """Identify which datasets need new versions vs new creation."""
+    """Identify which datasets need updates vs new creation.
+
+    Since dataset codes are now stable pointers (e.g., sdtm_als1003), we simply
+    check if the type_dataset_id exists in the collection. If it exists, it's an
+    update (for annotation changes); if not, it's a new dataset.
+    """
 
     syn_hook = SynapseHook(context["params"]["synapse_conn_id"])
     collection_id = context["params"]["collection_id"]
 
-    # Get existing datasets
+    # Get existing datasets keyed by type_dataset_id
     existing_datasets = get_existing_als_datasets(syn_hook, collection_id)
 
     datasets_to_create = []
@@ -409,34 +418,21 @@ def identify_dataset_actions(
             continue
 
         try:
-            als_number, new_prefix, new_date_str = parse_dataset_code(dataset_code)
-            new_priority = get_version_priority(new_prefix)
-            new_date = datetime.strptime(new_date_str, '%Y_%m_%d')
+            als_number, data_model_type = parse_dataset_code(dataset_code)
+            type_dataset_id = f"{data_model_type}_{als_number}"
 
-            if als_number in existing_datasets:
-                existing = existing_datasets[als_number]
-                existing_date = datetime.strptime(existing['date_str'], '%Y_%m_%d')
-
-                # Prioritize priority (version), then date. Also update for same priority/date for annotation changes.
-                should_update = (
-                    new_priority > existing["priority"]
-                    or (new_priority == existing["priority"] and new_date >= existing_date)
-                )
-
-                if should_update:
-                    is_version_upgrade = (new_priority > existing["priority"]) or (new_date > existing_date)
-                    upgrade_type = "version" if is_version_upgrade else "annotation"
-                    datasets_to_update.append({
-                        'new_data': item,
-                        'existing_synapse_id': existing['synapse_id'],
-                        'upgrade_type': upgrade_type,
-                        'dataset_code': dataset_code
-                    })
-                    print(f"Will update {existing['dataset_code']} -> {dataset_code} ({upgrade_type})")
-                else:
-                    print(f"Skipping {dataset_code} (no improvement over {existing['dataset_code']})")
+            if type_dataset_id in existing_datasets:
+                # Dataset exists - mark for update (annotation changes)
+                existing = existing_datasets[type_dataset_id]
+                datasets_to_update.append({
+                    'new_data': item,
+                    'existing_synapse_id': existing['synapse_id'],
+                    'upgrade_type': 'annotation',  # Updates are now annotation-only
+                    'dataset_code': dataset_code
+                })
+                print(f"Will update {dataset_code} (annotation changes)")
             else:
-                # Completely new ALS number
+                # New type_dataset_id - create new dataset
                 datasets_to_create.append(item)
                 print(f"Will create new dataset: {dataset_code}")
 
@@ -465,7 +461,7 @@ def update_existing_datasets(
         existing_dataset = Dataset(id=existing_id).get()
 
         # Update with new information
-        existing_dataset.name = item["title"]
+        existing_dataset.name = clean_dataset_name(item["title"])
         existing_dataset.description = (
             item["description"][:1000]
             if len(item["description"]) > 1000
@@ -526,7 +522,7 @@ def create_new_datasets(
         # Create new dataset
         dataset = Dataset(
             parent_id=context["params"]["project_id"],
-            name=item["title"],
+            name=clean_dataset_name(item["title"]),
             annotations=dataset_annotations,
             description=dataset_description).store()
         dataset_collection.add_item(dataset)
