@@ -1,6 +1,6 @@
 from datetime import datetime
 import logging
-from typing import Iterable, Optional, List
+from typing import Dict, Iterable, Optional, List
 
 import pandas as pd
 import synapseclient
