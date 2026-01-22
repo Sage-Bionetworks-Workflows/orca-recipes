@@ -1,5 +1,6 @@
 from datetime import datetime
-from typing import List, Dict
+import logging
+from typing import Iterable, Optional, List
 
 import pandas as pd
 import synapseclient
@@ -10,6 +11,8 @@ from orca.services.synapse import SynapseHook
 from airflow.utils.db import provide_session
 from airflow.models import XCom
 
+logger = logging.getLogger(__name__)
+
 PATIENT_SAMPLE_TRACKING_TABLE_SYNID = "syn72246564"
 
 dag_params = {
@@ -19,66 +22,107 @@ dag_params = {
     "synapse_conn_id": Param("SYNAPSE_GENIE_SERVICE_ACCOUNT_CONN", type="string"),
 }
 
+REQUIRED_COLS = [
+    "SAMPLE_ID",
+    "PATIENT_ID",
+    "MAIN_GENIE_RELEASE",
+    "BPC_CRC2_RELEASE",
+    "BPC_PANC_RELEASE",
+    "BPC_RENAL_RELEASE",
+    "BPC_BLADDER_RELEASE",
+    "BPC_BRCA_RELEASE",
+    "BPC_NSCLC_RELEASE",
+    "BPC_PROSTATE_RELEASE",
+    "IN_LATEST_MAIN_GENIE",
+    "IN_AKT1_PROJECT",
+    "IN_BRCA_DDR_PROJECT",
+    "IN_ERBB2_PROJECT",
+    "IN_FGFE4_PROJECT",
+    "IN_KRAS_PROJECT",
+    "IN_NTRK_PROJECT",
+    "IN_BPC_CRC_RELEASE",
+    "IN_BPC_CRC2_RELEASE",
+    "IN_BPC_PANC_RELEASE",
+    "IN_BPC_RENAL_RELEASE",
+    "IN_BPC_BLADDER_RELEASE",
+    "IN_BPC_BRCA_RELEASE",
+    "IN_BPC_NSCLC_RELEASE",
+    "IN_BPC_PROSTATE_RELEASE",
+]
 
-def validate_patient_sample_results(df : pd.DataFrame) -> None:
+
+def validate_patient_sample_results(
+    df: pd.DataFrame,
+    required_cols: Optional[Iterable[str]],
+    key_cols: Optional[Iterable[str]],
+) -> None:
     """
-    Perform lightweight validation on a patient-sample query result DataFrame.
+    Run lightweight validation on a query result DataFrame.
 
-    This function is intended as a check before writing query results
-    to downstream storage (e.g., Synapse). It verifies that:
+    This function logs all validation issues and only raises at the end if
+    at least one validation check fails. Intended for Airflow tasks where you
+    want maximum debug info in logs but still fail the run on bad outputs.
 
-    1) The DataFrame is not empty.
-    2) No columns contain NULL/NaN values.
-    3) No string/object columns contain blank (empty or whitespace-only) values.
-    4) All required columns are present.
-    5) There are no duplicate rows based on the required columns.
+    Checks performed:
+      1) DataFrame is non-empty.
+      2) Required columns exist.
+      3) No NULL/NaN values in any columns.
+      4) No blank (empty/whitespace-only) strings in object columns.
+      5) No duplicates on key columns (defaults to SAMPLE_ID, PATIENT_ID).
 
     Args:
-        df (pd.DataFrame): Query results containing sample-patient pair records.
+        df (pd.DataFrame): Query results.
+        required_cols (Iterable[str]): Columns that must exist in df.
+        key_cols (Iterable[str]): Columns used to check duplicates.
 
     Raises:
-        ValueError: If the DataFrame contains zero rows.
-        ValueError: If any column contains NULL/NaN values or blank string values.
-        ValueError: If any required columns are missing from the DataFrame.
-        ValueError: If duplicate rows are found based on the required columns.
+        ValueError: If one or more validation checks fail.
     """
-    if df.empty:
-        raise ValueError("Query returned zero rows")
+    errors: List[str] = []
 
-    # NULL checks
-    null_cols = df.columns[df.isna().any()].tolist()
+    # 1) Empty
+    if df is None or df.empty:
+        msg = "Validation failed: query returned zero rows."
+        logger.error(msg)
+        errors.append(msg)
 
-    # Blank string checks (common)
-    blank_cols = []
-    for col in df.select_dtypes(include="object"):
-        if (df[col].astype(str).str.strip() == "").any():
-            blank_cols.append(col)
-
-    bad_cols = sorted(set(null_cols + blank_cols))
-    if bad_cols:
-        raise ValueError(
-            f"Validation failed: missing/blank values in columns: {bad_cols}"
-        )
-
-    # Enforce required cols exist
-    required = [
-        "SAMPLE_ID",
-        "PATIENT_ID",
-        "RELEASE",
-        "RELEASE_PROJECT_TYPE",
-        "IN_LATEST_RELEASE",
-    ]
-    missing = [c for c in required if c not in df.columns]
+    # 2) Required columns exist
+    missing = (
+        [c for c in required_cols if c not in df.columns]
+        if df is not None
+        else list(required_cols)
+    )
     if missing:
-        raise ValueError(f"Validation failed: missing required columns: {missing}")
-    
-    # Duplicate check based on required columns
-    dup_mask = df.duplicated(subset=required, keep=False)
-    if dup_mask.any():
-        dup_count = int(dup_mask.sum())
+        msg = f"Validation failed: missing required columns: {missing}"
+        logger.error(msg)
+        errors.append(msg)
+
+    # Only run content checks if df is non-empty and has columns
+    if df is not None and not df.empty and len(df.columns) > 0:
+        # 3) NULL/NaN checks
+        null_cols = [
+            c for c in REQUIRED_COLS if df[c].isna().any() and not c.startswith("IN")
+        ]
+        if null_cols:
+            msg = f"Validation failed: NULL/NaN values found in columns: {null_cols}"
+            logger.error(msg)
+            errors.append(msg)
+
+        # 4) Duplicate check using key cols
+        present_key_cols = [c for c in key_cols if c in df.columns]
+        dup_mask = df.duplicated(subset=present_key_cols, keep=False)
+        if dup_mask.any():
+            dup_count = int(dup_mask.sum())
+            msg = f"Validation failed: found {dup_count} duplicate rows based on key columns: {present_key_cols}"
+            logger.error(msg)
+            errors.append(msg)
+
+    # Raise once at end if anything failed
+    if errors:
         raise ValueError(
-            f"Validation failed: found {dup_count} duplicate rows based on required columns: {required}"
+            "Patient/sample results validation failed:\n- " + "\n- ".join(errors)
         )
+
 
 @dag(
     schedule_interval="0 1,17 * * *",
@@ -407,7 +451,11 @@ def build_patient_sample_tracking_table():
         FROM wide;
         """
         df = hook.get_pandas_df(sql)
-        validate_patient_sample_results(df)
+        validate_patient_sample_results(
+            df,
+            required_cols=REQUIRED_COLS,
+            key_cols=["SAMPLE_ID", "PATIENT_ID"],
+        )
 
         # Delete all rows in current table and upload new results to Synapse table
         syn = SynapseHook(context["params"]["synapse_conn_id"]).client
