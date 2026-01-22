@@ -23,10 +23,19 @@ You will need the following:
 2. Install the required Python packages:
 
    ```bash
-   pip install anthropic requests pandas synapseclient
+   pip install anthropic requests pandas synapseclient "snowflake-connector-python[pandas]"
    ```
 
 3. Confirm your Synapse credentials are configured (e.g., via `~/.synapseConfig`).
+4. Confirm you snowflake credentials are set up with environmental variables:
+
+   ```
+   export SNOW_USER=""
+   export SNOW_PRIVATE=""
+   export SNOW_PRIVATE_PWD=""
+   ```
+
+NOTE: this should be refactored to use snowflake utility functions within this repo.
 
 ### How to Run
 

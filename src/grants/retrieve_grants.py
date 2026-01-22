@@ -165,25 +165,25 @@ def step4_upload_to_snowflake(
     TODO: Replace this with Rixing's snowflake_utils module when that's merged
     TODO: Update credentials to use a service user account instead of personal user account
     """
-    conn = snowflake.connector.connect(
-        account="mqzfhld-vp00034",
-        user="jenny.medina@sagebase.org",
-        password=os.getenv("SNOWFLAKE_PAT"),
-        role="DATA_ENGINEER",
-        warehouse="COMPUTE_XSMALL",
-        database="SAGE",
-        schema="DPE",
-    )
     # conn = snowflake.connector.connect(
-    #     account='mqzfhld-vp00034',
-    #     user=os.getenv("SNOW_USER"),
-    #     private_key_file=os.getenv("SNOW_PRIVATE"),
-    #     private_key_file_pwd=os.getenv("SNOW_PRIVATE_PWD"),
+    #     account="mqzfhld-vp00034",
+    #     user="jenny.medina@sagebase.org",
+    #     password=os.getenv("SNOWFLAKE_PAT"),
+    #     role="DATA_ENGINEER",
+    #     warehouse="COMPUTE_XSMALL",
     #     database="SAGE",
     #     schema="DPE",
-    #     role="DATA_ENGINEER",
-    #     warehouse="compute_xsmall",
     # )
+    conn = snowflake.connector.connect(
+        account='mqzfhld-vp00034',
+        user=os.getenv("SNOW_USER"),
+        private_key_file=os.getenv("SNOW_PRIVATE"),
+        private_key_file_pwd=os.getenv("SNOW_PRIVATE_PWD"),
+        database="SAGE",
+        schema="GRANTS",
+        role="DATA_ENGINEER",
+        warehouse="compute_xsmall",
+    )
     write_pandas(
         conn,
         table_df,
