@@ -144,6 +144,12 @@ def build_patient_sample_tracking_table():
 
         Returns (List[Dict]): queried results
         """
+        
+        syn_hook = SynapseHook(context["params"]["synapse_conn_id"])
+        # test a random file
+        syn_hook.client.get("syn51611938")
+        logger.error("OK Synapse connection")
+    
         conn_id = context["params"]["snowflake_genie_service_conn"]
         hook = SnowflakeHook(snowflake_conn_id=conn_id)
 
