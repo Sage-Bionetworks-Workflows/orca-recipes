@@ -103,7 +103,7 @@ def validate_patient_sample_results(
         null_cols = [
             c
             for c in REQUIRED_COLS
-            if df[c].isna().any() and c.endswith("RELEASE") and not c.startswith("IN")
+            if df[c].isna().any() and (not c.endswith("RELEASE") or c.startswith("IN"))
         ]
         if null_cols:
             msg = f"Validation failed: NULL/NaN values found in columns: {null_cols}"
