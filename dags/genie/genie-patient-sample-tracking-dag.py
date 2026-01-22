@@ -19,7 +19,7 @@ dag_params = {
     "snowflake_genie_service_conn": Param(
         "SNOWFLAKE_GENIE_SERVICE_RAW_CONN", type="string"
     ),
-    "synapse_conn_id": Param("SYNAPSE_GENIE_SERVICE_ACCOUNT_CONN", type="string"),
+    "synapse_conn_id": Param("SYNAPSE_GENIE_RUNNER_SERVICE_ACCOUNT_CONN", type="string"),
 }
 
 REQUIRED_COLS = [
@@ -144,12 +144,6 @@ def build_patient_sample_tracking_table():
 
         Returns (List[Dict]): queried results
         """
-        
-        syn_hook = SynapseHook(context["params"]["synapse_conn_id"])
-        # test a random file
-        syn_hook.client.get("syn51611938")
-        logger.error("OK Synapse connection")
-    
         conn_id = context["params"]["snowflake_genie_service_conn"]
         hook = SnowflakeHook(snowflake_conn_id=conn_id)
 
