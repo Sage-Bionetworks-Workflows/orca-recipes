@@ -460,12 +460,12 @@ def build_patient_sample_tracking_table():
         )
 
         # Delete all rows in current table and upload new results to Synapse table
-        syn = SynapseHook(context["params"]["synapse_conn_id"]).client
-        results = syn.tableQuery(
+        syn = SynapseHook(context["params"]["synapse_conn_id"])
+        results = syn.client.tableQuery(
             f"SELECT * FROM {PATIENT_SAMPLE_TRACKING_TABLE_SYNID}"
         ).asDataFrame()
-        syn.delete(synapseclient.Table(PATIENT_SAMPLE_TRACKING_TABLE_SYNID, results))
-        syn.store(
+        syn.client.delete(synapseclient.Table(PATIENT_SAMPLE_TRACKING_TABLE_SYNID, results))
+        syn.client.store(
             synapseclient.Table(schema=PATIENT_SAMPLE_TRACKING_TABLE_SYNID, values=df)
         )
 
