@@ -415,10 +415,10 @@ def build_patient_sample_tracking_table():
             SAMPLE_ID,
             PATIENT_ID,
 
-            /* latest main-genie membership */
+            /* whether the patient-sample pair is in the latest main genie release */
             MAX(IFF(RELEASE_PROJECT_TYPE = 'MAIN_GENIE' AND IN_LATEST_RELEASE = 'Yes', TRUE, FALSE)) AS IN_LATEST_MAIN_GENIE,
 
-            /* one column per SP project */
+            /* whether the patient-sample pair is in the SP project (note: one column per SP project) */
             MAX(IFF(RELEASE_PROJECT_TYPE = 'SP_AKT1', TRUE, FALSE))      AS IN_AKT1_PROJECT,
             MAX(IFF(RELEASE_PROJECT_TYPE = 'SP_BRCA_DDR', TRUE, FALSE))  AS IN_BRCA_DDR_PROJECT,
             MAX(IFF(RELEASE_PROJECT_TYPE = 'SP_ERBB2', TRUE, FALSE))     AS IN_ERBB2_PROJECT,
@@ -426,7 +426,7 @@ def build_patient_sample_tracking_table():
             MAX(IFF(RELEASE_PROJECT_TYPE = 'SP_KRAS', TRUE, FALSE))      AS IN_KRAS_PROJECT,
             MAX(IFF(RELEASE_PROJECT_TYPE = 'SP_NTRK', TRUE, FALSE))      AS IN_NTRK_PROJECT,
 
-            /* *per-cohort* BPC flags (IN_CRC_BPC_RELEASE, IN_BLADDER_BPC_RELEASE, ...), */
+            /* whether the patient-sample pair is in the BPC cohort release (note: one column per BPC cohort), */
             MAX(IFF(RELEASE_PROJECT_TYPE = 'BPC_CRC', TRUE, FALSE))     AS IN_BPC_CRC_RELEASE,
             MAX(IFF(RELEASE_PROJECT_TYPE = 'BPC_CRC2', TRUE, FALSE)) AS IN_BPC_CRC2_RELEASE,
             MAX(IFF(RELEASE_PROJECT_TYPE = 'BPC_PANC', TRUE, FALSE)) AS IN_BPC_PANC_RELEASE,
@@ -436,7 +436,8 @@ def build_patient_sample_tracking_table():
             MAX(IFF(RELEASE_PROJECT_TYPE = 'BPC_NSCLC', TRUE, FALSE)) AS IN_BPC_NSCLC_RELEASE,
             MAX(IFF(RELEASE_PROJECT_TYPE = 'BPC_PROSTATE', TRUE, FALSE)) AS IN_BPC_PROSTATE_RELEASE,
 
-            /* release-name columns */
+            /* release-name columns: contains the release name e.g: 17.3-consortium for that release/project */
+            /* This can be NULL if that sample-patient pair is not present in that project / release */
             MAX(IFF(RELEASE_PROJECT_TYPE = 'MAIN_GENIE', RELEASE_NAME, NULL)) AS MAIN_GENIE_RELEASE,
             MAX(IFF(RELEASE_PROJECT_TYPE = 'BPC_CRC22', RELEASE_NAME, NULL)) AS BPC_CRC2_RELEASE,
             MAX(IFF(RELEASE_PROJECT_TYPE = 'BPC_PANC', RELEASE_NAME, NULL)) AS BPC_PANC_RELEASE,
@@ -466,7 +467,7 @@ def build_patient_sample_tracking_table():
         ).asDataFrame()
         syn.delete(synapseclient.Table(PATIENT_SAMPLE_TRACKING_TABLE_SYNID, to_delete))
         
-        # batch upload for memory
+        # batch upload for memory reduction
         CHUNK = 50000
         for start in range(0, len(df), CHUNK):
             logger.info(f"Uploading batch {start} ...")
