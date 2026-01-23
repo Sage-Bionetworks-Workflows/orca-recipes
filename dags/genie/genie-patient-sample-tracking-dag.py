@@ -460,14 +460,22 @@ def build_patient_sample_tracking_table():
         )
 
         # Delete all rows in current table and upload new results to Synapse table
-        syn = SynapseHook(context["params"]["synapse_conn_id"])
-        results = syn.client.tableQuery(
-            f"SELECT * FROM {PATIENT_SAMPLE_TRACKING_TABLE_SYNID}"
+        syn = SynapseHook(context["params"]["synapse_conn_id"]).client
+        to_delete = syn.tableQuery(
+            f"SELECT ROW_ID, ROW_VERSION FROM {PATIENT_SAMPLE_TRACKING_TABLE_SYNID}"
         ).asDataFrame()
-        syn.client.delete(synapseclient.Table(PATIENT_SAMPLE_TRACKING_TABLE_SYNID, results))
-        syn.client.store(
-            synapseclient.Table(schema=PATIENT_SAMPLE_TRACKING_TABLE_SYNID, values=df)
-        )
+        syn.delete(synapseclient.Table(PATIENT_SAMPLE_TRACKING_TABLE_SYNID, to_delete))
+        
+        # batch upload for memory
+        CHUNK = 50000
+        for start in range(0, len(df), CHUNK):
+            logger.info(f"Uploading batch {start} ...")
+            syn.store(
+                synapseclient.Table(
+                    schema=PATIENT_SAMPLE_TRACKING_TABLE_SYNID,
+                    values=df.iloc[start:start+CHUNK],
+                )
+            )
 
     @provide_session
     def cleanup_xcom(session=None):
