@@ -126,7 +126,7 @@ def validate_patient_sample_results(
 
 
 @dag(
-    schedule_interval="0 1,17 * * *",
+    schedule_interval="0 1 28 * *", # run on the 28th of each month
     start_date=datetime(2025, 1, 1),
     catchup=False,
     default_args={"retries": 1},
