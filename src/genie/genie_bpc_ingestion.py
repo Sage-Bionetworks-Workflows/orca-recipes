@@ -63,9 +63,18 @@ def parse_bpc_version(cohort: str, version: str) -> ReleaseInfo:
     """Parses the ReleaseInfo information from the release folder
     where the release folder is expected to be of the format:
     XX.X-consortium or XX.X-public
-
-    E.g:
-     2.1-consortium
+    
+    Input example: 
+       cohort: BRCA
+       version: 2.1-consortium
+        
+    Output example:
+        ReleaseInfo(
+            cohort = "BRCA",
+            release = "2_1_consortium",
+            release_type = "consortium",
+            major_version = 2,
+            minor_version = 1)
 
     Args:
         cohort (str): Name of the cohort
@@ -75,7 +84,7 @@ def parse_bpc_version(cohort: str, version: str) -> ReleaseInfo:
         ValueError: raises error when version format doesn't follow the above expected
 
     Returns:
-        ReleaseInfo: object containing the release info details
+        ReleaseInfo: object containing the release info details (see example above)
     """
     m = re.match(r"^(public|consortium)_(\d+)_(\d+)$", version, flags=re.IGNORECASE)
     if not m:
@@ -229,8 +238,19 @@ def upload_clinical_tables_stacked(
     clinical_synid: str,
     overwrite_partition: bool,
 ) -> None:
-    """Retrieves clinical files from Synaspe and then
+    """Retrieves clinical files from Synapse and then
        uploads the data to tables on Snowflake, skipping excluded prefixes.
+       
+       This function also removes the cohort column (because certain BPC files
+       have cohort column present already and we don't want to duplicate) if present 
+       and re-creates it to standardize this column across all BPC release files.
+       
+       If overwrite_partition is True, it will delete
+        the partition of data for that release-cohort and then append the new
+        partition of data to the Snowflake table
+       If overwrite_partition is False and the table partition
+        for that subset of data (by release and cohort) already exists, the code will
+        skip and move onto the next file
 
     Args:
         conn (snowflake.connector.SnowflakeConnection): snowflake connection
@@ -365,6 +385,13 @@ def push_bpc_release_to_snowflake(
     """Contains the lower level functions to extract the
         BPC release metadata and then read/upload the
         clinical files and the cbioportal files
+        
+        NOTE: Excluding cbioportal files ingestion for now 
+        due to the scope of the patient-sample tracking work
+        as we can get clinical patient
+        AND sample ids from both clinical cancer panel test file
+        and cbioportal's clinical sample file. In the future 
+        if we need to ingest more data, we can include this.
 
     Args:
         syn (synapseclient.Synapse): synapse client connection
@@ -387,15 +414,6 @@ def push_bpc_release_to_snowflake(
         database=database,
         release_info=release_info,
         clinical_synid=clinical_synid,
-        overwrite_partition=overwrite_partition,
-    )
-
-    upload_cbioportal_tables_stacked(
-        conn=conn,
-        syn=syn,
-        database=database,
-        release_info=release_info,
-        cbioportal_synid=cbioportal_synid,
         overwrite_partition=overwrite_partition,
     )
 

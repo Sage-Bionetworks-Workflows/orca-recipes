@@ -537,7 +537,7 @@ def top_public_synapse_projects_from_snowflake() -> None:
                 size_string = f"< {0:.{SIZE_ROUNDING}f}5 {BYTE_STRING}"
 
             message += (
-                f"{index+1}. <https://www.synapse.org/#!Synapse:{row.project}|{row.name}> - "
+                f"{index+1}. <https://www.synapse.org/Synapse:{row.project}|{row.name}> - "
                 f"{row.downloads_per_project} downloads, {row.number_of_unique_users_downloaded} "
                 f"unique users, {size_string} egressed"
             )

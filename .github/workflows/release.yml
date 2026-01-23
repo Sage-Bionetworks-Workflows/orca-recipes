@@ -27,7 +27,7 @@ jobs:
           
       - name: Run tests
         run: |
-          python -m pytest tests/ -v --tb=short
+          PYTHONPATH=src python -m pytest tests/ -v --tb=short
   
   ghcr-publish:
     needs: test
