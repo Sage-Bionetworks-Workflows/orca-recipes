@@ -66,9 +66,8 @@ def validate_patient_sample_results(
     Checks performed:
       1) DataFrame is non-empty.
       2) Required columns exist.
-      3) No NULL/NaN values in any columns.
-      4) No blank (empty/whitespace-only) strings in object columns.
-      5) No duplicates on key columns (defaults to SAMPLE_ID, PATIENT_ID).
+      3) No NULL/NaN values in the non-release name columns.
+      4) No duplicates on key columns (defaults to SAMPLE_ID, PATIENT_ID).
 
     Args:
         df (pd.DataFrame): Query results.
