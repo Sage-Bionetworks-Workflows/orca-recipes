@@ -14,6 +14,61 @@ from synapseclient.models import File
 syn = Synapse()
 syn.login(silent=True)
 
+KEYWORDS = [
+    "systems biology",
+    "computational biology",
+    "bioinformatics",
+    "data science",
+    "translational research",
+    "precision medicine",
+    "open science",
+    "data sharing",
+    "FAIR data principles",
+    "challenges",
+    "neurodegenerative diseases",
+    "ALS (Amyotrophic Lateral Sclerosis)",
+    "Parkinson's disease",
+    "Alzheimer's disease",
+    "cancer",
+    "rare diseases",
+    "data commons",
+    "data portal",
+    "knowledge portal",
+    "cloud computing",
+    "machine learning",
+    "artificial intelligence",
+    "multi-omics",
+    "genomics",
+    "proteomics",
+    "single-cell analysis",
+    "data harmonization",
+    "multi-institutional collaboration",
+    "research platforms",
+    "data repositories",
+    "scientific workflows",
+    "research software",
+    "API development",
+    "data governance",
+    "reproducibility",
+    "data standards",
+    "interoperability",
+    "research equity",
+    "patient engagement",
+    "clinical data integration",
+    "Common Fund programs",
+    "BRAIN Initiative",
+    "Cancer Moonshot",
+    "All of Us Research Program",
+    "ARPA-H",
+    "Bridge2AI",
+    "HEAL Initiative",
+    "RADx",
+    "data sharing policy compliance",
+    "data coordinating center (DCC)",
+    "biomedical data repository",
+    "secondary data analysis",
+    "data reuse",
+]
 
 def step1_a_retrieve_federal_grants(api_url: str, request_body: dict) -> dict:
     """Retrieve federal grant records from a remote API endpoint.
@@ -203,23 +258,10 @@ def all_federal_grants(api_url, request_body):
 
 if __name__ == "__main__":
     limit_rows = 10
-    kwds = [
-        "alzheimer",
-        "arthritis",
-        "autoimmune",
-        "cancer",
-        "nf",
-        "neurofibromatosis",
-        "longevity",
-        "elite",
-        "data coordinating center",
-        "data management",
-        "open science",
-    ]
     api_url = "https://api.grants.gov/v1/api/search2"
 
     all_fedral_grants = pd.DataFrame()
-    for keyword in kwds:
+    for keyword in KEYWORDS:
         print("Searching for grants with keyword:", keyword)
         body = {
             "rows": limit_rows,
@@ -232,7 +274,7 @@ if __name__ == "__main__":
         }
         grants = all_federal_grants(api_url, body)
         all_fedral_grants = pd.concat([all_fedral_grants, grants], ignore_index=True)
-
+    all_fedral_grants.drop_duplicates(subset=["id"], inplace=True)
     non_federal_grants = step1_b_retrieve_non_federal_grants_from_synapse()
     all_grants = pd.concat([all_fedral_grants, non_federal_grants])
     print("ALL GRANTS:", len(all_grants))
