@@ -9,7 +9,10 @@ The functions in these scripts are meant to be imported into custom modules (out
 
 ### Connecting to Snowflake locally in your code
 
-1. Setup your environment variables either by executing the following commands directly in your terminal. Alternatively, you can create a hidden bash script (e.g: `.env.sh`) with the below and then execute it:
+1. See pre-requsites for [logging in as a Snowflake Service User](https://sagebionetworks.jira.com/wiki/spaces/DPE/pages/3431628815/Snowflake+Service+Accounts#Pre-requisites) as that is how you can setup your local credentials in the following step.
+
+
+2. Setup your environment variables either by executing the following commands directly in your terminal. Alternatively, you can create a hidden bash script (e.g: `.env.sh`) with the below and then execute it:
 
     ```
     export SNOWFLAKE_USER=
@@ -19,6 +22,8 @@ The functions in these scripts are meant to be imported into custom modules (out
     export SNOWFLAKE_PRIVATE_KEY_FILE=
     export SNOWFLAKE_PRIVATE_KEY_FILE_PWD=
     ```
+
+The values of these can be pulled in a similar manner as the confluence documentation in the previous step.
 
 2. Add the following code in your python script(s):
 
