@@ -1,5 +1,7 @@
 # Genie Ingestion scripts
 
+## Overview
+
 Ingestion scripts for loading in the GENIE database in Snowflake. Note that
 you can have multiple records per patient-sample pairs per table for the Main Genie and BPC ingestions as we ingest multiple releases per table.
 
@@ -38,16 +40,50 @@ A `CANCER_PANEL_TEST` table for BPC will look like the above for main genie but 
 | GENIE-SAGE-1-2 | GENIE-SAGE-1 | SP_PROJECT_NAME | ... |
 | GENIE-SAGE-1-1 | GENIE-SAGE-1 | SP_PROJECT_NAME | ... |
 
-## How to Use
+## Getting Started 
 
-You will need to be a developer on the genie projects and have access to all of the expected access in order to run anything in this module. See [GENIE - Getting Started](https://sagebionetworks.jira.com/wiki/spaces/DPE/pages/2552037385/Genie) for more information.
+Please note that everything here is for how to setup your environment and run the code locally.
 
-- Modify the [genie_bpc_releases yaml](src/genie/genie_bpc_releases.yaml) when a new BPC release has been QC'ed and approved for release for a given cohort. Create a PR to push the changes.
-- Modify the [genie_sp_releases yaml](src/genie/genie_sp_releases.yaml) when a new SP release has been QC'ed and approved for release. Create a PR to push the changes.
+### Setting up your system
 
-Main GENIE releases are automatically ingested.
+- You will need to be a developer on the genie projects and have access to all of the expected access in order to run anything in this module. See [GENIE - Getting Started](https://sagebionetworks.jira.com/wiki/spaces/DPE/pages/2552037385/Genie) for more information.
 
-## Example Usage
+- See the [snowflake_utils running locally docs](/src/snowflake_utils/README.md#connecting-to-snowflake-locally) in your code for how to setup your local system's snowflake credentials
+
+- Create a python environment using a env manager of your choice (e.g: `python -m venv <virtual environment name>`) and install the requirements into it
+
+    ```bash
+    pip install -r requirements-airflow.txt
+    pip install -r requirements-dev.txt
+    ```
+
+### How to Use
+
+1. Modify the [genie_bpc_releases yaml](src/genie/genie_bpc_releases.yaml) when a new BPC release has been QC'ed and approved for release for a given cohort. Format should be:
+
+    ```yaml
+    - cohort: [sponsored project abbreviation]
+    patient_id_key: [name of the patient id column]
+    sample_id_key: [name of the sample id column]
+    table_name: [name to call the snowflake table]
+    file_synid: [synapse_id to the sponsored project clinical file]
+    ```
+
+1. Modify the [genie_sp_releases yaml](src/genie/genie_sp_releases.yaml) when a new SP release has been QC'ed and approved for release. Format should be:
+
+    ```yaml
+    - cohort: [cohort_name]
+    version: public_02_2
+    clinical_synid: [synapse_id to the folder with the clinical release files]
+    cbioportal_synid: [synapse_id to the folder with the cbioportal release files]
+    ```
+
+1. Main GENIE releases are automatically ingested. Add/exclude entire releases in main genie by adding to `RELEASES_TO_SKIP` in [main_genie_ingestion.py](/src/genie/main_genie_ingestion.py)
+
+1. Create a PR to push the changes.
+
+
+### Example Usage
 
 Run ingestion to Snowflake to the genie dev database. for Genie Sponsored Projects (SP). This will also overwrite any pre-existing data in the tables in the GENIE_DEV database and create new tables for new data when applicable.
 
