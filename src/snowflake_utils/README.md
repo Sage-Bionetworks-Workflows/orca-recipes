@@ -23,9 +23,9 @@ The functions in these scripts are meant to be imported into custom modules (out
     export SNOWFLAKE_PRIVATE_KEY_FILE_PWD=
     ```
 
-The values of these can be pulled in a similar manner as the confluence documentation in the previous step.
+    The values of the above can be pulled in a similar manner as the confluence documentation in the previous step.
 
-2. Add the following code in your python script(s):
+3. Add the following code in your python script(s):
 
     ```python
     from snowflake_utils import get_connection
@@ -41,7 +41,7 @@ The values of these can be pulled in a similar manner as the confluence document
 
    OR
 
-2. If you only plan on executing code using the Snowflake connection cursor object:
+4. If you only plan on executing code using the Snowflake connection cursor object:
 
     ```python
     from snowflake_utils import get_cursor
