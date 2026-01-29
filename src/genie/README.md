@@ -58,6 +58,12 @@ Please note that everything here is for how to setup your environment and run th
 
 ### How to Use
 
+
+#### Adding / updating releases
+
+The scripts will need to have new releases added or current releases modified manually via PR whenever there are new releases that need to be ingested into the Genie Snowflake tables or current releases that need to be modified or removed.
+
+
 1. Modify the [genie_bpc_releases yaml](src/genie/genie_bpc_releases.yaml) when a new BPC release has been QC'ed and approved for release for a given cohort. Format should be:
 
     ```yaml
@@ -82,9 +88,9 @@ Please note that everything here is for how to setup your environment and run th
 1. Create a PR to push the changes.
 
 
-### Example Usage
+#### Example Usage
 
-Run ingestion to Snowflake to the genie dev database. for Genie Sponsored Projects (SP). This will also overwrite any pre-existing data in the tables in the GENIE_DEV database and create new tables for new data when applicable.
+Run ingestion to Snowflake to the genie dev database for Genie Sponsored Projects (SP). The `overwrite` will overwrite any pre-existing data in the tables in the GENIE_DEV database and create new tables for new data when applicable.
 
 ```bash
 python3 src/genie/genie_sp_ingesion.py --database GENIE_DEV --overwrite
@@ -96,7 +102,7 @@ Run ingestion to Snowflake for Genie Biopharma Collaborative (BPC) Project to th
 python3 src/genie/genie_bpc_ingestion.py --database GENIE_DEV 
 ```
 
-Run ingestion to Snowflake for Main Genie Project to the genie dev database.
+Run ingestion to Snowflake for Main Genie Project to the genie dev database. The `overwrite-partition` will overwrite any pre-existing release data in the tables in the GENIE_DEV database and create new tables for new data when applicable.
 
 ```bash
 python3 src/genie/main_genie_ingestion.py --database GENIE_DEV --overwrite-partition
