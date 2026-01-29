@@ -1,18 +1,11 @@
 ARG BASE_IMAGE=apache/airflow:2.10.5-python3.10
 FROM $BASE_IMAGE
 
-# remove yarn repo and then add it back with refreshed key
-RUN set -eux; \
-    rm -f /etc/apt/sources.list.d/yarn.list /etc/apt/sources.list.d/yarn*.list || true; \
-    apt-get update; \
-    apt-get install -y --no-install-recommends ca-certificates curl gnupg; \
-    install -d -m 0755 /etc/apt/keyrings; \
-    curl -fsSL https://dl.yarnpkg.com/debian/pubkey.gpg \
-      | gpg --dearmor -o /etc/apt/keyrings/yarn-archive-keyring.gpg; \
-    echo "deb [signed-by=/etc/apt/keyrings/yarn-archive-keyring.gpg] https://dl.yarnpkg.com/debian stable main" \
-      > /etc/apt/sources.list.d/yarn.list; \
-    apt-get update; \
-    rm -rf /var/lib/apt/lists/*
+# Disable Yarn apt repo if present (it can break apt-get update when its signing key rotates/expires)
+RUN if [ -f /etc/apt/sources.list.d/yarn.list ]; then \
+      sed -i 's/^deb /# deb /' /etc/apt/sources.list.d/yarn.list; \
+    fi \
+ && rm -f /usr/share/keyrings/yarn* /etc/apt/keyrings/yarn* 2>/dev/null || true
 
 RUN pip install --upgrade pip
 
