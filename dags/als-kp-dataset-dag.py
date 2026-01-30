@@ -196,6 +196,22 @@ def parse_dataset_code(dataset_code: str) -> Tuple[str, str]:
     return als_number, data_model_type
 
 
+def extract_type_dataset_code(dataset_code: str) -> str:
+    """Extract just the type_dataset portion from a full dataset code.
+
+    Args:
+        dataset_code: Full code like "sdtm_als1003_2025_04_17"
+
+    Returns:
+        Type dataset code like "sdtm_als1003"
+    """
+    try:
+        als_number, data_model_type = parse_dataset_code(dataset_code)
+        return f"{data_model_type}_{als_number}"
+    except ValueError:
+        return "unknown"
+
+
 def extract_dataset_code_from_url(url: str) -> str:
     """Extract dataset code from C-Path URL.
 
@@ -479,7 +495,13 @@ def update_existing_datasets(
             "species": ", ".join(item["species"]) if isinstance(item["species"], list) else item["species"],
             "sameAs": item["sameAs"],
             "url": item["url"],
-            "contributor": item["contributor"] if isinstance(item["contributor"], list) else [item["collection"]]
+            "contributor": item["contributor"] if isinstance(item["contributor"], list) else [item["collection"]],
+            # NEW ANNOTATIONS:
+            "curationLevel": item.get("curationLevel", "Unknown"),
+            "studyType": ", ".join(item.get("studyType", ["Unknown"])) if isinstance(item.get("studyType"), list) else item.get("studyType", "Unknown"),
+            "disease": ", ".join(item.get("disease", ["Unknown"])) if isinstance(item.get("disease"), list) else item.get("disease", "Unknown"),
+            "diseaseSubtype": ", ".join(item.get("diseaseSubtype", ["Unknown"])) if isinstance(item.get("diseaseSubtype"), list) else item.get("diseaseSubtype", "Unknown"),
+            "dataset_code": extract_type_dataset_code(item.get("dataset_code", ""))
         })
 
         # Store as new version
@@ -517,7 +539,13 @@ def create_new_datasets(
             "sameAs": [item["sameAs"]],
             "url": [item["url"]],
             "title": item["title"],
-            "contributor": item["contributor"] if isinstance(item["contributor"], list) else [item["collection"]]
+            "contributor": item["contributor"] if isinstance(item["contributor"], list) else [item["collection"]],
+            # NEW ANNOTATIONS:
+            "curationLevel": [item.get("curationLevel", "Unknown")],
+            "studyType": item.get("studyType", ["Unknown"]) if isinstance(item.get("studyType"), list) else [item.get("studyType", "Unknown")],
+            "disease": item.get("disease", ["Unknown"]) if isinstance(item.get("disease"), list) else [item.get("disease", "Unknown")],
+            "diseaseSubtype": item.get("diseaseSubtype", ["Unknown"]) if isinstance(item.get("diseaseSubtype"), list) else [item.get("diseaseSubtype", "Unknown")],
+            "dataset_code": [extract_type_dataset_code(item.get("dataset_code", ""))]
         }
         # Create new dataset
         dataset = Dataset(
@@ -593,7 +621,13 @@ def refresh_collection_annotations(
             "sameAs": dataset.annotations.get("sameAs", ""),
             "source": dataset.annotations.get("source", "Critical Path Institute"),
             "url": dataset.annotations.get("url", ""),
-            "contributor": dataset.annotations.get("contributor")
+            "contributor": dataset.annotations.get("contributor"),
+            # NEW ANNOTATIONS:
+            "curationLevel": dataset.annotations.get("curationLevel", ""),
+            "studyType": dataset.annotations.get("studyType", ""),
+            "disease": dataset.annotations.get("disease", ""),
+            "diseaseSubtype": dataset.annotations.get("diseaseSubtype", ""),
+            "dataset_code": dataset.annotations.get("dataset_code", "")
         }
 
         updated_rows.append(updated_row)
