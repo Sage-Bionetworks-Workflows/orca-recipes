@@ -106,9 +106,15 @@ We can see which ports our Airflow services expose under `PORTS`:
 docker compose ps
 ```
 
-Airflow’s webserver listens on port 8080 by default. You can connect in your browser at http://localhost:8080. The username and password will be "airflow".
+Airflow’s webserver listens on port 8080 by default via the localhost url: http://localhost:8080. You can access the local server in two ways:
+
+- If you run the service locally on your machine, open the localhost url link in your browser.
+- If you run the service inside a GitHub Codespace, localhost:8080 refers to the Codespace virtual machine, not your computer. In that case, use the forwarded port URL (e.g., `https://<codespace-name>-8080.app.github.dev`) or Ctrl/Cmd-click the localhost url link inside the Codespace to automatically use the correct forwarded URL
+
+The username and password will be "airflow".
 
 If you encounter the `nginx bad gateway` errors when navigating to the forwarded port, just wait and refresh a couple of times. Airflow takes a few minutes to become available.
+
 
 ### Local DAGs
 
