@@ -438,7 +438,7 @@ def build_patient_sample_tracking_table():
             /* release-name columns: contains the release name e.g: 17.3-consortium for that release/project */
             /* This can be NULL if that sample-patient pair is not present in that project / release */
             MAX(IFF(RELEASE_PROJECT_TYPE = 'MAIN_GENIE', RELEASE_NAME, NULL)) AS MAIN_GENIE_RELEASE,
-            MAX(IFF(RELEASE_PROJECT_TYPE = 'BPC_CRC22', RELEASE_NAME, NULL)) AS BPC_CRC2_RELEASE,
+            MAX(IFF(RELEASE_PROJECT_TYPE = 'BPC_CRC2', RELEASE_NAME, NULL)) AS BPC_CRC2_RELEASE,
             MAX(IFF(RELEASE_PROJECT_TYPE = 'BPC_PANC', RELEASE_NAME, NULL)) AS BPC_PANC_RELEASE,
             MAX(IFF(RELEASE_PROJECT_TYPE = 'BPC_RENAL', RELEASE_NAME, NULL)) AS BPC_RENAL_RELEASE,
             MAX(IFF(RELEASE_PROJECT_TYPE = 'BPC_BLADDER', RELEASE_NAME, NULL)) AS BPC_BLADDER_RELEASE,
