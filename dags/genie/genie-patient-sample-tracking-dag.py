@@ -133,7 +133,16 @@ def validate_patient_sample_results(
     tags=["snowflake", "genie"],
     params=dag_params,
 )
-def build_patient_sample_tracking_table():
+def build_patient_sample_tracking_table() -> None:
+    """
+    Main DAG function. The DAG builds the patient sample
+    tracking table through the following steps:
+    
+    1. Queries snowflake for the data to go into the Patient Sample Tracking Table
+    2. Validates the query
+    2. Deletes current Patient Sample Tracking Table data
+    3. Uploads the new Patient Sample Tracking Table data
+    """
 
     @task(task_id="query_validate_and_upload")
     def query_validate_and_upload(**context) -> List[Dict]:
@@ -477,14 +486,7 @@ def build_patient_sample_tracking_table():
                 )
             )
 
-    @provide_session
-    def cleanup_xcom(session=None):
-        session.query(XCom).filter(
-            XCom.dag_id == "build_patient_sample_tracking_table"
-        ).delete()
-
     query_validate_and_upload()
-    cleanup_xcom()
 
 
 build_patient_sample_tracking_table()
