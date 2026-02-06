@@ -13,13 +13,12 @@ from airflow.models import XCom
 
 logger = logging.getLogger(__name__)
 
-PATIENT_SAMPLE_TRACKING_TABLE_SYNID = "syn72246564"
-
 dag_params = {
     "snowflake_genie_service_conn": Param(
         "SNOWFLAKE_GENIE_SERVICE_RAW_CONN", type="string"
     ),
     "synapse_conn_id": Param("SYNAPSE_GENIE_RUNNER_SERVICE_ACCOUNT_CONN", type="string"),
+    "patient_sample_tracking_table_synid": Param("syn73623767", type="string"),
 }
 
 REQUIRED_COLS = [
@@ -145,12 +144,10 @@ def build_patient_sample_tracking_table() -> None:
     """
 
     @task(task_id="query_validate_and_upload")
-    def query_validate_and_upload(**context) -> List[Dict]:
+    def query_validate_and_upload(**context) -> None:
         """Runs a snowflake query that queries the main genie, BPC and SP
         snowflake clincial tables for the required patient-sample tracking
         fields and values for further validation and then upload
-
-        Returns (List[Dict]): queried results
         """
         conn_id = context["params"]["snowflake_genie_service_conn"]
         hook = SnowflakeHook(snowflake_conn_id=conn_id)
@@ -167,7 +164,7 @@ def build_patient_sample_tracking_table() -> None:
             COHORT,
             MAJOR_VERSION,
             MINOR_VERSION
-        FROM GENIE_DEV.BPC_CLINICAL_FILES.CANCER_PANEL_TEST_LEVEL
+        FROM GENIE.BPC_CLINICAL_FILES.CANCER_PANEL_TEST_LEVEL
         WHERE COHORT IS NOT NULL
             AND MAJOR_VERSION IS NOT NULL
             AND MINOR_VERSION IS NOT NULL
@@ -183,7 +180,7 @@ def build_patient_sample_tracking_table() -> None:
         ---------------------------------------------------------------------------*/
         main_latest_version AS (
         SELECT MAJOR_VERSION, MINOR_VERSION
-        FROM GENIE_DEV.MAIN.CLINICAL_SAMPLE
+        FROM GENIE.MAIN.CLINICAL_SAMPLE
         WHERE MAJOR_VERSION IS NOT NULL
             AND MINOR_VERSION IS NOT NULL
         QUALIFY ROW_NUMBER() OVER (ORDER BY MAJOR_VERSION DESC, MINOR_VERSION DESC) = 1
@@ -202,7 +199,7 @@ def build_patient_sample_tracking_table() -> None:
             m.RELEASE as RELEASE_NAME,
             'MAIN_GENIE' AS RELEASE_PROJECT_TYPE,
             'Yes' AS IN_LATEST_RELEASE
-        FROM GENIE_DEV.MAIN.CLINICAL_SAMPLE m
+        FROM GENIE.MAIN.CLINICAL_SAMPLE m
         JOIN main_latest_version v
             ON m.MAJOR_VERSION = v.MAJOR_VERSION
         AND m.MINOR_VERSION = v.MINOR_VERSION
@@ -241,7 +238,7 @@ def build_patient_sample_tracking_table() -> None:
             )
             THEN 'Yes' ELSE 'No'
             END AS IN_LATEST_RELEASE
-        FROM GENIE_DEV.BPC_CLINICAL_FILES.CANCER_PANEL_TEST_LEVEL b
+        FROM GENIE.BPC_CLINICAL_FILES.CANCER_PANEL_TEST_LEVEL b
         JOIN bpc_latest_per_cohort v
             ON b.COHORT = v.COHORT
         AND b.MAJOR_VERSION = v.MAJOR_VERSION
@@ -277,7 +274,7 @@ def build_patient_sample_tracking_table() -> None:
             )
             THEN 'Yes' ELSE 'No'
             END AS IN_LATEST_RELEASE
-        FROM GENIE_DEV.AKT1.CBIOPORTAL_CLINICAL_SAMPLE s
+        FROM GENIE.AKT1.CBIOPORTAL_CLINICAL_SAMPLE s
         WHERE s.SAMPLE_ID IS NOT NULL
             AND s.PATIENT_ID IS NOT NULL
         ),
@@ -299,7 +296,7 @@ def build_patient_sample_tracking_table() -> None:
             )
             THEN 'Yes' ELSE 'No'
             END AS IN_LATEST_RELEASE
-        FROM GENIE_DEV.BRCA_DDR.REDCAP_EXPORT s
+        FROM GENIE.BRCA_DDR.REDCAP_EXPORT s
         WHERE s.SAMPLE_ID IS NOT NULL
             AND s.PATIENT_ID IS NOT NULL
         ),
@@ -321,7 +318,7 @@ def build_patient_sample_tracking_table() -> None:
             )
             THEN 'Yes' ELSE 'No'
             END AS IN_LATEST_RELEASE
-        FROM GENIE_DEV.ERBB2.CBIOPORTAL_CLINICAL_SAMPLE s
+        FROM GENIE.ERBB2.CBIOPORTAL_CLINICAL_SAMPLE s
         WHERE s.SAMPLE_ID IS NOT NULL
             AND s.PATIENT_ID IS NOT NULL
         ),
@@ -343,7 +340,7 @@ def build_patient_sample_tracking_table() -> None:
             )
             THEN 'Yes' ELSE 'No'
             END AS IN_LATEST_RELEASE
-        FROM GENIE_DEV.FGFE4.CBIOPORTAL_CLINICAL_SAMPLE s
+        FROM GENIE.FGFE4.CBIOPORTAL_CLINICAL_SAMPLE s
         WHERE s.SAMPLE_ID IS NOT NULL
             AND s.PATIENT_ID IS NOT NULL
         ),
@@ -366,7 +363,7 @@ def build_patient_sample_tracking_table() -> None:
             )
             THEN 'Yes' ELSE 'No'
             END AS IN_LATEST_RELEASE
-        FROM GENIE_DEV.KRAS.REDCAP_EXPORT s
+        FROM GENIE.KRAS.REDCAP_EXPORT s
         WHERE s.SAMPLE_ID IS NOT NULL
             AND s.GENIE_PATIENT_ID IS NOT NULL
         ),
@@ -389,7 +386,7 @@ def build_patient_sample_tracking_table() -> None:
             )
             THEN 'Yes' ELSE 'No'
             END AS IN_LATEST_RELEASE
-        FROM GENIE_DEV.NTRK.CANCER_PANEL_TEST s
+        FROM GENIE.NTRK.CANCER_PANEL_TEST s
         WHERE s.CPT_GENIE_SAMPLE_ID IS NOT NULL
             AND s.RECORD_ID IS NOT NULL
         ),
@@ -470,10 +467,11 @@ def build_patient_sample_tracking_table() -> None:
 
         # Delete all rows in current table and upload new results to Synapse table
         syn = SynapseHook(context["params"]["synapse_conn_id"]).client
+        table_id = context["params"]["patient_sample_tracking_table_synid"]
         to_delete = syn.tableQuery(
-            f"SELECT ROW_ID, ROW_VERSION FROM {PATIENT_SAMPLE_TRACKING_TABLE_SYNID}"
+            f'SELECT ROW_ID, ROW_VERSION FROM { table_id}'
         ).asDataFrame()
-        syn.delete(synapseclient.Table(PATIENT_SAMPLE_TRACKING_TABLE_SYNID, to_delete))
+        syn.delete(synapseclient.Table(table_id, to_delete))
         
         # batch upload for memory reduction
         CHUNK = 50000
@@ -481,7 +479,7 @@ def build_patient_sample_tracking_table() -> None:
             logger.info(f"Uploading batch {start} ...")
             syn.store(
                 synapseclient.Table(
-                    schema=PATIENT_SAMPLE_TRACKING_TABLE_SYNID,
+                    schema=table_id,
                     values=df.iloc[start:start+CHUNK],
                 )
             )
