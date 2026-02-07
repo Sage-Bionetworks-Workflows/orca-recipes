@@ -414,7 +414,12 @@ def build_patient_sample_tracking_table() -> None:
                 UNION ALL
             SELECT * FROM sp_ntrk_pairs
         ),
-        /* 2) Wide flags: MAIN latest + one flag per project type */
+         /* -------------------------------------------------------------------------
+        8) WIDE_CTE_BLOCK
+            - generates the inclusion flag columns and/or release name columns
+            for the relevant releases
+        ---------------------------------------------------------------------------*/
+        /* Wide flags: MAIN latest + one flag per project type */
         wide AS (
         SELECT
             SAMPLE_ID,
