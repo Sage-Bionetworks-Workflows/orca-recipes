@@ -43,6 +43,7 @@ The output Synapse table can be used for:
 Most GENIE Airflow DAGs follow the same high-level pattern:
 
 ```mermaid
+graph TD;
   A[Query Snowflake ingestion tables] --> B{Validate query result}
   B -->|Pass| C[Upload to Synapse table]
   B -->|Fail| D[Log + alert / fail task]
