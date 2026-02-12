@@ -85,7 +85,7 @@ When a new SP dataset becomes available, you must:
 
 - Add a new `sp_<project>_pairs` Common Table Expression(CTE) block. See existing SP projects (e.g `KRAS SP project`) as an example.
 - Add a new inclusion flag column `IN_<SP_PROJECT_NAME>_RELEASE` (e.g: `IN_AKT1_PROJECT`) in the wide CTE
-- Add the corresponding required column to `REQUIRED_COLS`
+- Add the new column `IN_<SP_PROJECT_NAME>_RELEASE` to `REQUIRED_COLS`
 
 Example additions:
 
@@ -98,7 +98,7 @@ When a new BPC cohort release becomes available, you must:
 
 - Add a new inclusion flag column `IN_BPC_<COHORT>_RELEASE` (e.g: `IN_BPC_CRC_RELEASE`) in the wide CTE block
 - Add a new `<COHORT>_RELEASE` name column in the wide CTE block
-- Add both to `REQUIRED_COLS`
+- Add both new columns to `REQUIRED_COLS`
 
 #### Scenario 3: Snowflake Schema Changes
 
