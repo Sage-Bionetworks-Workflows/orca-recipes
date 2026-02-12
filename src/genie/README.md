@@ -134,4 +134,4 @@ python3 src/genie/main_genie_ingestion.py --database GENIE_DEV --overwrite-parti
 
 #### Incompatibility between input data and Snowflake Table
 
-Sometimes the input data's schema changes (because in genie, there often can be multiple data model changes), the snowflake table schemas may need to be updated with the additional column(s) to be able to ingest the data
+Sometimes the input data's schema changes (because in genie, there often can be multiple data model changes), the snowflake table schemas may need to be updated with the additional column(s) to be able to ingest the data. Please refer to [Snowflake Table SQL scripts](https://github.com/Sage-Bionetworks-Workflows/nf-genie/blob/main/scripts/table_schemas/README.md#snowflake-table-sql-scripts) for handling on that front.
