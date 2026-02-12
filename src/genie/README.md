@@ -1,55 +1,118 @@
 # Genie Ingestion scripts
 
-Ingestion scripts for loading in the GENIE database in Snowflake. Note that
+## Overview
+
+The module contains ingestion scripts for loading in the GENIE database in Snowflake.
+
+- [Overview](#overview)
+  - [Data Source](#data-source)
+  - [Output](#output)
+- [Getting Started](#getting-started)
+  - [Setting up your system](#setting-up-your-system)
+  - [When These Scripts Needs Modification](#when-these-scripts-needs-modification)
+    - [Scenario 1: A New Sponsored Project (SP) Is Added](#scenario-1-a-new-sponsored-project-sp-is-added)
+    - [Scenario 2: A New BPC Cohort Release Is Added](#scenario-2-a-new-bpc-cohort-release-is-added)
+    - [Scenario 3: A New Main Genie Release Is Added](#scenario-3-a-new-main-genie-release-is-added)
+    - [Scenario 4: New fileformats](#scenario-4-new-fileformats)
+  - [Example Usage](#example-usage)
+
+### Data Source
+
+Currently we only support ingesting clinical sample data from each of the data sources: Main genie, BPC and SP projects. You can view the data sources in the relevant project's `_releases.yaml` file.
+
+### Output
+
+Snowflake clinical tables in the GENIE database. Note that
 you can have multiple records per patient-sample pairs per table for the Main Genie and BPC ingestions as we ingest multiple releases per table.
 
 - Main genie will be the most automated in ingesting new releases. There will be one schema where all of the releases (public and consortium) are stacked into one table called `CLINICAL_SAMPLE`
 
-So a `CLINICAL_SAMPLE` table for main genie would look like:
+    So a `CLINICAL_SAMPLE` table for main genie would look like:
 
-| SAMPLE_ID | PATIENT_ID | RELEASE | RELEASE_TYPE | MAJOR_VERSION | MINOR_VERSION | OTHER_COLUMNS | 
-|-----------|------------|---------|--------------|---------------|---------------|---------------|
-| GENIE-SAGE-1-1 | GENIE-SAGE-1 | 17_2_CONSORTIUM | CONSORTIUM | 17 | 2 | ... |
-| GENIE-SAGE-1-2 | GENIE-SAGE-1 | 17_2_CONSORTIUM | CONSORTIUM | 17 | 2 | ... |
-| GENIE-SAGE-1-1 | GENIE-SAGE-1 | 17_0_PUBLIC | PUBLIC | 17 | 0 | ... |
-| GENIE-SAGE-1-2 | GENIE-SAGE-1 | 17_0_PUBLIC | PUBLIC | 17 | 0 | ... |
-| GENIE-SAGE-1-1 | GENIE-SAGE-1 | 17_3_CONSORTIUM | CONSORTIUM | 17 | 3 | ... |
-
+    | SAMPLE_ID | PATIENT_ID | RELEASE | RELEASE_TYPE | MAJOR_VERSION | MINOR_VERSION | OTHER_COLUMNS | 
+    |-----------|------------|---------|--------------|---------------|---------------|---------------|
+    | GENIE-SAGE-1-1 | GENIE-SAGE-1 | 17_2_CONSORTIUM | CONSORTIUM | 17 | 2 | ... |
+    | GENIE-SAGE-1-2 | GENIE-SAGE-1 | 17_2_CONSORTIUM | CONSORTIUM | 17 | 2 | ... |
+    | GENIE-SAGE-1-1 | GENIE-SAGE-1 | 17_0_PUBLIC | PUBLIC | 17 | 0 | ... |
+    | GENIE-SAGE-1-2 | GENIE-SAGE-1 | 17_0_PUBLIC | PUBLIC | 17 | 0 | ... |
+    | GENIE-SAGE-1-1 | GENIE-SAGE-1 | 17_3_CONSORTIUM | CONSORTIUM | 17 | 3 | ... |
 
 - Genie BPC will need a config update to ingest releases. This is due to the structure of the BPC projects
-A `CANCER_PANEL_TEST` table for BPC will look like the above for main genie but with an addition `COHORT` column:
+    A `CANCER_PANEL_TEST` table for BPC will look like the above for main genie but with an addition `COHORT` column:
 
-| SAMPLE_ID | PATIENT_ID | COHORT | RELEASE | RELEASE_TYPE | MAJOR_VERSION | MINOR_VERSION | OTHER_COLUMNS | 
-|-----------|------------|---------|---------|--------------|---------------|---------------|---------------|
-| GENIE-SAGE-1-1 | GENIE-SAGE-1 | BRCA | 2_2_CONSORTIUM | CONSORTIUM | 2 | 2 | ... |
-| GENIE-SAGE-1-2 | GENIE-SAGE-1 | BRCA | 2_2_CONSORTIUM | CONSORTIUM | 2 | 2 | ... |
-| GENIE-SAGE-1-1 | GENIE-SAGE-1 | BRCA | 2_0_PUBLIC | PUBLIC | 2 | 0 | ... |
-| GENIE-SAGE-1-2 | GENIE-SAGE-1 | BRCA | 2_0_PUBLIC | PUBLIC | 2 | 0 | ... |
-| GENIE-SAGE-1-1 | GENIE-SAGE-1 | BRCA | 2_1_CONSORTIUM | CONSORTIUM | 2 | 1 | ... |
- 
+    | SAMPLE_ID | PATIENT_ID | COHORT | RELEASE | RELEASE_TYPE | MAJOR_VERSION | MINOR_VERSION | OTHER_COLUMNS | 
+    |-----------|------------|---------|---------|--------------|---------------|---------------|---------------|
+    | GENIE-SAGE-1-1 | GENIE-SAGE-1 | BRCA | 2_2_CONSORTIUM | CONSORTIUM | 2 | 2 | ... |
+    | GENIE-SAGE-1-2 | GENIE-SAGE-1 | BRCA | 2_2_CONSORTIUM | CONSORTIUM | 2 | 2 | ... |
+    | GENIE-SAGE-1-1 | GENIE-SAGE-1 | BRCA | 2_0_PUBLIC | PUBLIC | 2 | 0 | ... |
+    | GENIE-SAGE-1-2 | GENIE-SAGE-1 | BRCA | 2_0_PUBLIC | PUBLIC | 2 | 0 | ... |
+    | GENIE-SAGE-1-1 | GENIE-SAGE-1 | BRCA | 2_1_CONSORTIUM | CONSORTIUM | 2 | 1 | ... |
 
 - Genie SP will only ingest the clinical files as the rest as not as relevant. There will be one schema-table per SP project because each project's clinical table fields are too vastly differently for them to be stacked into the same table. As a result, downstream our query to put all of the tables together will be more complicated.
 
-| SAMPLE_ID | PATIENT_ID | RELEASE | OTHER_COLUMNS | 
-|-----------|------------|---------|---------|
-| GENIE-SAGE-1-1 | GENIE-SAGE-1 | SP_PROJECT_NAME | ... |
-| GENIE-SAGE-1-2 | GENIE-SAGE-1 | SP_PROJECT_NAME | ... |
-| GENIE-SAGE-1-1 | GENIE-SAGE-1 | SP_PROJECT_NAME | ... |
-| GENIE-SAGE-1-2 | GENIE-SAGE-1 | SP_PROJECT_NAME | ... |
-| GENIE-SAGE-1-1 | GENIE-SAGE-1 | SP_PROJECT_NAME | ... |
+    | SAMPLE_ID | PATIENT_ID | RELEASE | OTHER_COLUMNS | 
+    |-----------|------------|---------|---------|
+    | GENIE-SAGE-1-1 | GENIE-SAGE-1 | SP_PROJECT_NAME | ... |
+    | GENIE-SAGE-1-2 | GENIE-SAGE-1 | SP_PROJECT_NAME | ... |
+    | GENIE-SAGE-1-1 | GENIE-SAGE-1 | SP_PROJECT_NAME | ... |
+    | GENIE-SAGE-1-2 | GENIE-SAGE-1 | SP_PROJECT_NAME | ... |
+    | GENIE-SAGE-1-1 | GENIE-SAGE-1 | SP_PROJECT_NAME | ... |
 
-## How to Use
+## Getting Started
 
-You will need to be a developer on the genie projects and have access to all of the expected access in order to run anything in this module. See [GENIE - Getting Started](https://sagebionetworks.jira.com/wiki/spaces/DPE/pages/2552037385/Genie) for more information.
+Please note that everything here is for how to setup your environment and run the code locally.
 
-- Modify the [genie_bpc_releases yaml](src/genie/genie_bpc_releases.yaml) when a new BPC release has been QC'ed and approved for release for a given cohort. Create a PR to push the changes.
-- Modify the [genie_sp_releases yaml](src/genie/genie_sp_releases.yaml) when a new SP release has been QC'ed and approved for release. Create a PR to push the changes.
+### Setting up your system
 
-Main GENIE releases are automatically ingested.
+- You will need to be a developer on the genie projects and have access to all of the expected access in order to run anything in this module. See [GENIE - Getting Started](https://sagebionetworks.jira.com/wiki/spaces/DPE/pages/2552037385/Genie) for more information.
 
-## Example Usage
+- See the [snowflake_utils running locally docs](/src/snowflake_utils/README.md#connecting-to-snowflake-locally) in your code for how to setup your local system's snowflake credentials
 
-Run ingestion to Snowflake to the genie dev database. for Genie Sponsored Projects (SP). This will also overwrite any pre-existing data in the tables in the GENIE_DEV database and create new tables for new data when applicable.
+- Create a python environment using a env manager of your choice (e.g: `python -m venv <virtual environment name>`) and install the requirements into it
+
+    ```bash
+    pip install -r requirements-airflow.txt
+    pip install -r requirements-dev.txt
+    ```
+
+### When These Scripts Needs Modification
+
+The scripts will need to have new releases added or current releases modified manually via PR whenever there are new releases that need to be ingested into the Genie Snowflake tables or current releases that need to be modified or removed.
+
+#### Scenario 1: A New Sponsored Project (SP) Is Added
+
+Modify the [genie_sp_releases yaml](src/genie/genie_sp_releases.yaml) when a new SP release has been QC'ed and approved for release. Format should be:
+
+```yaml
+- cohort: [cohort_name]
+version: public_02_2
+clinical_synid: [synapse_id to the folder with the clinical release files]
+cbioportal_synid: [synapse_id to the folder with the cbioportal release files]
+```
+
+#### Scenario 2: A New BPC Cohort Release Is Added
+
+Modify the [genie_bpc_releases yaml](src/genie/genie_bpc_releases.yaml) when a new BPC release has been QC'ed and approved for release for a given cohort. Format should be:
+
+```yaml
+- cohort: [sponsored project abbreviation]
+patient_id_key: [name of the patient id column]
+sample_id_key: [name of the sample id column]
+table_name: [name to call the snowflake table]
+file_synid: [synapse_id to the sponsored project clinical file]
+```
+
+#### Scenario 3: A New Main Genie Release Is Added
+
+Main GENIE releases are automatically ingested. Add/exclude entire releases in main genie by adding to `RELEASES_TO_SKIP` in [main_genie_ingestion.py](/src/genie/main_genie_ingestion.py)
+
+#### Scenario 4: New fileformats
+
+Add to main genie's `FILEFORMATS` and/or BPC's `CBIOPORTAL_FILES` and `CLINICAL_FILES` whenever you want to ingest new fileformat tables.
+
+#### Example Usage
+
+Run ingestion to Snowflake to the genie dev database for Genie Sponsored Projects (SP). The `overwrite` will overwrite any pre-existing data in the tables in the GENIE_DEV database and create new tables for new data when applicable.
 
 ```bash
 python3 src/genie/genie_sp_ingesion.py --database GENIE_DEV --overwrite
@@ -61,8 +124,14 @@ Run ingestion to Snowflake for Genie Biopharma Collaborative (BPC) Project to th
 python3 src/genie/genie_bpc_ingestion.py --database GENIE_DEV 
 ```
 
-Run ingestion to Snowflake for Main Genie Project to the genie dev database.
+Run ingestion to Snowflake for Main Genie Project to the genie dev database. The `overwrite-partition` will overwrite any pre-existing release data in the tables in the GENIE_DEV database and create new tables for new data when applicable.
 
 ```bash
 python3 src/genie/main_genie_ingestion.py --database GENIE_DEV --overwrite-partition
 ```
+
+### Troubleshooting
+
+#### Incompatibility between input data and Snowflake Table
+
+Sometimes the input data's schema changes (because in genie, there often can be multiple data model changes), the snowflake table schemas may need to be updated with the additional column(s) to be able to ingest the data. Please refer to [Snowflake Table SQL scripts](https://github.com/Sage-Bionetworks-Workflows/nf-genie/blob/main/scripts/table_schemas/README.md#snowflake-table-sql-scripts) for handling on that front.
