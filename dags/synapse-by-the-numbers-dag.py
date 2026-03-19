@@ -101,7 +101,7 @@ def synapse_by_the_numbers_past_month() -> None:
                 SELECT
                     COUNT(*) AS DOWNLOADS_LAST_MONTH
                 FROM (
-                    SELECT DISTINCT 
+                    SELECT 
                         user_id,
                         file_handle_id,
                         record_date
