@@ -93,7 +93,7 @@ def synapse_by_the_numbers_past_month() -> None:
                 SELECT 
                     COUNT(DISTINCT user_id) AS DISTINCT_USER_COUNT
                 FROM 
-                    synapse_data_warehouse.synapse.processedaccess
+                    synapse_data_warehouse.synapse_event.access_event
                 WHERE
                     DATE_TRUNC('MONTH', RECORD_DATE) = DATE_TRUNC('MONTH', DATE('{context["params"]["month_to_run"]}'))
             ),
@@ -106,7 +106,7 @@ def synapse_by_the_numbers_past_month() -> None:
                         file_handle_id,
                         record_date
                     FROM
-                        synapse_data_warehouse.synapse.filedownload
+                        synapse_data_warehouse.synapse_event.objectdownload_event
                     WHERE
                         DATE_TRUNC('MONTH', RECORD_DATE) = DATE_TRUNC('MONTH', DATE('{context["params"]["month_to_run"]}'))
                 )

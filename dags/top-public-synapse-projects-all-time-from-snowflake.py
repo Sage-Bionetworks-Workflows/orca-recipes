@@ -83,7 +83,7 @@ def top_public_synapse_projects_all_time_from_snowflake() -> None:
                     filedownload.project_id,
                     file_latest.content_size
                 FROM
-                    synapse_data_warehouse.synapse.filedownload
+                    synapse_data_warehouse.synapse_event.objectdownload_event
                 INNER JOIN
                     PUBLIC_PROJECTS
                 ON

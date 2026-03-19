@@ -181,7 +181,7 @@ def top_public_synapse_projects_from_snowflake() -> None:
                     filedownload.project_id,
                     file_latest.content_size
                 FROM
-                    synapse_data_warehouse.synapse.filedownload
+                    synapse_data_warehouse.synapse_event.objectdownload_event
                 INNER JOIN
                     PUBLIC_PROJECTS
                 ON
@@ -368,7 +368,7 @@ def top_public_synapse_projects_from_snowflake() -> None:
                     filedownload.project_id,
                     file_latest.content_size
                 FROM
-                    synapse_data_warehouse.synapse.filedownload
+                    synapse_data_warehouse.synapse_event.objectdownload_event
                 INNER JOIN PROJECT_INFO
                 ON filedownload.project_id = PROJECT_INFO.project_id
                 INNER JOIN synapse_data_warehouse.synapse.file_latest
