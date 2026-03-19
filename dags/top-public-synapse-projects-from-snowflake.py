@@ -173,7 +173,7 @@ def top_public_synapse_projects_from_snowflake() -> None:
                     node_latest.project_id != %(homepage_id)s
             ),
             DEDUP_FILEHANDLE AS (
-                SELECT DISTINCT
+                SELECT
                     PUBLIC_PROJECTS.name,
                     filedownload.user_id,
                     filedownload.file_handle_id AS FD_FILE_HANDLE_ID,
@@ -359,7 +359,7 @@ def top_public_synapse_projects_from_snowflake() -> None:
             
             DEDUP_FILEHANDLE AS (
                 -- Get download information for files in projects from file views
-                SELECT DISTINCT
+                SELECT
                     PROJECT_INFO.group_name,
                     PROJECT_INFO.file_view_id,
                     filedownload.user_id,
