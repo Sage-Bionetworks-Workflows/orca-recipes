@@ -77,7 +77,7 @@ def top_public_synapse_projects_30_days_from_snowflake() -> None:
                     node_latest.project_id != {SYNAPSE_HOMEPAGE_PROJECT_ID}
             ),
             DEDUP_FILEHANDLE AS (
-                SELECT DISTINCT
+                SELECT
                     PUBLIC_PROJECTS.name,
                     filedownload.user_id,
                     filedownload.file_handle_id AS FD_FILE_HANDLE_ID,
