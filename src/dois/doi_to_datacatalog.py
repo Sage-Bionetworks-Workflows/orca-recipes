@@ -4,7 +4,7 @@ import argparse
 import json
 import re
 from datetime import datetime, timezone
-from typing import Dict, NamedTuple
+from typing import Dict, Iterable
 
 
 import pandas as pd
@@ -239,11 +239,68 @@ order by unique_downloaders_12_months desc nulls last
         )
         dois_df = cs.fetch_pandas_all()
         dois_df.drop_duplicates(inplace=True)
+    return dois_df
+
+
+
+def transform_synapse_dois(dois_df: pd.DataFrame) -> pd.DataFrame:
+    """Parse JSON string columns in the Synapse DOI DataFrame.
+
+    Args:
+        dois_df: DataFrame from extract_public_dois.
+
+    Returns:
+        DataFrame with ANNOTATIONS parsed from JSON strings to dicts.
+    """
+    dois_df = dois_df.copy()
     dois_df["ANNOTATIONS"] = dois_df["ANNOTATIONS"].apply(
         lambda x: json.loads(x) if isinstance(x, str) else x
     )
     return dois_df
 
+
+def transform_datacite_dois(datacite_dois: Iterable[Dict]) -> pd.DataFrame:
+    """Flatten raw DataCite API objects into a DataFrame.
+
+    Args:
+        datacite_dois: Iterable of raw DataCite DOI objects.
+
+    Returns:
+        DataFrame of DOI attributes, deduplicated on 'doi'.
+    """
+    df = pd.DataFrame([i["attributes"] for i in datacite_dois])
+    df.drop_duplicates("doi", inplace=True)
+    return df
+
+
+def merge_doi_metadata(
+    synapse_df: pd.DataFrame,
+    datacite_df: pd.DataFrame,
+) -> pd.DataFrame:
+    """Merge Synapse DOI data with DataCite metadata.
+
+    Args:
+        synapse_df: Transformed Synapse DOI DataFrame.
+        datacite_df: Transformed DataCite DataFrame.
+
+    Returns:
+        Merged DataFrame with DataCite fields prefixed with 'datacite_'.
+    """
+    merged = synapse_df.merge(
+        datacite_df[["doi", "creators", "descriptions", "contributors", "subjects", "titles"]],
+        left_on="DOI_ID",
+        right_on="doi",
+        how="left",
+    )
+    merged.rename(columns={
+        "creators": "datacite_creators",
+        "descriptions": "datacite_descriptions",
+        "contributors": "datacite_contributors",
+        "subjects": "datacite_subjects",
+        "titles": "datacite_titles",
+    }, inplace=True)
+    merged.drop(columns=["doi"], inplace=True)
+    return merged
 
 
 def main(conn=None) -> None:
@@ -265,32 +322,17 @@ def main(conn=None) -> None:
     try:
         logger.info("Connected to Snowflake.")
 
-        dois_df = extract_public_dois(
-            conn=conn_obj
-        )
-        dois_df.to_csv("public_dois.csv", index=False)
+        dois_df = extract_public_dois(conn=conn_obj)
         logger.info("Extract Public DOIs completed successfully.")
 
-        dois = fetch_doi_prefix(prefixes=["10.7303"], state="findable")
+        datacite_dois = fetch_doi_prefix(prefixes=["10.7303"], state="findable")
         logger.info("Fetched all Public datacite data")
 
-        # doi_metadata_df = pd.DataFrame(list(dois))
-        doi_metadata_df = pd.DataFrame([i['attributes'] for i in dois])
-        doi_metadata_df.drop_duplicates('doi', inplace=True)
-        doi_metadata_df.to_csv("doi_metadata.csv", index=False)
-    
-        dois_df = dois_df.merge(doi_metadata_df[['doi', 'creators', 'descriptions', 'contributors', 'subjects', 'titles']], left_on="DOI_ID", right_on="doi", how="left")
-        dois_df.rename(columns={
-            "creators": "datacite_creators",
-            "descriptions": "datacite_descriptions",
-            "contributors": "datacite_contributors",
-            "subjects": "datacite_subjects",
-            "titles": "datacite_titles",
-        }, inplace=True)
-        dois_df.drop(columns=["doi"], inplace=True)
+        synapse_df = transform_synapse_dois(dois_df)
+        datacite_df = transform_datacite_dois(datacite_dois)
+        dois_df = merge_doi_metadata(synapse_df, datacite_df)
         dois_df.to_csv("dois_with_metadata.tsv", index=False, sep="\t")
         logger.info("Store data initially")
-        # data catalog staging table
         table = Table(
             id="syn74257215",
         )
@@ -302,18 +344,4 @@ def main(conn=None) -> None:
 
 
 if __name__ == "__main__":
-    # parser = argparse.ArgumentParser(description="Run MAIN GENIE ingestion pipeline.")
-    # parser.add_argument(
-    #     "--database",
-    #     type=str,
-    #     default="GENIE_DEV",
-    #     choices=["GENIE", "GENIE_DEV"],
-    #     help="Database to run ingestion commands in.",
-    # )
-    # parser.add_argument(
-    #     "--overwrite-partition",
-    #     action="store_true",
-    #     help="Delete existing rows for a RELEASE before appending (recommended for idempotent reruns).",
-    # )
-    # args = parser.parse_args()
     main()
