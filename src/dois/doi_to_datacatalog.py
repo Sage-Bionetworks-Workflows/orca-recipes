@@ -18,7 +18,7 @@ from snowflake_utils import get_connection, logger
 from datacite import fetch_doi_prefix
 
 
-
+# ANTHROPIC_API_KEY= os.getenv("ANTHROPIC_API_KEY")
 
 def extract_public_dois(
     conn: "snowflake.connector.SnowflakeConnection",
@@ -41,12 +41,12 @@ doi_entities as (
                 then '10.7303/syn' || doi.object_id || '.' || doi.object_version
             else '10.7303/syn' || doi.object_id
         end                                                     as doi_id,
-        'https://doi.org/' || doi_id as doi_link,
+        'https://doi.org/' || doi_id                            as doi_link,
         node_latest.name,
         node_latest.node_type,
         node_latest.scope_ids,
         node_revision.description,
-        node_latest.annotations:annotations as annotations,
+        node_latest.annotations:annotations                     as annotations
     from synapse_rds_snapshot.prod_576.doi
     left join synapse_data_warehouse.synapse.node_latest
         on doi.object_id = node_latest.id
@@ -146,7 +146,65 @@ collection_files as (
 ),
 
 -- ============================================================
--- 5. AGGREGATE unique downloaders in the last year
+-- 5. PROJECT: all files in project via node_latest.project_id
+-- ============================================================
+project_files as (
+    select
+        nl.project_id,
+        nl.file_handle_id
+    from synapse_data_warehouse.synapse.node_latest nl
+    where
+        nl.node_type = 'file'
+        and nl.project_id in (
+            select node_id from doi_entities where node_type = 'project'
+        )
+),
+
+-- ============================================================
+-- 6. FILE SIZES: sum content_size per entity
+-- ============================================================
+project_file_size as (
+    select
+        pf.project_id                                           as node_id,
+        sum(fl.content_size)                                    as total_size_bytes
+    from project_files pf
+    join synapse_data_warehouse.synapse.file_latest fl
+        on fl.id = pf.file_handle_id
+    group by pf.project_id
+),
+
+folder_file_size as (
+    select
+        ff.root_id                                              as node_id,
+        sum(fl.content_size)                                    as total_size_bytes
+    from folder_files ff
+    join synapse_data_warehouse.synapse.file_latest fl
+        on fl.id = ff.file_handle_id
+    group by ff.root_id
+),
+
+dataset_file_size as (
+    select
+        df.dataset_id                                           as node_id,
+        sum(fl.content_size)                                    as total_size_bytes
+    from dataset_files df
+    join synapse_data_warehouse.synapse.file_latest fl
+        on fl.id = df.file_handle_id
+    group by df.dataset_id
+),
+
+collection_file_size as (
+    select
+        cf.collection_id                                        as node_id,
+        sum(fl.content_size)                                    as total_size_bytes
+    from collection_files cf
+    join synapse_data_warehouse.synapse.file_latest fl
+        on fl.id = cf.file_handle_id
+    group by cf.collection_id
+),
+
+-- ============================================================
+-- 7. AGGREGATE unique downloaders in the last year
 -- ============================================================
 project_downloads as (
     select
@@ -197,13 +255,12 @@ collection_downloads as (
 )
 
 -- ============================================================
--- 6. FINAL OUTPUT
+-- 8. FINAL OUTPUT
 -- ============================================================
 select
     de.name,
     de.node_type,
     de.node_id,
-    -- de.node_version,
     de.doi_link,
     de.doi_id,
     de.description,
@@ -216,7 +273,29 @@ select
             when 'datasetcollection' then cd.unique_downloaders
         end,
         0
-    )                                                           as unique_downloaders_12_months
+    )                                                           as unique_downloaders_12_months,
+    case de.node_type
+        when 'project'           then pfs.total_size_bytes
+        when 'folder'            then ffs.total_size_bytes
+        when 'dataset'           then dfs.total_size_bytes
+        when 'datasetcollection' then cfs.total_size_bytes
+    end                                                         as total_size_bytes_raw,
+    case
+        when total_size_bytes_raw >= power(10, 15) then round(total_size_bytes_raw / power(10, 15), 2)
+        when total_size_bytes_raw >= power(10, 12) then round(total_size_bytes_raw / power(10, 12), 2)
+        when total_size_bytes_raw >= power(10, 9)  then round(total_size_bytes_raw / power(10, 9), 2)
+        when total_size_bytes_raw >= power(10, 6)  then round(total_size_bytes_raw / power(10, 6), 2)
+        when total_size_bytes_raw >= power(10, 3)  then round(total_size_bytes_raw / power(10, 3), 2)
+        else total_size_bytes_raw
+    end                                                         as size,
+    case
+        when total_size_bytes_raw >= power(10, 15) then 'PB'
+        when total_size_bytes_raw >= power(10, 12) then 'TB'
+        when total_size_bytes_raw >= power(10, 9)  then 'GB'
+        when total_size_bytes_raw >= power(10, 6)  then 'MB'
+        when total_size_bytes_raw >= power(10, 3)  then 'KB'
+        else 'B'
+    end                                                         as size_unit
 from doi_entities de
 left join project_downloads pd
     on de.node_type = 'project'
@@ -230,6 +309,18 @@ left join dataset_downloads dd
 left join collection_downloads cd
     on de.node_type = 'datasetcollection'
     and de.node_id = cd.node_id
+left join project_file_size pfs
+    on de.node_type = 'project'
+    and de.node_id = pfs.node_id
+left join folder_file_size ffs
+    on de.node_type = 'folder'
+    and de.node_id = ffs.node_id
+left join dataset_file_size dfs
+    on de.node_type = 'dataset'
+    and de.node_id = dfs.node_id
+left join collection_file_size cfs
+    on de.node_type = 'datasetcollection'
+    and de.node_id = cfs.node_id
 order by unique_downloaders_12_months desc nulls last
 ;
     """
@@ -239,6 +330,7 @@ order by unique_downloaders_12_months desc nulls last
         )
         dois_df = cs.fetch_pandas_all()
         dois_df.drop_duplicates(inplace=True)
+        del dois_df["TOTAL_SIZE_BYTES_RAW"]
     return dois_df
 
 
@@ -286,8 +378,12 @@ def merge_doi_metadata(
     Returns:
         Merged DataFrame with DataCite fields prefixed with 'datacite_'.
     """
+    datacite_columns = [
+        "doi", "creators", "descriptions", "contributors",
+        "subjects", "titles", "rightsList"
+    ]
     merged = synapse_df.merge(
-        datacite_df[["doi", "creators", "descriptions", "contributors", "subjects", "titles"]],
+        datacite_df[datacite_columns],
         left_on="DOI_ID",
         right_on="doi",
         how="left",
@@ -298,9 +394,41 @@ def merge_doi_metadata(
         "contributors": "datacite_contributors",
         "subjects": "datacite_subjects",
         "titles": "datacite_titles",
+        "rightsList": "datacite_license",
+        "NAME": "name",
+        "DESCRIPTION": "description",
+        "SIZE": "size",
+        "SIZE_UNIT": "sizeUnit",
+        "NODE_ID": "id",
     }, inplace=True)
+    merged['isFeatured'] = False
+    merged['community'] = float('nan')
+    merged['individuals'] = float('nan')
+    merged['image'] = float('nan')
+    merged['keywords'] = float('nan')
+    merged['dimensions'] = float('nan')
+    merged['includedInDataCatalog'] = False
+    merged['link'] = float('nan')
+    merged['croissant'] = float('nan')
+    merged['appId'] = float('nan')
+    merged['license'] = float('nan')
     merged.drop(columns=["doi"], inplace=True)
     return merged
+
+
+def get_existing_ids(syn: synapseclient.Synapse, table_id: str) -> set:
+    """Fetch existing IDs from a Synapse table.
+
+    Args:
+        syn: Synapse client instance.
+        table_id: Synapse table ID to query.
+
+    Returns:
+        Set of existing id values.
+    """
+    results = syn.tableQuery(f"SELECT id FROM {table_id}")
+    df = results.asDataFrame()
+    return set(df["id"].dropna().str.replace("syn", "", regex=False).astype(int).tolist())
 
 
 def main(conn=None) -> None:
@@ -331,6 +459,11 @@ def main(conn=None) -> None:
         synapse_df = transform_synapse_dois(dois_df)
         datacite_df = transform_datacite_dois(datacite_dois)
         dois_df = merge_doi_metadata(synapse_df, datacite_df)
+
+        existing_ids = get_existing_ids(syn, "syn61609402")
+        dois_df = dois_df[~dois_df["id"].astype(int).isin(existing_ids)]
+        logger.info(f"Filtered to {len(dois_df)} new datasets not yet in syn61609402.")
+
         dois_df.to_csv("dois_with_metadata.tsv", index=False, sep="\t")
         logger.info("Store data initially")
         table = Table(
