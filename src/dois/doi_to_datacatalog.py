@@ -1,18 +1,11 @@
 """DOI to data catalog pipeline"""
 
-import argparse
 import json
-import re
-from datetime import datetime, timezone
 from typing import Dict, Iterable
 
-
 import pandas as pd
-# from genie.main_genie_ingestion import parse_release_folder
-from snowflake.connector.pandas_tools import write_pandas
 import synapseclient
-import synapseutils as synu
-from synapseclient.models import Table, SchemaStorageStrategy
+from synapseclient.models import Table
 
 from snowflake_utils import get_connection, logger
 from datacite import fetch_doi_prefix
