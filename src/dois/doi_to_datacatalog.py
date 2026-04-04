@@ -1,8 +1,11 @@
 """DOI to data catalog pipeline"""
 
+import asyncio
 import json
+import os
 from typing import Dict, Iterable
 
+import anthropic
 import pandas as pd
 import synapseclient
 from synapseclient.models import Table
@@ -10,8 +13,7 @@ from synapseclient.models import Table
 from snowflake_utils import get_connection, logger
 from datacite import fetch_doi_prefix
 
-
-# ANTHROPIC_API_KEY= os.getenv("ANTHROPIC_API_KEY")
+SYNAPSE_MCP_URL = "https://mcp.synapse.org/mcp"
 
 def extract_public_dois(
     conn: "snowflake.connector.SnowflakeConnection",
@@ -344,6 +346,169 @@ def transform_synapse_dois(dois_df: pd.DataFrame) -> pd.DataFrame:
     return dois_df
 
 
+def _is_empty(val) -> bool:
+    """Return True if a value is None, NaN, empty string, or empty list."""
+    if val is None:
+        return True
+    if isinstance(val, float) and pd.isna(val):
+        return True
+    if isinstance(val, str):
+        return val.strip() == ""
+    if isinstance(val, list):
+        return len(val) == 0
+    return False
+
+
+async def _enrich_row(
+    client: anthropic.AsyncAnthropic,
+    syn: synapseclient.Synapse,
+    entity_id: str,
+    name: str,
+    node_type: str,
+    want_description: bool,
+    want_keywords: bool,
+    semaphore: asyncio.Semaphore,
+) -> Dict:
+    """Fetch wiki and call Claude for a single row. Returns a dict of enriched fields."""
+    await semaphore.acquire()
+    context_parts = [f"Name: {name}", f"Type: {node_type}", f"Synapse ID: {entity_id}"]
+    logger.info(f"Fetching wiki for {entity_id}")
+    try:
+        wiki = await asyncio.to_thread(syn.getWiki, entity_id)
+        if wiki.markdown:
+            context_parts.append(f"Wiki:\n{wiki.markdown[:2000]}")
+    except Exception:
+        pass
+    logger.info(f"Calling Claude for {entity_id}")
+
+    fields_requested = []
+    if want_description:
+        fields_requested.append('"description": "<1-2 sentence plain-text description>"')
+    if want_keywords:
+        fields_requested.append('"keywords": ["keyword1", "keyword2", ...]')
+
+    keyword_guidance = ""
+    if want_keywords:
+        keyword_guidance = (
+            "\n\nFor keywords, use 2-8 specific scientific terms drawn from these categories:\n"
+            "- Disease/condition names (e.g. \"rheumatoid arthritis\", \"Alzheimer's Disease\")\n"
+            "- Assay/technology types (e.g. \"Gene Expression\", \"Proteomics\", \"single-cell RNA sequencing\")\n"
+            "- Tissue or sample types (e.g. \"Synovial Membrane\", \"peripheral blood mononuclear cells\")\n"
+            "- Data modalities (e.g. \"Genomic Variants\", \"Metabolomics\", \"Epigenetics\")\n"
+            "Follow domain capitalization conventions (e.g. 'Gene Expression' not 'gene expression')."
+        )
+
+    response = await client.messages.create(
+        model="claude-sonnet-4-6",
+        max_tokens=256,
+        messages=[{
+            "role": "user",
+            "content": (
+                "Based on the following Synapse entity metadata, return a JSON object "
+                f"with these fields: {', '.join(fields_requested)}."
+                f"{keyword_guidance}\n"
+                "No explanation, just the JSON.\n\n"
+                + "\n".join(context_parts)
+            ),
+        }],
+    )
+
+    result = {}
+    for block in response.content:
+        if block.type != "text" or not block.text.strip():
+            continue
+        logger.info(f"Claude response for {entity_id}: {block.text}")
+        try:
+            raw = block.text.strip()
+            if raw.startswith("```"):
+                raw = "\n".join(raw.split("\n")[1:-1])
+            parsed = json.loads(raw)
+            if want_description and "description" in parsed:
+                result["anthropic_description"] = parsed["description"]
+            if want_keywords and "keywords" in parsed:
+                result["anthropic_keywords"] = json.dumps(parsed["keywords"])
+            logger.info(f"Enriched {entity_id}: description={want_description}, keywords={want_keywords}")
+        except (json.JSONDecodeError, KeyError):
+            logger.warning(f"Could not parse Claude response for {entity_id}: {block.text[:100]}")
+        break
+
+    semaphore.release()
+    return result
+
+
+def enrich_with_claude(
+    df: pd.DataFrame,
+    syn: synapseclient.Synapse,
+) -> pd.DataFrame:
+    """Generate anthropic_description and anthropic_keywords for sparse rows.
+
+    Runs after merge_doi_metadata. For each row, fetches the Synapse entity wiki
+    and asks Claude to fill in whichever fields are missing:
+      - anthropic_description: populated when both description and
+        datacite_descriptions are blank.
+      - anthropic_keywords: populated when datacite_subjects is blank.
+
+    Both fields are tagged with the anthropic_ prefix so their origin is clear.
+    All rows are enriched concurrently via asyncio.
+
+    Args:
+        df: Merged DataFrame from merge_doi_metadata.
+        syn: Authenticated Synapse client.
+
+    Returns:
+        DataFrame with anthropic_description and anthropic_keywords columns added.
+
+    Setup required:
+        - ANTHROPIC_API_KEY env var
+    """
+    df = df.copy()
+    df["anthropic_description"] = float("nan")
+    df["anthropic_keywords"] = float("nan")
+
+    needs_description = df["description"].apply(_is_empty) & df["datacite_descriptions"].apply(_is_empty)
+    needs_keywords = df["datacite_subjects"].apply(_is_empty)
+    rows_to_enrich = df[needs_description | needs_keywords].index
+
+    if rows_to_enrich.empty:
+        logger.info("No Claude enrichment needed.")
+        return df
+
+    logger.info(f"Claude enrichment needed for {len(rows_to_enrich)} rows.")
+
+    async def _run_all():
+        semaphore = asyncio.Semaphore(5)
+        async with anthropic.AsyncAnthropic(api_key=os.environ["ANTHROPIC_API_KEY"]) as client:
+            tasks = [
+                _enrich_row(
+                    client=client,
+                    syn=syn,
+                    entity_id=f"syn{int(df.at[idx, 'id'])}",  # type: ignore[arg-type]
+                    name=str(df.at[idx, "name"]),
+                    node_type=str(df.at[idx, "NODE_TYPE"]),
+                    want_description=bool(needs_description[idx]),
+                    want_keywords=bool(needs_keywords[idx]),
+                    semaphore=semaphore,
+                )
+                for idx in rows_to_enrich
+            ]
+            return await asyncio.gather(*tasks, return_exceptions=True)
+
+    results = asyncio.run(_run_all())
+
+    for idx, result in zip(rows_to_enrich, results):
+        if isinstance(result, Exception):
+            entity_id = f"syn{int(df.at[idx, 'id'])}"  # type: ignore[arg-type]
+            logger.warning(f"Enrichment failed for {entity_id}: {result}")
+            continue
+        enriched: Dict = result  # type: ignore[assignment]
+        if "anthropic_description" in enriched:
+            df.at[idx, "anthropic_description"] = enriched["anthropic_description"]
+        if "anthropic_keywords" in enriched:
+            df.at[idx, "anthropic_keywords"] = enriched["anthropic_keywords"]
+
+    return df
+
+
 def transform_datacite_dois(datacite_dois: Iterable[Dict]) -> pd.DataFrame:
     """Flatten raw DataCite API objects into a DataFrame.
 
@@ -453,16 +618,19 @@ def main(conn=None) -> None:
         datacite_df = transform_datacite_dois(datacite_dois)
         dois_df = merge_doi_metadata(synapse_df, datacite_df)
 
+        dois_df = enrich_with_claude(dois_df, syn)
+        logger.info("Claude enrichment completed.")
+
         existing_ids = get_existing_ids(syn, "syn61609402")
         dois_df = dois_df[~dois_df["id"].astype(int).isin(existing_ids)]
         logger.info(f"Filtered to {len(dois_df)} new datasets not yet in syn61609402.")
 
         dois_df.to_csv("dois_with_metadata.tsv", index=False, sep="\t")
         logger.info("Store data initially")
-        table = Table(
-            id="syn74257215",
-        )
-        table.upsert_rows(values=dois_df,  primary_keys=['DOI_ID'])
+        # table = Table(
+        #     id="syn74257215",
+        # )
+        # table.upsert_rows(values=dois_df,  primary_keys=['DOI_ID'])
     finally:
         # if it's a local connection, close it
         if conn is None:
