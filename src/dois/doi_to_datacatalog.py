@@ -3,6 +3,7 @@
 import json
 import os
 import time
+from concurrent.futures import ThreadPoolExecutor
 from typing import Dict, Iterable
 
 import anthropic
@@ -359,27 +360,17 @@ def _is_empty(val) -> bool:
     return False
 
 
-async def _enrich_row(
-    client: anthropic.AsyncAnthropic,
-    syn: synapseclient.Synapse,
+def _build_prompt(
     entity_id: str,
     name: str,
     node_type: str,
+    wiki_markdown: str,
     want_description: bool,
     want_keywords: bool,
-    semaphore: asyncio.Semaphore,
-) -> Dict:
-    """Fetch wiki and call Claude for a single row. Returns a dict of enriched fields."""
-    await semaphore.acquire()
+) -> str:
     context_parts = [f"Name: {name}", f"Type: {node_type}", f"Synapse ID: {entity_id}"]
-    logger.info(f"Fetching wiki for {entity_id}")
-    try:
-        wiki = await asyncio.to_thread(syn.getWiki, entity_id)
-        if wiki.markdown:
-            context_parts.append(f"Wiki:\n{wiki.markdown[:2000]}")
-    except Exception:
-        pass
-    logger.info(f"Calling Claude for {entity_id}")
+    if wiki_markdown:
+        context_parts.append(f"Wiki:\n{wiki_markdown[:2000]}")
 
     fields_requested = []
     if want_description:
@@ -398,42 +389,13 @@ async def _enrich_row(
             "Follow domain capitalization conventions (e.g. 'Gene Expression' not 'gene expression')."
         )
 
-    response = await client.messages.create(
-        model="claude-sonnet-4-6",
-        max_tokens=256,
-        messages=[{
-            "role": "user",
-            "content": (
-                "Based on the following Synapse entity metadata, return a JSON object "
-                f"with these fields: {', '.join(fields_requested)}."
-                f"{keyword_guidance}\n"
-                "No explanation, just the JSON.\n\n"
-                + "\n".join(context_parts)
-            ),
-        }],
+    return (
+        "Based on the following Synapse entity metadata, return a JSON object "
+        f"with these fields: {', '.join(fields_requested)}."
+        f"{keyword_guidance}\n"
+        "No explanation, just the JSON.\n\n"
+        + "\n".join(context_parts)
     )
-
-    result = {}
-    for block in response.content:
-        if block.type != "text" or not block.text.strip():
-            continue
-        logger.info(f"Claude response for {entity_id}: {block.text}")
-        try:
-            raw = block.text.strip()
-            if raw.startswith("```"):
-                raw = "\n".join(raw.split("\n")[1:-1])
-            parsed = json.loads(raw)
-            if want_description and "description" in parsed:
-                result["anthropic_description"] = parsed["description"]
-            if want_keywords and "keywords" in parsed:
-                result["anthropic_keywords"] = json.dumps(parsed["keywords"])
-            logger.info(f"Enriched {entity_id}: description={want_description}, keywords={want_keywords}")
-        except (json.JSONDecodeError, KeyError):
-            logger.warning(f"Could not parse Claude response for {entity_id}: {block.text[:100]}")
-        break
-
-    semaphore.release()
-    return result
 
 
 def enrich_with_claude(
@@ -442,14 +404,14 @@ def enrich_with_claude(
 ) -> pd.DataFrame:
     """Generate anthropic_description and anthropic_keywords for sparse rows.
 
-    Runs after merge_doi_metadata. For each row, fetches the Synapse entity wiki
+    Runs after merge_doi_metadata. Submits all rows as a single Anthropic batch
+    request and polls until complete. For each row, fetches the Synapse entity wiki
     and asks Claude to fill in whichever fields are missing:
       - anthropic_description: populated when both description and
         datacite_descriptions are blank.
       - anthropic_keywords: populated when datacite_subjects is blank.
 
     Both fields are tagged with the anthropic_ prefix so their origin is clear.
-    All rows are enriched concurrently via asyncio.
 
     Args:
         df: Merged DataFrame from merge_doi_metadata.
@@ -461,6 +423,7 @@ def enrich_with_claude(
     Setup required:
         - ANTHROPIC_API_KEY env var
     """
+    client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
     df = df.copy()
     df["anthropic_description"] = float("nan")
     df["anthropic_keywords"] = float("nan")
@@ -475,36 +438,81 @@ def enrich_with_claude(
 
     logger.info(f"Claude enrichment needed for {len(rows_to_enrich)} rows.")
 
-    async def _run_all():
-        semaphore = asyncio.Semaphore(5)
-        async with anthropic.AsyncAnthropic(api_key=os.environ["ANTHROPIC_API_KEY"]) as client:
-            tasks = [
-                _enrich_row(
-                    client=client,
-                    syn=syn,
-                    entity_id=f"syn{int(df.at[idx, 'id'])}",  # type: ignore[arg-type]
-                    name=str(df.at[idx, "name"]),
-                    node_type=str(df.at[idx, "NODE_TYPE"]),
-                    want_description=bool(needs_description[idx]),
-                    want_keywords=bool(needs_keywords[idx]),
-                    semaphore=semaphore,
-                )
-                for idx in rows_to_enrich
-            ]
-            return await asyncio.gather(*tasks, return_exceptions=True)
+    # Fetch all wikis in parallel
+    entity_ids = {idx: f"syn{int(df.at[idx, 'id'])}" for idx in rows_to_enrich}  # type: ignore[arg-type]
 
-    results = asyncio.run(_run_all())
+    def _fetch_wiki(idx):
+        try:
+            wiki = syn.getWiki(entity_ids[idx])
+            return idx, wiki.markdown or ""
+        except Exception:
+            return idx, ""
 
-    for idx, result in zip(rows_to_enrich, results):
-        if isinstance(result, Exception):
-            entity_id = f"syn{int(df.at[idx, 'id'])}"  # type: ignore[arg-type]
-            logger.warning(f"Enrichment failed for {entity_id}: {result}")
+    logger.info("Fetching wikis in parallel...")
+    with ThreadPoolExecutor(max_workers=10) as executor:
+        wiki_map = dict(executor.map(_fetch_wiki, rows_to_enrich))
+    logger.info("Wiki fetch complete.")
+
+    # Build one batch request per row
+    requests = []
+    for idx in rows_to_enrich:
+        entity_id = entity_ids[idx]
+        wiki_markdown = wiki_map[idx]
+
+        prompt = _build_prompt(
+            entity_id=entity_id,
+            name=str(df.at[idx, "name"]),
+            node_type=str(df.at[idx, "NODE_TYPE"]),
+            wiki_markdown=wiki_markdown,
+            want_description=bool(needs_description[idx]),
+            want_keywords=bool(needs_keywords[idx]),
+        )
+        requests.append(anthropic.types.message_create_params.MessageCreateParamsNonStreaming(
+            custom_id=str(idx),
+            params={
+                "model": "claude-sonnet-4-6",
+                "max_tokens": 256,
+                "messages": [{"role": "user", "content": prompt}],
+            },
+        ))
+
+    # Submit batch
+    batch = client.messages.batches.create(requests=requests)
+    logger.info(f"Submitted batch {batch.id} ({len(requests)} requests). Polling for completion...")
+
+    # Poll until done
+    while batch.processing_status != "ended":
+        time.sleep(30)
+        batch = client.messages.batches.retrieve(batch.id)
+        logger.info(f"Batch {batch.id} status: {batch.processing_status} "
+                    f"({batch.request_counts.succeeded} succeeded, "
+                    f"{batch.request_counts.errored} errored, "
+                    f"{batch.request_counts.processing} processing)")
+
+    # Collect results
+    for result in client.messages.batches.results(batch.id):
+        idx = int(result.custom_id)
+        entity_id = f"syn{int(df.at[idx, 'id'])}"  # type: ignore[arg-type]
+        if result.result.type != "succeeded":
+            logger.warning(f"Batch result for {entity_id} failed: {result.result.error}")
             continue
-        enriched: Dict = result  # type: ignore[assignment]
-        if "anthropic_description" in enriched:
-            df.at[idx, "anthropic_description"] = enriched["anthropic_description"]
-        if "anthropic_keywords" in enriched:
-            df.at[idx, "anthropic_keywords"] = enriched["anthropic_keywords"]
+        text = next(
+            (b.text for b in result.result.message.content if b.type == "text"),
+            "",
+        )
+        logger.info(f"Claude response for {entity_id}: {text}")
+        try:
+            raw = text.strip()
+            if raw.startswith("```"):
+                raw = "\n".join(raw.split("\n")[1:-1])
+            parsed = json.loads(raw)
+            if needs_description[idx] and "description" in parsed:
+                df.at[idx, "anthropic_description"] = parsed["description"]
+            if needs_keywords[idx] and "keywords" in parsed:
+                df.at[idx, "anthropic_keywords"] = json.dumps(parsed["keywords"])
+            logger.info(f"Enriched {entity_id}")
+        except (json.JSONDecodeError, KeyError):
+            logger.warning(f"Could not parse Claude response for {entity_id}: {text[:100]}")
 
     return df
 
@@ -627,10 +635,11 @@ def main(conn=None) -> None:
 
         dois_df.to_csv("dois_with_metadata.tsv", index=False, sep="\t")
         logger.info("Store data initially")
-        # table = Table(
-        #     id="syn74257215",
-        # )
-        # table.upsert_rows(values=dois_df,  primary_keys=['DOI_ID'])
+        table = Table(
+            id="syn74257215",
+        )
+        table.delete_rows(query="SELECT * FROM syn74257215")
+        table.upsert_rows(values=dois_df,  primary_keys=['DOI_ID'])
     finally:
         # if it's a local connection, close it
         if conn is None:
