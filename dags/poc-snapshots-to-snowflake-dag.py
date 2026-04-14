@@ -11,14 +11,16 @@ Dependencies:
     pip install apache-airflow-providers-slack
 """
 import os
-import pathlib
+import requests
 import yaml
 
 from datetime import datetime, timedelta
 
+from slack_sdk import WebClient
+
 from airflow import DAG
+from airflow.models import Variable
 from airflow.operators.python import PythonOperator, BranchPythonOperator
-from airflow.providers.slack.operators.slack import SlackAPIPostOperator
 from airflow.providers.snowflake.operators.snowflake import SnowflakeOperator
 from airflow.utils.task_group import TaskGroup
 
@@ -43,14 +45,13 @@ SNOWFLAKE_SCHEMA = "RDS_LANDING"
 SNOWFLAKE_S3_STAGE = f"{SNOWFLAKE_DATABASE}.{SNOWFLAKE_SCHEMA}.RDS_SNAPSHOTS_STAGE"
 SNOWFLAKE_CONN_ID = "SNOWFLAKE_DEVELOPER_SERVICE_RAW_CONN"
 AWS_CONN_ID = "AWS_TOWER_PROD_S3_CONN"
-SLACK_CONN_ID = "SLACK_DATA_ENG_CONN"
-SLACK_CHANNEL = "#data-eng-alerts"
-S3_PREFIX = "rds_snapshots/"
+SLACK_CHANNEL = "#snowflake_ingest_updates"
+SLACK_TOKEN_VAR = "SLACK_DPE_TEAM_BOT_TOKEN"
 
 # ---------------------------------------------------------------------------
 # Load record types from YAML
 #
-# record_types.yaml lives in the same directory as this DAG file.
+# record_types.yaml is fetched from GitHub at DAG parse time.
 # Each entry is a record type name matching the S3 subdirectory convention,
 # e.g. "ACCESS_APPROVAL" maps to s3://.../rds_snapshots/.../ACCESS_APPROVAL/
 #
@@ -64,9 +65,21 @@ S3_PREFIX = "rds_snapshots/"
 #     ... (157 total)
 # ---------------------------------------------------------------------------
 
-_yaml_path = pathlib.Path(__file__).parent / "record_types.yaml"
-with _yaml_path.open() as f:
-    _yaml = yaml.safe_load(f)
+RECORD_TYPES_URL = "https://raw.githubusercontent.com/Sage-Bionetworks-Workflows/orca-recipes/main/dags/record_types.yaml"
+
+
+def load_record_types(url=RECORD_TYPES_URL):
+    """Load record types from a raw GitHub URL."""
+    response = requests.get(url, timeout=10)
+    if not response.ok:
+        raise RuntimeError(
+            f"Failed to fetch record types... "
+            f"Status code: {response.status_code}, reason: {response.reason}"
+        )
+    return yaml.safe_load(response.text)
+
+
+_yaml = load_record_types()
 
 RECORD_TYPES: list[str] = _yaml["record_types"]
 
@@ -76,6 +89,34 @@ RECORD_TYPES: list[str] = _yaml["record_types"]
 
 def _fully_qualified(record_type: str) -> str:
     return f"{SNOWFLAKE_DATABASE}.{SNOWFLAKE_SCHEMA}.{record_type}"
+
+
+def _notify_slack_failure(context):
+    client = WebClient(token=Variable.get(SLACK_TOKEN_VAR))
+    client.chat_postMessage(
+        channel=SLACK_CHANNEL,
+        text=(
+            f":red_circle: *Ingest failure* in `{context['dag'].dag_id}`\n"
+            f"Task: `{context['task_instance'].task_id}`\n"
+            f"Run: `{context['run_id']}`\n"
+            f"Log: {context['task_instance'].log_url}"
+        ),
+    )
+
+
+def _notify_new_tables(**context):
+    missing = context["ti"].xcom_pull(
+        task_ids="check_missing_tables", key="missing_tables"
+    )
+    env = context["ti"].xcom_pull(task_ids=None, key="RDS_SNAPSHOTS_STACK") or ENVIRONMENT
+    client = WebClient(token=Variable.get(SLACK_TOKEN_VAR))
+    client.chat_postMessage(
+        channel=SLACK_CHANNEL,
+        text=(
+            f":new: *New rds_landing tables created* (`{env}` env)\n"
+            + ", ".join(missing)
+        ),
+    )
 
 
 def _check_missing_tables(**context) -> list[str]:
@@ -124,6 +165,7 @@ default_args = {
     "retries": 2,
     "retry_delay": timedelta(minutes=5),
     "email_on_failure": True,
+    "on_failure_callback": _notify_slack_failure,
 }
 
 # ---------------------------------------------------------------------------
@@ -169,16 +211,9 @@ with DAG(
             ],
         )
 
-        notify_slack = SlackAPIPostOperator(
+        notify_slack = PythonOperator(
             task_id="notify_slack",
-            slack_conn_id=SLACK_CONN_ID,
-            channel=SLACK_CHANNEL,
-            # The message is rendered at runtime from XCom so it lists the
-            # actual table names that were created in this run.
-            text=(
-                ":new: *New rds_landing tables created* (`{{ var.value.get('RDS_SNAPSHOTS_STACK', 'dev') }}` env)\n"
-                "{{ task_instance.xcom_pull(task_ids='check_missing_tables', key='missing_tables') | join(', ') }}"
-            ),
+            python_callable=_notify_new_tables,
         )
 
         create_tables >> notify_slack
@@ -216,7 +251,7 @@ with DAG(
                         FROM @{SNOWFLAKE_S3_STAGE}
                     )
                     FILE_FORMAT = (TYPE = PARQUET)
-                    PATTERN     = '.*/{record_type}/.*\\\\.parquet'
+                    PATTERN     = '.*\\.{record_type}/.*\\.parquet'
                     ON_ERROR    = 'CONTINUE';
                 """,
             )
