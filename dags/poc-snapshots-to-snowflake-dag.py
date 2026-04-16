@@ -34,7 +34,7 @@ if ENVIRONMENT.lower() == "prod":
     DAG_SUFFIX = "_prod"
 elif ENVIRONMENT.lower() == "dev":
     S3_BUCKET = "synapse-snowflake-rds-snapshots-dev"
-    SNOWFLAKE_DATABASE = "SYNAPSE_DATA_WAREHOUSE_DEV"
+    SNOWFLAKE_DATABASE = "SYNAPSE_DATA_WAREHOUSE_DEV_ADD_CLAUDE_MD"
     DAG_SUFFIX = "_dev"
 else:
     raise ValueError(f"Unknown environment: {ENVIRONMENT}")
@@ -63,7 +63,7 @@ SLACK_TOKEN_VAR = "SLACK_DPE_TEAM_BOT_TOKEN"
 #     ... (157 total)
 # ---------------------------------------------------------------------------
 
-RECORD_TYPES_URL = "https://raw.githubusercontent.com/Sage-Bionetworks-Workflows/orca-recipes/main/dags/record_types.yaml"
+RECORD_TYPES_URL = "https://raw.githubusercontent.com/Sage-Bionetworks-Workflows/orca-recipes/poc-snapshots-to-snowflake/dags/record_types.yaml"
 
 
 def load_record_types(url=RECORD_TYPES_URL):
