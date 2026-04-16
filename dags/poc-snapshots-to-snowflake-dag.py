@@ -18,11 +18,9 @@ from datetime import datetime, timedelta
 
 from slack_sdk import WebClient
 
-from airflow import DAG
+from airflow.decorators import dag, task
 from airflow.models import Variable
-from airflow.operators.python import PythonOperator, BranchPythonOperator
-from airflow.providers.snowflake.operators.snowflake import SnowflakeOperator
-from airflow.utils.task_group import TaskGroup
+from airflow.providers.snowflake.hooks.snowflake import SnowflakeHook
 
 # ---------------------------------------------------------------------------
 # Config
@@ -104,64 +102,12 @@ def _notify_slack_failure(context):
     )
 
 
-def _notify_new_tables(**context):
-    missing = context["ti"].xcom_pull(
-        task_ids="check_missing_tables", key="missing_tables"
-    )
-    env = context["ti"].xcom_pull(task_ids=None, key="RDS_SNAPSHOTS_STACK") or ENVIRONMENT
-    client = WebClient(token=Variable.get(SLACK_TOKEN_VAR))
-    client.chat_postMessage(
-        channel=SLACK_CHANNEL,
-        text=(
-            f":new: *New rds_landing tables created* (`{env}` env)\n"
-            + ", ".join(missing)
-        ),
-    )
-
-
-def _check_missing_tables(**context) -> list[str]:
-    """
-    Query Snowflake's INFORMATION_SCHEMA to find which record types in the
-    YAML don't yet have a corresponding table in rds_landing.
-    Pushes the list of missing table names to XCom for downstream tasks.
-    """
-    from airflow.providers.snowflake.hooks.snowflake import SnowflakeHook
-
-    hook = SnowflakeHook(snowflake_conn_id=SNOWFLAKE_CONN_ID)
-    existing = {
-        row[0]
-        for row in hook.get_records(
-            f"""
-            SELECT TABLE_NAME
-            FROM {SNOWFLAKE_DATABASE}.INFORMATION_SCHEMA.TABLES
-            WHERE TABLE_SCHEMA = '{SNOWFLAKE_SCHEMA}'
-            """
-        )
-    }
-    missing = [r for r in RECORD_TYPES if r.upper() not in existing]
-    context["ti"].xcom_push(key="missing_tables", value=missing)
-    return missing
-
-
-def _branch_on_missing(**context) -> str | list[str]:
-    """
-    If there are missing tables, route to the create_tables task group.
-    Otherwise skip straight to refresh_stage.
-    """
-    missing = context["ti"].xcom_pull(
-        task_ids="check_missing_tables", key="missing_tables"
-    )
-    if missing:
-        return "handle_new_tables.create_tables"
-    return "refresh_stage"
-
-
 # ---------------------------------------------------------------------------
 # Default args
 # ---------------------------------------------------------------------------
 
 default_args = {
-    "owner": "data-eng",
+    "owner": "DPE",
     "retries": 2,
     "retry_delay": timedelta(minutes=5),
     "email_on_failure": True,
@@ -172,117 +118,100 @@ default_args = {
 # DAG definition
 # ---------------------------------------------------------------------------
 
-with DAG(
+@dag(
     dag_id=f"s3_to_snowflake_poc{DAG_SUFFIX}",
     default_args=default_args,
     start_date=datetime(2024, 1, 1),
     schedule_interval="@daily",
     catchup=False,
     tags=["rds", "snapshots", "snowflake", ENVIRONMENT],
-) as dag:
+)
+def s3_to_snowflake_poc() -> None:
 
-    # -------------------------------------------------------------------------
-    # 1. Check which YAML-defined record types don't have a table yet.
-    # -------------------------------------------------------------------------
-    check_missing_tables = PythonOperator(
-        task_id="check_missing_tables",
-        python_callable=_check_missing_tables,
-    )
-
-    branch = BranchPythonOperator(
-        task_id="branch_on_missing",
-        python_callable=_branch_on_missing,
-    )
-
-    # -------------------------------------------------------------------------
-    # 2. Handle new record types: create table + notify Slack.
-    #    Grouped so the branch target is a single task_id.
-    # -------------------------------------------------------------------------
-    with TaskGroup("handle_new_tables") as handle_new_tables:
-
-        create_tables = SnowflakeOperator(
-            task_id="create_tables",
-            snowflake_conn_id=SNOWFLAKE_CONN_ID,
-            # Renders one CREATE TABLE IF NOT EXISTS per missing record type.
-            # Adjust column definitions to match your parquet schema.
-            sql=[
-                f"CREATE TABLE IF NOT EXISTS {_fully_qualified(r)} (raw VARIANT);"
-                for r in RECORD_TYPES
-            ],
+    @task
+    def notify_started() -> None:
+        client = WebClient(token=Variable.get(SLACK_TOKEN_VAR))
+        client.chat_postMessage(
+            channel=SLACK_CHANNEL,
+            text=f":arrow_forward: *s3_to_snowflake_poc{DAG_SUFFIX}* started — refreshing stage and loading parquet snapshots into `{SNOWFLAKE_DATABASE}.{SNOWFLAKE_SCHEMA}`.",
         )
 
-        notify_slack = PythonOperator(
-            task_id="notify_slack",
-            python_callable=_notify_new_tables,
+    @task
+    def notify_finished() -> None:
+        client = WebClient(token=Variable.get(SLACK_TOKEN_VAR))
+        client.chat_postMessage(
+            channel=SLACK_CHANNEL,
+            text=f":white_check_mark: *s3_to_snowflake_poc{DAG_SUFFIX}* finished — all COPY INTO tasks completed successfully.",
         )
 
-        create_tables >> notify_slack
+    @task
+    def refresh_stage() -> None:
+        hook = SnowflakeHook(snowflake_conn_id=SNOWFLAKE_CONN_ID)
+        ctx = hook.get_conn()
+        cs = ctx.cursor()
+        try:
+            cs.execute(f"ALTER STAGE IF EXISTS {SNOWFLAKE_S3_STAGE} REFRESH;")
+        finally:
+            cs.close()
 
-    # -------------------------------------------------------------------------
-    # 3. Refresh the external stage — updates Snowflake's internal file
-    #    pointer cache from S3. No parquet bytes are moved here.
-    #    Equivalent to REFRESH_SYNAPSE_WAREHOUSE_S3_STAGE_TASK.
-    # -------------------------------------------------------------------------
-    refresh_stage = SnowflakeOperator(
-        task_id="refresh_stage",
-        snowflake_conn_id=SNOWFLAKE_CONN_ID,
-        sql=f"ALTER STAGE IF EXISTS {SNOWFLAKE_S3_STAGE} REFRESH;",
-        trigger_rule="none_failed",  # runs whether or not new tables were created
-    )
+    @task
+    def create_tables() -> None:
+        # Creates all rds_landing tables if they don't already exist.
+        # Runs once before the COPY INTO fan-out so every target table is
+        # guaranteed to exist when the parallel copy tasks start.
+        hook = SnowflakeHook(snowflake_conn_id=SNOWFLAKE_CONN_ID)
+        ctx = hook.get_conn()
+        cs = ctx.cursor()
+        try:
+            for record_type in RECORD_TYPES:
+                cs.execute(
+                    f"CREATE TABLE IF NOT EXISTS {_fully_qualified(record_type)} (raw VARIANT);"
+                )
+        finally:
+            cs.close()
 
-    # -------------------------------------------------------------------------
-    # 4. COPY INTO for each record type — parallel fan-out, equivalent to
-    #    the child task graph in the Snowflake-native pattern.
-    #
-    #    COPY INTO is idempotent: load history on the target table (64-day
-    #    window, keyed on path + ETag) skips already-loaded files.
-    #    "Query returned no results" = nothing new for that scope, not an error.
-    # -------------------------------------------------------------------------
-    copy_tasks = []
-    for record_type in RECORD_TYPES:
-        copy_tasks.append(
-            SnowflakeOperator(
-                task_id=f"copy_{record_type.lower()}",
-                snowflake_conn_id=SNOWFLAKE_CONN_ID,
-                sql=f"""
-                    COPY INTO {_fully_qualified(record_type)} (raw)
-                    FROM (
-                        SELECT $1
-                        FROM @{SNOWFLAKE_S3_STAGE}
-                    )
-                    FILE_FORMAT = (TYPE = PARQUET)
-                    PATTERN     = '.*\\.{record_type}/.*\\.parquet'
-                    ON_ERROR    = 'CONTINUE';
-                """,
-            )
-        )
-
-    # -------------------------------------------------------------------------
-    # 5. dbt test — runs after all scopes load.
-    #    Replace with BashOperator or dbt Cloud operator as appropriate.
-    # -------------------------------------------------------------------------
-    dbt_test = SnowflakeOperator(
-        task_id="dbt_test_placeholder",
-        snowflake_conn_id=SNOWFLAKE_CONN_ID,
-        sql="SELECT 1;",
-        # e.g. BashOperator: bash_command="dbt test --select tag:rds_landing"
-    )
+    @task
+    def copy_record_type(record_type: str) -> None:
+        # COPY INTO is idempotent: Snowflake's load history (64-day window,
+        # keyed on path + ETag) skips already-loaded files automatically.
+        hook = SnowflakeHook(snowflake_conn_id=SNOWFLAKE_CONN_ID)
+        ctx = hook.get_conn()
+        cs = ctx.cursor()
+        try:
+            cs.execute(f"""
+                COPY INTO {_fully_qualified(record_type)} (raw)
+                FROM (
+                    SELECT $1
+                    FROM @{SNOWFLAKE_S3_STAGE}
+                )
+                FILE_FORMAT = (TYPE = PARQUET)
+                PATTERN     = '.*\\.{record_type}/.*\\.parquet'
+                ON_ERROR    = 'CONTINUE';
+            """)
+        finally:
+            cs.close()
 
     # -------------------------------------------------------------------------
     # Pipeline order:
     #
-    #   check_missing_tables
-    #     >> branch_on_missing
-    #     >> [handle_new_tables (create + notify) | skip]
-    #     >> refresh_stage          (trigger_rule=none_failed bridges the branch)
+    #   refresh_stage
+    #     >> create_tables
     #     >> [copy_access_approval, copy_team, ...]   (parallel)
-    #     >> dbt_test
     #
     #   COPY INTO is the sole dedup mechanism — Snowflake's load history
     #   (path + ETag, 64-day window) skips unchanged files and re-loads
     #   corrected ones automatically. No file sensing needed.
     # -------------------------------------------------------------------------
-    check_missing_tables >> branch
-    branch >> [handle_new_tables, refresh_stage]
-    handle_new_tables >> refresh_stage
-    refresh_stage >> copy_tasks >> dbt_test
+    started = notify_started()
+    stage = refresh_stage()
+    tables = create_tables()
+    copy_tasks = [
+        copy_record_type.override(task_id=f"copy_{rt.lower()}")(rt)
+        for rt in RECORD_TYPES
+    ]
+    finished = notify_finished()
+
+    started >> stage >> tables >> copy_tasks >> finished
+
+
+s3_to_snowflake_poc()
