@@ -99,6 +99,8 @@ for secret in all_secrets:
         print(secret["Name"])
 ```
 
+If secrets are not accessible or hooks are failing to connect when testing a DAG, see the [Troubleshooting](./CONTRIBUTING.md#troubleshooting) section in CONTRIBUTING.md for common causes and fixes — including how to diagnose and resolve expired Codespace secrets.
+
 #### Browser
 
 We can see which ports our Airflow services expose under `PORTS`:

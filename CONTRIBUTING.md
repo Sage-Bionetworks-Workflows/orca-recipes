@@ -353,3 +353,35 @@ To contribute a new challenge:
 1. **Merge your Pull Request**: Once your changes have been tested, your PR is ready for merge and a maintainer will ensure your DAG is created and running in Airflow production!
 
 By following these guidelines, you will successfully contribute a deployable challenge DAG customized for your needs.
+
+----
+
+### Troubleshooting
+
+This section is a living reference for potential issues you may encounter when testing your DAG. If you run into a problem not covered here, consider documenting it for future contributors.
+
+#### Airflow provider hooks failing to connect — outdated Codespace secrets
+
+If you are testing your DAG in a Codespaces environment (see [Dev Container setup in the README](./README.md#codespaces)) and your Airflow provider hooks (e.g., `SynapseHook`, `SnowflakeHook`, `S3Hook`) are failing to connect, it may be caused by expired AWS credentials in the repository's Codespace secrets.
+
+As noted in the [Secrets](#secrets) section, this repository uses an IAM user (`airflow-secrets-backend`) whose access keys are stored as Codespace secrets so that Airflow can reach AWS Secrets Manager in `dpe-prod`. These credentials must be rotated every 90 days. If they have expired, Airflow will be unable to resolve any connections or variables backed by Secrets Manager, which can surface as `KeyError` import errors or hook connection failures — even when the connection ID strings themselves look correct.
+
+**To verify this is the cause:**
+
+1. Open a terminal in your Codespace and run:
+   ```console
+   env | grep AWS
+   ```
+2. Locate the value of `AWS_ACCESS_KEY_ID` in the output.
+3. Compare it against the active access key for the `airflow-secrets-backend` IAM user in the AWS Console under the `org-sagebase-dpe-prod` account.
+
+If the access key ID does not match, the secret access key (`AWS_SECRET_ACCESS_KEY`) is almost certainly stale as well.
+
+**To fix it:**
+
+1. In the AWS Console (`org-sagebase-dpe-prod`, `us-east-1`), navigate to **IAM → Users → `airflow-secrets-backend`** and rotate the access key by creating a new one and deactivating the old one.
+2. Update the corresponding Codespace secrets in this repository's GitHub settings with the new access key ID and secret access key.
+3. Rebuild your Codespace (or restart it) so the new credentials are injected into the environment.
+
+> [!NOTE]
+> If you are developing locally with VS Code Dev Containers rather than Codespaces, you will not have access to the pre-configured Codespace secrets and must supply valid AWS credentials manually in your `.env` file. See the [Docker Compose setup in the README](./README.md#docker-compose) for details.
