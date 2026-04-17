@@ -378,6 +378,10 @@ botocore.exceptions.ClientError: An error occurred (UnrecognizedClientException)
    ```
 2. Locate the value of `AWS_ACCESS_KEY_ID` in the output.
 3. Compare it against the active access key for the `airflow-secrets-backend` IAM user in the AWS Console under the `org-sagebase-dpe-prod` account.
+   Alternatively, you can list active keys with the AWS CLI:
+   ```console
+   aws iam list-access-keys --user-name airflow-secrets-backend --profile <your-profile-name>
+   ```
 
 If the access key ID does not match, the secret access key (`AWS_SECRET_ACCESS_KEY`) is almost certainly stale as well.
 
