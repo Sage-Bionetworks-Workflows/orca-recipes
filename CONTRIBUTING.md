@@ -364,7 +364,11 @@ This section is a living reference for potential issues you may encounter when t
 
 If you are testing your DAG in a Codespaces environment (see [Dev Container setup in the README](./README.md#codespaces)) and your Airflow provider hooks (e.g., `SynapseHook`, `SnowflakeHook`, `S3Hook`) are failing to connect, it may be caused by expired AWS credentials in the repository's Codespace secrets.
 
-As noted in the [Secrets](#secrets) section, this repository uses an IAM user (`airflow-secrets-backend`) whose access keys are stored as Codespace secrets so that Airflow can reach AWS Secrets Manager in `dpe-prod`. These credentials must be rotated every 90 days. If they have expired, Airflow will be unable to resolve any connections or variables backed by Secrets Manager, which can surface as `KeyError` import errors or hook connection failures — even when the connection ID strings themselves look correct.
+As noted in the [Secrets](#secrets) section, this repository uses an IAM user (`airflow-secrets-backend`) whose access keys are stored as Codespace secrets so that Airflow can reach AWS Secrets Manager in `dpe-prod`. These credentials must be rotated every 90 days. If they have expired, Airflow will be unable to resolve any connections or variables backed by Secrets Manager, which can surface as `KeyError` import errors, hook connection failures, or `botocore` token errors such as:
+```
+botocore.exceptions.ClientError: An error occurred (UnrecognizedClientException) when calling the GetSecretValue operation: The security token included in the request is invalid.
+```
+— even when the connection ID strings themselves look correct.
 
 **To verify this is the cause:**
 
