@@ -77,27 +77,27 @@ def top_public_synapse_projects_30_days_from_snowflake() -> None:
                     node_latest.project_id != {SYNAPSE_HOMEPAGE_PROJECT_ID}
             ),
             DEDUP_FILEHANDLE AS (
-                SELECT DISTINCT
+                SELECT
                     PUBLIC_PROJECTS.name,
-                    filedownload.user_id,
-                    filedownload.file_handle_id AS FD_FILE_HANDLE_ID,
-                    filedownload.record_date,
-                    filedownload.project_id,
+                    objectdownload_event.user_id,
+                    objectdownload_event.file_handle_id AS FD_FILE_HANDLE_ID,
+                    objectdownload_event.record_date,
+                    objectdownload_event.project_id,
                     file_latest.content_size
                 FROM
-                    synapse_data_warehouse.synapse.filedownload
+                    synapse_data_warehouse.synapse_event.objectdownload_event
                 INNER JOIN
                     PUBLIC_PROJECTS
                 ON
-                    filedownload.project_id = PUBLIC_PROJECTS.project_id
+                    objectdownload_event.project_id = PUBLIC_PROJECTS.project_id
                 INNER JOIN
                     synapse_data_warehouse.synapse.file_latest
                 ON
-                    filedownload.file_handle_id = file_latest.id
+                    objectdownload_event.file_handle_id = file_latest.id
                 WHERE
-                    filedownload.record_date > DATEADD(DAY, -30, '{context["params"]["current_date"]}')
+                    objectdownload_event.record_date > DATEADD(DAY, -30, '{context["params"]["current_date"]}')
                 AND 
-                    filedownload.record_date <= '{context["params"]["current_date"]}'
+                    objectdownload_event.record_date <= '{context["params"]["current_date"]}'
             ),
 
             DOWNLOAD_STAT AS (

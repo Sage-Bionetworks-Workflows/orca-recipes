@@ -97,7 +97,7 @@ def trending_projects_snapshot() -> None:
                 ),
                 RECENT_DOWNLOADS AS (
                     SELECT PROJECT_ID, RECORD_DATE, USER_ID
-                    FROM SYNAPSE_DATA_WAREHOUSE.SYNAPSE.FILEDOWNLOAD
+                    FROM SYNAPSE_DATA_WAREHOUSE.SYNAPSE_EVENT.OBJECTDOWNLOAD_EVENT
                     WHERE 1=1
                     AND DATE_TRUNC('MONTH', RECORD_DATE) = DATE_TRUNC('MONTH', DATE('{context["params"]["month_to_run"]}'))
                     AND STACK = 'prod'

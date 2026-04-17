@@ -173,25 +173,25 @@ def top_public_synapse_projects_from_snowflake() -> None:
                     node_latest.project_id != %(homepage_id)s
             ),
             DEDUP_FILEHANDLE AS (
-                SELECT DISTINCT
+                SELECT
                     PUBLIC_PROJECTS.name,
-                    filedownload.user_id,
-                    filedownload.file_handle_id AS FD_FILE_HANDLE_ID,
-                    filedownload.record_date,
-                    filedownload.project_id,
+                    objectdownload_event.user_id,
+                    objectdownload_event.file_handle_id AS FD_FILE_HANDLE_ID,
+                    objectdownload_event.record_date,
+                    objectdownload_event.project_id,
                     file_latest.content_size
                 FROM
-                    synapse_data_warehouse.synapse.filedownload
+                    synapse_data_warehouse.synapse_event.objectdownload_event
                 INNER JOIN
                     PUBLIC_PROJECTS
                 ON
-                    filedownload.project_id = PUBLIC_PROJECTS.project_id
+                    objectdownload_event.project_id = PUBLIC_PROJECTS.project_id
                 INNER JOIN
                     synapse_data_warehouse.synapse.file_latest
                 ON
-                    filedownload.file_handle_id = file_latest.id
+                    objectdownload_event.file_handle_id = file_latest.id
                 WHERE
-                    filedownload.record_date = {date_clause}
+                    objectdownload_event.record_date = {date_clause}
             ),
 
             DOWNLOAD_STAT AS (
@@ -359,22 +359,22 @@ def top_public_synapse_projects_from_snowflake() -> None:
             
             DEDUP_FILEHANDLE AS (
                 -- Get download information for files in projects from file views
-                SELECT DISTINCT
+                SELECT
                     PROJECT_INFO.group_name,
                     PROJECT_INFO.file_view_id,
-                    filedownload.user_id,
-                    filedownload.file_handle_id AS FD_FILE_HANDLE_ID,
-                    filedownload.record_date,
-                    filedownload.project_id,
+                    objectdownload_event.user_id,
+                    objectdownload_event.file_handle_id AS FD_FILE_HANDLE_ID,
+                    objectdownload_event.record_date,
+                    objectdownload_event.project_id,
                     file_latest.content_size
                 FROM
-                    synapse_data_warehouse.synapse.filedownload
+                    synapse_data_warehouse.synapse_event.objectdownload_event
                 INNER JOIN PROJECT_INFO
-                ON filedownload.project_id = PROJECT_INFO.project_id
+                ON objectdownload_event.project_id = PROJECT_INFO.project_id
                 INNER JOIN synapse_data_warehouse.synapse.file_latest
-                ON filedownload.file_handle_id = file_latest.id
+                ON objectdownload_event.file_handle_id = file_latest.id
                 WHERE
-                    filedownload.record_date = {date_clause}
+                    objectdownload_event.record_date = {date_clause}
             ),
             
             DOWNLOAD_STAT AS (
