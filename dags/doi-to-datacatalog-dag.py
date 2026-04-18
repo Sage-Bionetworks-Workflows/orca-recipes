@@ -20,10 +20,12 @@ from src.anthropic_hook import AnthropicHook
 from src.datacite import fetch_doi_prefix
 from src.dois.doi_to_datacatalog import (
     collect_enrichment_results,
+    collect_test_filter_results,
     extract_public_dois,
     load_to_data_catalog,
     merge_doi_metadata,
     submit_enrichment_batch,
+    submit_test_filter_batch,
     transform_datacite_dois,
     transform_synapse_dois,
 )
@@ -113,17 +115,31 @@ def doi_to_datacatalog() -> None:
         return batch_id
 
     @task
-    def collect_and_load(merged_path: str, batch_id: str, **context) -> None:
-        """Collect batch results, apply enrichment, filter, and upsert to Synapse."""
+    def submit_test_filter(merged_path: str, **context) -> str:
+        """Submit Claude batch to classify entities as test/demo vs real. Returns batch_id."""
+        merged_df = pd.read_pickle(merged_path)
+        anthropic_hook = AnthropicHook(context["params"]["anthropic_conn_id"])
+        batch_id = submit_test_filter_batch(merged_df, anthropic_hook.client)
+        logger.info("Submitted test filter batch: %s", batch_id or "none needed")
+        return batch_id
+
+    @task
+    def collect_and_load(merged_path: str, batch_id: str, test_filter_batch_id: str, **context) -> None:
+        """Collect batch results, apply enrichment and test filter, and upsert to Synapse."""
         merged_df = pd.read_pickle(merged_path)
 
         anthropic_hook = AnthropicHook(context["params"]["anthropic_conn_id"])
         enriched_df = collect_enrichment_results(merged_df, batch_id, anthropic_hook.client)
         logger.info("Enrichment results collected.")
 
+        filtered_df = collect_test_filter_results(enriched_df, test_filter_batch_id, anthropic_hook.client)
+        n_test = filtered_df["anthropic_is_test"].sum()
+        logger.info("Test filter: %d test/demo projects removed, %d meaningful remaining.", n_test, len(filtered_df) - n_test)
+        # meaningful_df = filtered_df[~filtered_df[""]].drop(columns=["anthropic_is_test"])
+
         syn_hook = SynapseHook(context["params"]["synapse_conn_id"])
         n_loaded = load_to_data_catalog(
-            df=enriched_df,
+            df=filtered_df,
             syn=syn_hook.client,
             data_catalog_table_id=context["params"]["data_catalog_table_id"],
             existing_datasets_table_id=context["params"]["existing_datasets_table_id"],
@@ -134,7 +150,10 @@ def doi_to_datacatalog() -> None:
     synapse_path = extract_synapse_dois()
     datacite_path = fetch_datacite_dois()
     merged_path = merge(synapse_path, datacite_path)
+
+    # submit_batch and submit_test_filter run in parallel after merge
     batch_id = submit_batch(merged_path)
+    test_filter_batch_id = submit_test_filter(merged_path)
 
     wait_for_batch = AnthropicBatchSensor(
         task_id="wait_for_batch",
@@ -144,7 +163,17 @@ def doi_to_datacatalog() -> None:
         poke_interval=60,
     )
 
-    wait_for_batch >> collect_and_load(merged_path, batch_id)
+    wait_for_test_filter = AnthropicBatchSensor(
+        task_id="wait_for_test_filter",
+        batch_id=test_filter_batch_id,
+        anthropic_conn_id="{{ params.anthropic_conn_id }}",
+        mode="reschedule",
+        poke_interval=60,
+    )
+
+    load_task = collect_and_load(merged_path, batch_id, test_filter_batch_id)
+    wait_for_batch.set_downstream(load_task)
+    wait_for_test_filter.set_downstream(load_task)
 
 
 dag = doi_to_datacatalog()

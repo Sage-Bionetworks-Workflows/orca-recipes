@@ -22,6 +22,7 @@ class AnthropicHook:
             from airflow.hooks.base import BaseHook
 
             return BaseHook.get_connection(self.conn_id).password
+            # return os.environ.get("ANTHROPIC_API_KEY")
         except Exception:
             api_key = os.environ.get("ANTHROPIC_API_KEY")
             if not api_key:

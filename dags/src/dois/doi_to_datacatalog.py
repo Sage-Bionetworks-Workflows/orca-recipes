@@ -38,10 +38,10 @@ doi_entities as (
         node_latest.scope_ids,
         node_revision.description,
         node_latest.annotations:annotations                     as annotations
-    from synapse_rds_snapshot.prod_576.doi
+    from synapse_rds_snapshot.prod_583.doi
     left join synapse_data_warehouse.synapse.node_latest
         on doi.object_id = node_latest.id
-    join synapse_rds_snapshot.prod_576.node_revision
+    join synapse_rds_snapshot.prod_583.node_revision
         on node_latest.id = node_revision.owner_node_id
         and (
             doi.object_version = -1
@@ -494,6 +494,116 @@ def collect_enrichment_results(
             logger.info("Enriched %s", entity_id)
         except (json.JSONDecodeError, KeyError):
             logger.warning("Could not parse Claude response for %s: %s", entity_id, text[:100])
+
+    return df
+
+
+def _build_test_filter_prompt(
+    name: str,
+    node_type: str,
+    size: object,
+    size_unit: str,
+    description: str,
+) -> str:
+    size_str = f"{size} {size_unit}" if size and not pd.isna(size) else "unknown/empty"
+    context_parts = [f"Name: {name}", f"Type: {node_type}", f"Size: {size_str}"]
+    if description:
+        context_parts.append(f"Description: {description[:500]}")
+
+    return (
+        "Determine if this Synapse entity is a test/demo/training project (not real scientific data) "
+        "or a real scientific dataset worth including in a data catalog.\n\n"
+        "Mark is_test=true if the name contains words like 'test', 'demo', 'sandbox', 'example', "
+        "'temp', 'training', or 'tutorial'; if the size is 0 or empty; or if the description "
+        "indicates it is for testing or demonstration purposes.\n\n"
+        "Return JSON: {\"is_test\": true or false}\n"
+        "No explanation, just the JSON.\n\n"
+        + "\n".join(context_parts)
+    )
+
+
+def submit_test_filter_batch(
+    df: pd.DataFrame,
+    anthropic_client: anthropic.Anthropic,
+) -> str:
+    """Submit a Claude batch to classify entities as test/demo vs real scientific data.
+
+    Args:
+        df: Merged DataFrame from merge_doi_metadata.
+        anthropic_client: Authenticated Anthropic client.
+
+    Returns:
+        Anthropic batch ID. Returns empty string if df is empty.
+    """
+    if df.empty:
+        return ""
+
+    requests = []
+    for idx, row in df.iterrows():
+        prompt = _build_test_filter_prompt(
+            name=str(row.get("name", "")),
+            node_type=str(row.get("NODE_TYPE", "")),
+            size=row.get("size"),
+            size_unit=str(row.get("sizeUnit", "")),
+            description=str(row.get("description", "")) if not _is_empty(row.get("description")) else "",
+        )
+        requests.append(
+            anthropic.types.message_create_params.MessageCreateParamsNonStreaming(
+                custom_id=str(idx),
+                params={
+                    "model": "claude-haiku-4-5-20251001",
+                    "max_tokens": 64,
+                    "messages": [{"role": "user", "content": prompt}],
+                },
+            )
+        )
+
+    batch = anthropic_client.messages.batches.create(requests=requests)
+    logger.info("Submitted test filter batch %s with %d requests.", batch.id, len(requests))
+    return batch.id
+
+
+def collect_test_filter_results(
+    df: pd.DataFrame,
+    batch_id: str,
+    anthropic_client: anthropic.Anthropic,
+) -> pd.DataFrame:
+    """Apply test-filter batch results onto the DataFrame.
+
+    Args:
+        df: The same merged DataFrame passed to submit_test_filter_batch.
+        batch_id: Batch ID returned by submit_test_filter_batch.
+        anthropic_client: Authenticated Anthropic client.
+
+    Returns:
+        DataFrame with anthropic_is_test column added (True = test/demo project).
+    """
+    df = df.copy()
+    df["anthropic_is_test"] = False
+
+    if not batch_id:
+        return df
+
+    for result in anthropic_client.messages.batches.results(batch_id):
+        idx = int(result.custom_id)
+        entity_id = f"syn{int(df.at[idx, 'id'])}"  # type: ignore[arg-type]
+        if result.result.type != "succeeded":
+            logger.warning("Test filter result for %s failed: %s", entity_id, result.result.error)
+            continue
+        text = next(
+            (b.text for b in result.result.message.content if b.type == "text"),
+            "",
+        )
+        try:
+            raw = text.strip()
+            if raw.startswith("```"):
+                raw = "\n".join(raw.split("\n")[1:-1])
+            parsed = json.loads(raw)
+            df.at[idx, "anthropic_is_test"] = bool(parsed.get("is_test", False))
+        except (json.JSONDecodeError, KeyError):
+            logger.warning(
+                "Could not parse test filter response for %s: %s", entity_id, text[:100]
+            )
 
     return df
 
