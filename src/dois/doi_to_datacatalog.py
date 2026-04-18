@@ -599,16 +599,18 @@ def get_existing_ids(syn: synapseclient.Synapse, table_id: str) -> set:
 
 def main(conn=None) -> None:
     """
-    Main function -loops through the
-        top level releases project folder, checks for
-        valid release paths and runs the function to
-        ingest those data into snowflake
+    Run the DOI-to-Data Catalog synchronization pipeline.
+
+    This entrypoint logs into Synapse, obtains a Snowflake connection,
+    extracts public Synapse DOI metadata, fetches matching DataCite DOI
+    records for the configured prefix, merges the two metadata sources,
+    filters out records already present in the destination Synapse table,
+    and upserts the remaining rows into the Data Catalog table.
 
     Args:
-        database (str): Database table to run ELT commands in
-        overwrite_partition (bool): Whether to overwrite table data or not
-        conn (snowflake.connector.SnowflakeConnection): Optional Snowflake
-            connection injected externally (e.g. Airflow)
+        conn (snowflake.connector.SnowflakeConnection, optional): Existing
+            Snowflake connection to reuse. If not provided, a new connection
+            is created via ``get_connection()`` and closed before returning.
     """
     syn = synapseclient.login()
     conn_obj = get_connection(conn=conn)
