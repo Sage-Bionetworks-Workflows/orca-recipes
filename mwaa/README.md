@@ -62,4 +62,5 @@ Credentials (Snowflake, Synapse, etc.) are stored as Airflow Connections in the 
 
 ## Local Development
 
-For local development and testing, use the `@dag.test`
+1. For local development and testing, use the `@dag.test`
+2. You must install `pip install apache-airflow==2.10.3`
