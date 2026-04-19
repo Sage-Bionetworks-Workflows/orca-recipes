@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "snowflake-utils"
+version = "0.1.0"
+dependencies = [
+    "snowflake-connector-python[pandas] ~=3.15.0",
+]
+
+[tool.setuptools]
+packages = ["snowflake_utils"]
+
+[tool.setuptools.package-dir]
+snowflake_utils = "."
