@@ -62,7 +62,7 @@ class Dataset:
     @property
     def staged_samplesheet_location(self) -> str:
         """The S3 uri where the samplesheet is staged."""
-        return f"{self.staging_location}synstage_{self.id}/subset_{self.samplesheet}"
+        return f"{self.staging_location}synstage_{self.id}/{self.samplesheet}"
 
     @property
     def staging_location(self) -> str:
@@ -145,10 +145,10 @@ def prepare_synstage_info(dataset: Dataset) -> LaunchInfo:
             pipeline="Sage-Bionetworks-Workflows/nf-synapse",
             revision="main",
             profiles=["sage"],
-            entry_name="NF_SYNSTAGE",
             params={
                 "input": dataset.samplesheet_location,
                 "outdir": dataset.staging_location,
+                "entry": "synstage",
             },
             workspace_secrets=["SYNAPSE_AUTH_TOKEN"]
         )
@@ -174,7 +174,7 @@ def prepare_sarek_launch_info(dataset: Dataset) -> LaunchInfo:
             "intervals": "s3://ntap-add5-project-tower-bucket/reference/Baits_BED_Files_AgilentV6_REVISED_S07604514_ALLBED_merged_020816_withChr_GRCh38_sorted.bed",
             "igenomes_base": "s3://sage-igenomes/igenomes",
             "genome": "GATK.GRCh38",
-            "tools": "haplotypecaller",
+            "tools": "strelka",
         }
     )
 
@@ -193,10 +193,10 @@ def prepare_synindex_launch_info(dataset: Dataset) -> LaunchInfo:
             pipeline="Sage-Bionetworks-Workflows/nf-synapse",
             revision="main",
             profiles=["sage"],
-            entry_name="NF_SYNINDEX",
             params={
                 "s3_prefix": dataset.output_directory,
                 "parent_id": dataset.synapse_id_for_output,
+                "entry": "synindex",
             },
             workspace_secrets=["SYNAPSE_AUTH_TOKEN"]
         )
@@ -213,24 +213,24 @@ async def run_workflows(ops: NextflowTowerOps, dataset: Dataset,step):
         print('starting synstage')
         # stage fastq and updated samplesheetj
         synstage_info = prepare_synstage_info(dataset)
-        synstage_run_id = ops.launch_workflow(synstage_info, "spot")
+        synstage_run_id = ops.launch_workflow(synstage_info, "spot", ignore_previous_runs=True)
         status = await ops.monitor_workflow(run_id=synstage_run_id, wait_time=60 * 2)
         print(status)
-        
-    if 'all' in step or 'process' in step: 
+
+    if 'all' in step or 'process' in step:
         print('starting data processing pipeline')
         # run sarek pipeline
         sarek_info = prepare_sarek_launch_info(dataset)
-        sarek_run_id = ops.launch_workflow(sarek_info, "spot")
+        sarek_run_id = ops.launch_workflow(sarek_info, "spot", ignore_previous_runs=True)
         status = await ops.monitor_workflow(run_id=sarek_run_id, wait_time=60 * 2)
         print(status)
-        
 
-    if 'all' in step or 'synindex' in step: 
+
+    if 'all' in step or 'synindex' in step:
         print('starting synindex')
         # index the output files in Synapse
         synindex_info = prepare_synindex_launch_info(dataset)
-        synindex_run_id = ops.launch_workflow(synindex_info, "spot")
+        synindex_run_id = ops.launch_workflow(synindex_info, "spot", ignore_previous_runs=True)
         status = await ops.monitor_workflow(run_id=synindex_run_id, wait_time=60 * 2)
         print(status)
 
