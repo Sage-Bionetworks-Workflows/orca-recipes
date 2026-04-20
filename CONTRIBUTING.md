@@ -286,9 +286,8 @@ Modify everything in `<>` and remove the `<>` when complete:
       - "nextflow_tower"
 ```
 
-Note that while `synapse_conn_id` and `aws_conn_id` are customizable, we do have connection IDs already in-place
-for you to use that will connect you to Synapse (through DPE's ORCA Service Account) and to AWS. But feel free to swap
-these for your own if they do not suit your needs.
+> [!NOTE]
+> While `synapse_conn_id` and `aws_conn_id` are customizable, we do have connection IDs already in-place for you to use that will connect you to Synapse (through DPE's ORCA Service Account) and to AWS. Feel free to swap these for your own if they do not suit your needs.
 
 ```
 synapse_conn_id: "SYNAPSE_ORCA_SERVICE_ACCOUNT_CONN"
@@ -387,7 +386,10 @@ If the access key ID does not match, the secret access key (`AWS_SECRET_ACCESS_K
 
 **To fix it:**
 
-1. In the AWS Console (`org-sagebase-dpe-prod`, `us-east-1`), navigate to **IAM → Users → `airflow-secrets-backend`** and rotate the access key by creating a new one and deactivating the old one. Note: you will need admin permissions in the `org-sagebase-dpe-prod` account to do this. Instructions for rotating the access key can be found [here](https://sagebionetworks.jira.com/wiki/spaces/DPE/pages/4530602005/Rotating+airflow-secrets-backend+IAM+User+Credentials#Phase-2%3A-Delete-Old-Keys-and-Create-New-Keys).
+1. In the AWS Console (`org-sagebase-dpe-prod`, `us-east-1`), navigate to **IAM → Users → `airflow-secrets-backend`** and rotate the access key by creating a new one and deactivating the old one. Instructions for rotating the access key can be found [here](https://sagebionetworks.jira.com/wiki/spaces/DPE/pages/4530602005/Rotating+airflow-secrets-backend+IAM+User+Credentials#Phase-2%3A-Delete-Old-Keys-and-Create-New-Keys).
+
+   > [!NOTE]
+   > You will need admin permissions in the `org-sagebase-dpe-prod` account to do this.
 2. Update the corresponding Codespace secrets in this repository's GitHub settings with the new access key ID and secret access key (see [Phase 3 of the key rotation runbook](https://sagebionetworks.jira.com/wiki/spaces/DPE/pages/4530602005/Rotating+airflow-secrets-backend+IAM+User+Credentials#Phase-3%3A-Update-Use-Case-1-(GitHub-Codespaces))).
 3. Rebuild your Codespace (or restart it) so the new credentials are injected into the environment.
 
