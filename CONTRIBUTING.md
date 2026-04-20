@@ -376,7 +376,7 @@ botocore.exceptions.ClientError: An error occurred (UnrecognizedClientException)
    env | grep AWS
    ```
 2. Locate the value of `AWS_ACCESS_KEY_ID` in the output.
-3. Compare it against the active access key for the `airflow-secrets-backend` IAM user in the [AWS Console](https://sagebionetworks.jira.com/wiki/spaces/DPE/pages/3389325317/Connecting+to+AWS+EKS+Kubernetes+K8s+cluster) (`org-sagebase-dpe-prod` account).
+3. Compare it against the active access key for the `airflow-secrets-backend` IAM user in the AWS Console (`org-sagebase-dpe-prod` account).
    Alternatively, you can list active keys with the AWS CLI:
    ```console
    aws iam list-access-keys --user-name airflow-secrets-backend --profile <your-profile-name>
