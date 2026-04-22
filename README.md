@@ -63,6 +63,8 @@ Congrats! You have completed set up of the dev environment.
 
 Airflow is made up of multiple components or services working together. The webserver exposes a browser-accessible port, but in a development environment we often want to interface with Airflow through its CLI.
 
+NOTE: If secrets are not accessible or hooks are failing to connect when testing a DAG, see the [Troubleshooting](./CONTRIBUTING.md#troubleshooting) section in CONTRIBUTING.md for common causes and fixes — including how to diagnose and resolve expired Codespace secrets.
+
 #### CLI
 
 We can see which services are currently running:

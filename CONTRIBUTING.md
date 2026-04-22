@@ -286,9 +286,8 @@ Modify everything in `<>` and remove the `<>` when complete:
       - "nextflow_tower"
 ```
 
-Note that while `synapse_conn_id` and `aws_conn_id` are customizable, we do have connection IDs already in-place
-for you to use that will connect you to Synapse (through DPE's ORCA Service Account) and to AWS. But feel free to swap
-these for your own if they do not suit your needs.
+> [!NOTE]
+> While `synapse_conn_id` and `aws_conn_id` are customizable, we do have connection IDs already in-place for you to use that will connect you to Synapse (through DPE's ORCA Service Account) and to AWS. Feel free to swap these for your own if they do not suit your needs.
 
 ```
 synapse_conn_id: "SYNAPSE_ORCA_SERVICE_ACCOUNT_CONN"
@@ -353,3 +352,38 @@ To contribute a new challenge:
 1. **Merge your Pull Request**: Once your changes have been tested, your PR is ready for merge and a maintainer will ensure your DAG is created and running in Airflow production!
 
 By following these guidelines, you will successfully contribute a deployable challenge DAG customized for your needs.
+
+----
+
+### Troubleshooting
+
+This section is a living reference for potential issues you may encounter when testing your DAG. If you run into a problem not covered here, consider documenting it for future contributors.
+
+#### Airflow provider hooks failing to connect — outdated Codespace secrets
+
+If you are testing your DAG in a Codespaces environment (see [Dev Container setup in the README](./README.md#codespaces)) and your Airflow provider hooks (e.g., `SynapseHook`, `SnowflakeHook`, `S3Hook`) are failing to connect, it may be caused by expired AWS credentials in the repository's Codespace secrets.
+
+As noted in the [Secrets](#secrets) section, this repository uses an IAM user (`airflow-secrets-backend`) whose access keys are stored as Codespace secrets so that Airflow can reach AWS Secrets Manager in `dpe-prod`. These credentials must be rotated every 90 days. If they have expired, Airflow will be unable to resolve any connections or variables backed by Secrets Manager, which can surface as `KeyError` import errors, hook connection failures, or `botocore` token errors such as:
+```
+botocore.exceptions.ClientError: An error occurred (UnrecognizedClientException) when calling the GetSecretValue operation: The security token included in the request is invalid.
+```
+— even when the connection ID strings themselves look correct.
+
+**To verify this is the cause:**
+
+1. Open a terminal in your Codespace and run:
+   ```console
+   env | grep AWS
+   ```
+2. Locate the value of `AWS_ACCESS_KEY_ID` in the output.
+3. Compare it against the active access key for the `airflow-secrets-backend` IAM user in the AWS Console (`org-sagebase-dpe-prod` account).
+   Alternatively, you can list active keys with the AWS CLI:
+   ```console
+   aws iam list-access-keys --user-name airflow-secrets-backend --profile <your-profile-name>
+   ```
+
+If the access key ID does not match, the secret access key (`AWS_SECRET_ACCESS_KEY`) is almost certainly stale as well.
+
+**To fix it:**
+
+Follow the [Rotating `airflow-secrets-backend` IAM User Credentials](https://sagebionetworks.jira.com/wiki/spaces/DPE/pages/4530602005/Rotating+airflow-secrets-backend+IAM+User+Credentials#Phase-3:-Update-Use-Case-1-(GitHub-Codespaces)) runbook on Confluence, which covers how to rotate the keys, update the Codespace secrets, and validate the update.
