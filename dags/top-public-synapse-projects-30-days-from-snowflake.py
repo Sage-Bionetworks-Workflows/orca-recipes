@@ -11,16 +11,17 @@ from airflow.decorators import dag, task
 from airflow.models import Variable
 from airflow.models.param import Param
 from airflow.providers.snowflake.hooks.snowflake import SnowflakeHook
-from orca.services.synapse import SynapseHook
+from src.synapse_hook import SynapseHook
 
 dag_params = {
     "snowflake_developer_service_conn": Param("SNOWFLAKE_DEVELOPER_SERVICE_RAW_CONN", type="string"),
     "synapse_conn_id": Param("SYNAPSE_ORCA_SERVICE_ACCOUNT_CONN", type="string"),
     "current_date": Param(date.today().strftime("%Y-%m-%d"), type="string"),
+    "synapse_results_table": Param("syn55382267", type="string"),
 }
 
 dag_config = {
-    "schedule_interval": "0 0 * * *",
+    "schedule": "0 0 * * *",
     "start_date": datetime(2024, 4, 1),
     "catchup": False,
     "default_args": {
@@ -30,7 +31,6 @@ dag_config = {
     "params": dag_params,
 }
 
-SYNAPSE_RESULTS_TABLE = "syn55382267"
 SYNAPSE_HOMEPAGE_PROJECT_ID = 23593546
 
 
@@ -161,7 +161,7 @@ def top_public_synapse_projects_30_days_from_snowflake() -> None:
 
         syn_hook = SynapseHook(context["params"]["synapse_conn_id"])
         syn_hook.client.store(
-            synapseclient.Table(schema=SYNAPSE_RESULTS_TABLE, values=data)
+            synapseclient.Table(schema=context["params"]["synapse_results_table"], values=data)
         )
 
     top_downloads = get_all_time_downloads_from_snowflake()
@@ -170,4 +170,8 @@ def top_public_synapse_projects_30_days_from_snowflake() -> None:
     top_downloads >> push_to_synapse_table
 
 
-top_public_synapse_projects_30_days_from_snowflake()
+dag = top_public_synapse_projects_30_days_from_snowflake()
+
+if __name__ == "__main__":
+    # Replace with a test Synapse table ID before running locally
+    dag.test(run_conf={"synapse_results_table": "syn74496599"})
