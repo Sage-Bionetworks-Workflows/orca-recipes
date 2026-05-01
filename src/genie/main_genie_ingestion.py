@@ -32,6 +32,9 @@ RELEASES_TO_SKIP = [
     "Release 14",
     "Release 15",
     "Release 16",
+    "Release 17",
+    "Release 18",
+    "Release 20"
 ]
 
 PROJECT_SYNID = "syn7492881"
