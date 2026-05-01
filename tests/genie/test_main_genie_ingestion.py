@@ -168,11 +168,11 @@ def test_append_df_logs_success_rowcount_and_chunks():
 @pytest.mark.parametrize(
     "release_path, expected",
     [
-        (("Releases/Release 17", "synX"), True),
+        (("Releases/Release 19", "synX"), True),
         (("Releases/Release 16", "synX"), False),  # skipped list
         (("Releases/Release 00", "synX"), False),  # skipped list
-        (("Release 17", "synX"), False),  # not enough levels
-        (("Releases/Release 17/Extra", "synX"), False),  # too many levels
+        (("Release 19", "synX"), False),  # not enough levels
+        (("Releases/Release 19/Extra", "synX"), False),  # too many levels
     ],
 )
 def test_is_valid_release_path_returns_expected(release_path, expected):
@@ -434,11 +434,11 @@ def test_main_walks_releases_skips_invalid_paths_and_closes_conn_when_not_inject
     walk_output = [
         (
             ("Releases/Release 16", "synOld"),
-            [("19.3-consortium", "synR1")],
+            [("17.3-consortium", "synR1")],
             [],
         ),  # skipped
         (
-            ("Releases/Release 17", "synNew"),
+            ("Releases/Release 19", "synNew"),
             [("19.3-consortium", "synR2")],
             [],
         ),  # processed
@@ -478,7 +478,7 @@ def test_main_does_not_close_conn_when_injected():
     conn_obj = MagicMock(name="conn_obj")
 
     walk_output = [
-        (("Releases/Release 17", "synNew"), [("19.3-consortium", "synR2")], []),
+        (("Releases/Release 19", "synNew"), [("19.3-consortium", "synR2")], []),
     ]
 
     with patch.object(
