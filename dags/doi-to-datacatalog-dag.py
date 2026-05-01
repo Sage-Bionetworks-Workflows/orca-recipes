@@ -41,6 +41,8 @@ dag_params = {
     "existing_datasets_table_id": Param("syn61609402", type="string"),
 }
 
+SYNAPSE_DOI_PREFIX = "10.7303"
+
 dag_config = {
     "schedule": "0 0 1 * *",
     "start_date": datetime(2025, 1, 1),
@@ -82,7 +84,7 @@ def doi_to_datacatalog() -> None:
     def fetch_datacite_dois(**context) -> str:
         """Fetch all findable DOIs with prefix 10.7303 from the DataCite API."""
         datacite_df = transform_datacite_dois(
-            fetch_doi_prefix(prefixes=["10.7303"], state="findable")
+            fetch_doi_prefix(prefixes=[SYNAPSE_DOI_PREFIX], state="findable")
         )
         logger.info("Fetched %d DOIs from DataCite.", len(datacite_df))
 
