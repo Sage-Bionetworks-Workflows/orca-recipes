@@ -16,9 +16,9 @@ DAG files in `dags/` should be thin orchestration layers that import from here.
 
 ## Retrieving the Anthropic API Key
 
-`AnthropicHook` resolves the API key in two ways, tried in order:
+Follow instructions [here](https://platform.claude.com/docs/en/get-started) to retrieve an Anthropic API key.  `AnthropicHook` resolves the API key in two ways, tried in order:
 
-1. **Airflow connection (production)** — create a connection in the Airflow UI with the connection ID you pass to `AnthropicHook(conn_id=...)`. Set the **Password** field to your Anthropic API key. The connection type can be set to "Generic".
+1. **Airflow connection (production)** — connections are backed by AWS Secrets Manager. Add the API key as a secret under the path Airflow expects for the given `airflow/connections/conn_id`. The `password` field of the connection should be set to the API key value.
 
 2. **Environment variable (local/fallback)** — if the Airflow connection can't be resolved (e.g. running locally outside Airflow), the hook falls back to the `ANTHROPIC_API_KEY` environment variable.
 
@@ -27,13 +27,3 @@ DAG files in `dags/` should be thin orchestration layers that import from here.
 ```bash
 export ANTHROPIC_API_KEY="sk-ant-..."
 ```
-
-### Setting up in Airflow
-
-In the Airflow UI: **Admin → Connections → +**
-
-| Field | Value |
-|---|---|
-| Connection Id | `anthropic_default` (or whatever you pass as `conn_id`) |
-| Connection Type | Generic |
-| Password | `sk-ant-...` |
