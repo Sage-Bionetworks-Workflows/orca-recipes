@@ -8,7 +8,7 @@ from typing import Dict, Iterable
 import anthropic
 import pandas as pd
 import synapseclient
-from synapseclient.models import Table
+from synapseclient.models import query, Table
 
 logger = logging.getLogger(__name__)
 
@@ -676,8 +676,7 @@ def get_existing_ids(syn: synapseclient.Synapse, table_id: str) -> set:
     Returns:
         Set of existing id values (as ints, without the 'syn' prefix).
     """
-    results = syn.tableQuery(f"SELECT id FROM {table_id}")
-    df = results.asDataFrame()
+    df = query(f"SELECT id FROM {table_id}")
     return set(df["id"].dropna().str.replace("syn", "", regex=False).astype(int).tolist())
 
 
