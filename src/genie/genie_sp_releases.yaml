@@ -44,4 +44,13 @@
     - syn49498203
     - syn49498213
 
-
+- cohort: her2
+  patient_id_key: record_id
+  sample_id_key: cpt_genie_sample_id
+  table_name: redcap_export
+  file_synid:
+    - syn74210818
+    - syn74210869
+    - syn74210891
+    - syn74210901
+    - syn74210908
