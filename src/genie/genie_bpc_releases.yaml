@@ -1,13 +1,28 @@
 # Valid Public Releases 
 - cohort: nsclc
-  version: public_02_2
+  version: public_02_0
   clinical_synid: syn30358089
   cbioportal_synid: syn30358098
 
 - cohort: crc
-  version: public_02_2
+  version: public_02_0
   clinical_synid: syn39802567
   cbioportal_synid: syn39802595
+
+- cohort: brca
+  version: public_01_0
+  clinical_synid: syn71825206
+  cbioportal_synid: syn71825207
+
+- cohort: panc
+  version: public_01_0
+  clinical_synid: syn72666498
+  cbioportal_synid: syn72666426
+
+- cohort: prostate
+  version: public_01_0
+  clinical_synid: syn73963145
+  cbioportal_synid: syn73963143
 
 # Valid Consortium Releases + Public Previews
 - cohort: bladder
@@ -23,7 +38,7 @@
 - cohort: brca
   version: public_preview_01_0
   clinical_synid: syn53507114
-  cbioportal_synid: null
+  cbioportal_synid: syn71816211
 
 - cohort: brca
   version: consortium_01_1
@@ -34,16 +49,6 @@
   version: consortium_01_2
   clinical_synid: syn39802381
   cbioportal_synid: syn32299078
-
-- cohort: crc
-  version: consortium_01_1
-  clinical_synid: syn24166685
-  cbioportal_synid: syn23561876
-
-- cohort: crc
-  version: consortium_01_2
-  clinical_synid: syn26046784
-  cbioportal_synid: syn25998993
 
 - cohort: crc
   version: consortium_01_3
@@ -84,11 +89,6 @@
   version: public_preview_02_0
   clinical_synid: syn27245047
   cbioportal_synid: syn27199149
-
-- cohort: nsclc
-  version: consortium_02_1
-  clinical_synid: syn25982471
-  cbioportal_synid: syn25471745
 
 - cohort: nsclc
   version: consortium_02_2
@@ -143,7 +143,7 @@
 - cohort: prostate
   version: public_preview_01_0
   clinical_synid: syn53507066
-  cbioportal_synid: null
+  cbioportal_synid: syn73963030
 
 - cohort: renal
   version: consortium_01_1
