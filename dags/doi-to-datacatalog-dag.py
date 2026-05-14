@@ -197,8 +197,8 @@ if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("--dry-run", action="store_true", help="Skip the Synapse upsert.")
-    parser.add_argument("--skip-enrichment", action="store_true", help="Skip Claude API calls.")
+    parser.add_argument("--dry-run", action="store_true", help=dag_params["dry_run"].description)
+    parser.add_argument("--skip-enrichment", action="store_true", help=dag_params["skip_enrichment"].description)
     args = parser.parse_args()
 
     dag.test(run_conf={"dry_run": args.dry_run, "skip_enrichment": args.skip_enrichment})
