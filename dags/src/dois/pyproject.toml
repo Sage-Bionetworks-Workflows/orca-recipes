@@ -1,0 +1,13 @@
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "dois"
+version = "0.1.0"
+dependencies = [
+    "anthropic>=0.52.0",
+    "pandas<3.0.0",
+    "synapseclient",
+    "setuptools",
+]
