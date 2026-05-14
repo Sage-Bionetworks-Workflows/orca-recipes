@@ -353,6 +353,19 @@ def _build_prompt(
     want_description: bool,
     want_keywords: bool,
 ) -> str:
+    """Build a Claude prompt to enrich a Synapse entity with description
+
+    Args:
+        entity_id: Synapse entity ID (e.g. "syn12345").
+        name: Entity name.
+        node_type: Synapse node type (e.g. "project", "dataset").
+        wiki_markdown: Wiki content for the entity, truncated to 2000 chars in the prompt.
+        want_description: If True, request a 1-2 sentence plain-text description.
+        want_keywords: If True, request 2-8 scientific keyword terms.
+
+    Returns:
+        Prompt string requesting a JSON response with ``description`` and/or ``keywords`` fields.
+    """
     context_parts = [f"Name: {name}", f"Type: {node_type}", f"Synapse ID: {entity_id}"]
     if wiki_markdown:
         context_parts.append(f"Wiki:\n{wiki_markdown[:2000]}")
@@ -505,6 +518,18 @@ def _build_test_filter_prompt(
     size_unit: str,
     description: str,
 ) -> str:
+    """Build a Claude prompt to classify a Synapse entity as test/demo or real scientific data.
+
+    Args:
+        name: Entity name.
+        node_type: Synapse node type (e.g. "project", "dataset").
+        size: Numeric size value, or None/NaN if unknown.
+        size_unit: Unit string for the size (e.g. "GB").
+        description: Short description of the entity, truncated to 500 chars in the prompt.
+
+    Returns:
+        Prompt string requesting a JSON response with a single ``is_test`` boolean field.
+    """
     size_str = f"{size} {size_unit}" if size and not pd.isna(size) else "unknown/empty"
     context_parts = [f"Name: {name}", f"Type: {node_type}", f"Size: {size_str}"]
     if description:
