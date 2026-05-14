@@ -697,7 +697,7 @@ def load_to_data_catalog(
     Returns:
         Number of rows loaded.
     """
-    existing_ids = get_existing_ids(syn, existing_datasets_table_id)
+    existing_ids = get_existing_ids(existing_datasets_table_id)
     filtered_df = df[~df["id"].astype(int).isin(existing_ids)]
     logger.info("Filtered to %d new datasets not yet in %s.", len(filtered_df), existing_datasets_table_id)
 
