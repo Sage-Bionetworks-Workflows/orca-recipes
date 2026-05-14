@@ -121,26 +121,26 @@ def _make_request_with_retry(
     
     while True:
         resp = session.get(url, params=params, timeout=timeout)
-        logger.debug(f"API request: {resp.url}")
+        logger.debug("API request: %s", resp.url)
         if resp.ok:
-            logger.debug(f"Request successful on attempt {retries + 1}")
+            logger.debug("Request successful on attempt %d", retries + 1)
             return resp
         if resp.status_code in (429, 500, 502, 503, 504):
             if retries >= max_retries:
                 logger.error(
-                    f"Max retries ({max_retries}) exceeded for {url}. "
-                    f"Last status: {resp.status_code}"
+                    "Max retries (%d) exceeded for %s. Last status: %d",
+                    max_retries, url, resp.status_code,
                 )
                 resp.raise_for_status()
             logger.warning(
-                f"Retryable error {resp.status_code} on attempt {retries + 1}. "
-                f"Retrying in {backoff} seconds (retry {retries + 1}/{max_retries})"
+                "Retryable error %d on attempt %d. Retrying in %d seconds (retry %d/%d)",
+                resp.status_code, retries + 1, backoff, retries + 1, max_retries,
             )
             time.sleep(backoff)
             backoff = backoff * 2
             retries += 1
             continue
-        logger.error(f"Non-retryable error {resp.status_code} for {url}")
+        logger.error("Non-retryable error %d for %s", resp.status_code, url)
         resp.raise_for_status()
 
 
@@ -213,18 +213,16 @@ def _validate_fetch_params(page_size: int, state: str) -> None:
     """
     # Validate page_size
     if page_size < 1:
-        logger.error(f"Invalid page_size={page_size}, must be at least 1")
+        logger.error("Invalid page_size=%d, must be at least 1", page_size)
         raise ValueError("page_size must be at least 1")
     if page_size > 1000:
-        logger.error(f"Invalid page_size={page_size}, cannot exceed 1000")
+        logger.error("Invalid page_size=%d, cannot exceed 1000", page_size)
         raise ValueError("page_size cannot exceed 1000 (DataCite API maximum)")
-    
+
     # Validate state
     valid_states = ["findable", "registered", "draft"]
     if state not in valid_states:
-        logger.error(
-            f"Invalid state='{state}', must be one of {valid_states}"
-        )
+        logger.error("Invalid state='%s', must be one of %s", state, valid_states)
         raise ValueError(
             f"state must be one of {valid_states}, got '{state}'"
         )
@@ -260,14 +258,14 @@ def _fetch_doi_page(
     _validate_fetch_params(page_size, state)
     
     logger.debug(
-        f"Fetching page {page_number} with page_size={page_size}, "
-        f"prefixes={prefixes}, state={state}"
+        "Fetching page %d with page_size=%d, prefixes=%s, state=%s",
+        page_number, page_size, prefixes, state,
     )
     params = _build_query_params(prefixes, state, page_size, page_number, detail)
     resp = _make_request_with_retry(session, DATACITE_API, params)
     result = resp.json()
     data_count = len(result.get("data", []))
-    logger.info(f"Fetched page {page_number}: {data_count} DOI records")
+    logger.info("Fetched page %d: %d DOI records", page_number, data_count)
     return result
 
 
@@ -308,8 +306,8 @@ def fetch_doi_prefix(
     _validate_fetch_params(page_size, state)
     
     logger.info(
-        f"Starting DOI fetch: prefixes={prefixes}, state={state}, "
-        f"page_size={page_size}, start_page={start_page}"
+        "Starting DOI fetch: prefixes=%s, state=%s, page_size=%d, start_page=%d",
+        prefixes, state, page_size, start_page,
     )
     headers = _build_user_agent_headers(user_agent_mailto)
 
@@ -317,7 +315,7 @@ def fetch_doi_prefix(
     with requests.Session() as s:
         if headers:
             s.headers.update(headers)
-            logger.debug(f"Using User-Agent with mailto: {user_agent_mailto}")
+            logger.debug("Using User-Agent with mailto: %s", user_agent_mailto)
 
         page_number = start_page
         while True:
@@ -332,14 +330,14 @@ def fetch_doi_prefix(
             data = payload.get("data", [])
 
             if data:
-                total_dois += len(data) 
+                total_dois += len(data)
                 yield from data
-            
+
             # Stop when we returned a short page
             if not _should_continue_pagination(data, page_size):
                 logger.info(
-                    f"Pagination complete: fetched {total_dois} total DOIs across "
-                    f"{page_number - start_page + 1} pages"
+                    "Pagination complete: fetched %d total DOIs across %d pages",
+                    total_dois, page_number - start_page + 1,
                 )
                 break
             page_number += 1
@@ -364,17 +362,17 @@ def write_ndjson_gz(objs: Iterable[Dict[str, Any]], out_path: str) -> int:
         >>> print(f"Wrote {count} objects")
         Wrote 2 objects
     """
-    logger.info(f"Writing DOI objects to {out_path}")
+    logger.info("Writing DOI objects to %s", out_path)
     count = 0
     log_interval = 1000  # Log progress every 1000 objects
-    
+
     # Stream to gzip without holding all in memory
     with gzip.open(out_path, "wb") as gz:
         for obj in objs:
             gz.write(_serialize_to_ndjson(obj))
             count += 1
             if count % log_interval == 0:
-                logger.debug(f"Written {count} objects so far...")
-    
-    logger.info(f"Successfully wrote {count} DOI objects to {out_path}")
+                logger.debug("Written %d objects so far...", count)
+
+    logger.info("Successfully wrote %d DOI objects to %s", count, out_path)
     return count
