@@ -611,7 +611,7 @@ def collect_test_filter_results(
 def transform_datacite_dois(datacite_dois: Iterable[Dict]) -> pd.DataFrame:
     """Flatten raw DataCite API objects into a DataFrame, deduplicated on 'doi'."""
     df = pd.DataFrame([i["attributes"] for i in datacite_dois])
-    df.drop_duplicates("doi", inplace=True)
+    df = df.drop_duplicates("doi")
     return df
 
 
