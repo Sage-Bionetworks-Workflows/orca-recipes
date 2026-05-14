@@ -670,7 +670,6 @@ def get_existing_ids(table_id: str) -> set:
     """Fetch existing node IDs from a Synapse table.
 
     Args:
-        syn: Synapse client instance.
         table_id: Synapse table ID to query.
 
     Returns:
