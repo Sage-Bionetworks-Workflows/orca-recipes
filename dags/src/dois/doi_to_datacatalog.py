@@ -666,7 +666,7 @@ def merge_doi_metadata(
     return merged
 
 
-def get_existing_ids(syn: synapseclient.Synapse, table_id: str) -> set:
+def get_existing_ids(table_id: str) -> set:
     """Fetch existing node IDs from a Synapse table.
 
     Args:
