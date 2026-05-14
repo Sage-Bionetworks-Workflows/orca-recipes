@@ -1,6 +1,13 @@
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
 from airflow.sensors.base import BaseSensorOperator
 
 from src.anthropic_hook import AnthropicHook
+
+if TYPE_CHECKING:
+    from airflow.utils.context import Context
 
 
 class AnthropicBatchSensor(BaseSensorOperator):
@@ -16,7 +23,7 @@ class AnthropicBatchSensor(BaseSensorOperator):
         self.batch_id = batch_id
         self.anthropic_conn_id = anthropic_conn_id
 
-    def poke(self) -> bool:
+    def poke(self, _context: Context) -> bool:
         if not self.batch_id:
             return True
 

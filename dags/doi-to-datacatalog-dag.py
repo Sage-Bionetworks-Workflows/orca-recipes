@@ -136,7 +136,7 @@ def doi_to_datacatalog() -> None:
         return batch_id
 
     @task
-    def collect_and_load(merged_path: str, batch_id: str, test_filter_batch_id: str, **context) -> None:
+    def collect_and_load(merged_path: str, batch_id: str, test_filter_batch_id: str, **context) -> int:
         """Collect batch results, apply enrichment and test filter, and upsert to Synapse."""
         merged_df = pd.read_pickle(merged_path)
 
@@ -150,7 +150,7 @@ def doi_to_datacatalog() -> None:
 
         if context["params"]["dry_run"]:
             logger.info("Dry run: skipping Synapse upsert. Would have loaded %d rows into %s.", len(filtered_df), context["params"]["data_catalog_table_id"])
-            return
+            return 0
 
         syn_hook = SynapseHook(context["params"]["synapse_conn_id"])
         n_loaded = load_to_data_catalog(
@@ -160,6 +160,7 @@ def doi_to_datacatalog() -> None:
             existing_datasets_table_id=context["params"]["existing_datasets_table_id"],
         )
         logger.info("Loaded %d rows into %s.", n_loaded, context["params"]["data_catalog_table_id"])
+        return n_loaded
 
     # extract_synapse_dois and fetch_datacite_dois run in parallel
     synapse_path = extract_synapse_dois()
