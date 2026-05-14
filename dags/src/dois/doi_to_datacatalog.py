@@ -424,7 +424,8 @@ def submit_enrichment_batch(
 
     entity_ids = {idx: f"syn{int(df.at[idx, 'id'])}" for idx in rows_to_enrich}  # type: ignore[arg-type]
 
-    def _fetch_wiki(idx):
+    def _fetch_wiki(idx: int) -> tuple[int, str]:
+        """Fetch wiki markdown for a single entity index; returns empty string on failure."""
         try:
             wiki = syn.getWiki(entity_ids[idx])
             return idx, wiki.markdown or ""
