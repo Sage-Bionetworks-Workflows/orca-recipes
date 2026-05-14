@@ -332,7 +332,7 @@ def transform_synapse_dois(dois_df: pd.DataFrame) -> pd.DataFrame:
     return dois_df
 
 
-def _is_empty(val) -> bool:
+def _is_empty(val: object) -> bool:
     """Return True if a value is None, NaN, empty string, or empty list."""
     if val is None:
         return True
