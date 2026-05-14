@@ -39,6 +39,8 @@ dag_params = {
     "anthropic_conn_id": Param("ANTHROPIC_CONN", type="string"),
     "data_catalog_table_id": Param("syn74257215", type="string"),
     "existing_datasets_table_id": Param("syn61609402", type="string"),
+    "dry_run": Param(False, type="boolean", description="If True, skip the Synapse upsert and only log what would be loaded."),
+    "skip_enrichment": Param(False, type="boolean", description="If True, skip Claude API calls and leave enrichment columns empty."),
 }
 
 SYNAPSE_DOI_PREFIX = "10.7303"
@@ -56,6 +58,7 @@ dag_config = {
 
 
 def _tmp_path(prefix: str, ts_nodash: str) -> str:
+    """Return a /tmp pickle path scoped to the given prefix and Airflow run timestamp."""
     return f"/tmp/doi_{prefix}_{ts_nodash}.pkl"
 
 
@@ -106,10 +109,13 @@ def doi_to_datacatalog() -> None:
         return path
 
     @task
-    def submit_batch(merged_path: str, **context) -> str:
+    def submit_batch(merged_path: str, **context) -> str | None:
         """Fetch wikis, build prompts, and submit the Claude batch. Returns batch_id."""
-        merged_df = pd.read_pickle(merged_path)
+        if context["params"]["skip_enrichment"]:
+            logger.info("skip_enrichment=True: skipping enrichment batch submission.")
+            return None
 
+        merged_df = pd.read_pickle(merged_path)
         syn_hook = SynapseHook(context["params"]["synapse_conn_id"])
         anthropic_hook = AnthropicHook(context["params"]["anthropic_conn_id"])
         batch_id = submit_enrichment_batch(merged_df, syn_hook.client, anthropic_hook.client)
@@ -117,8 +123,12 @@ def doi_to_datacatalog() -> None:
         return batch_id
 
     @task
-    def submit_test_filter(merged_path: str, **context) -> str:
+    def submit_test_filter(merged_path: str, **context) -> str | None:
         """Submit Claude batch to classify entities as test/demo vs real. Returns batch_id."""
+        if context["params"]["skip_enrichment"]:
+            logger.info("skip_enrichment=True: skipping test filter batch submission.")
+            return None
+
         merged_df = pd.read_pickle(merged_path)
         anthropic_hook = AnthropicHook(context["params"]["anthropic_conn_id"])
         batch_id = submit_test_filter_batch(merged_df, anthropic_hook.client)
@@ -135,9 +145,12 @@ def doi_to_datacatalog() -> None:
         logger.info("Enrichment results collected.")
 
         filtered_df = collect_test_filter_results(enriched_df, test_filter_batch_id, anthropic_hook.client)
-        n_test = filtered_df["anthropic_is_test"].sum()
+        n_test = int(filtered_df["anthropic_is_test"].sum())
         logger.info("Test filter: %d test/demo projects removed, %d meaningful remaining.", n_test, len(filtered_df) - n_test)
-        # meaningful_df = filtered_df[~filtered_df[""]].drop(columns=["anthropic_is_test"])
+
+        if context["params"]["dry_run"]:
+            logger.info("Dry run: skipping Synapse upsert. Would have loaded %d rows into %s.", len(filtered_df), context["params"]["data_catalog_table_id"])
+            return
 
         syn_hook = SynapseHook(context["params"]["synapse_conn_id"])
         n_loaded = load_to_data_catalog(
@@ -181,4 +194,11 @@ def doi_to_datacatalog() -> None:
 dag = doi_to_datacatalog()
 
 if __name__ == "__main__":
-    dag.test()
+    import argparse
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--dry-run", action="store_true", help="Skip the Synapse upsert.")
+    parser.add_argument("--skip-enrichment", action="store_true", help="Skip Claude API calls.")
+    args = parser.parse_args()
+
+    dag.test(run_conf={"dry_run": args.dry_run, "skip_enrichment": args.skip_enrichment})
