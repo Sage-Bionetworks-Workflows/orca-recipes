@@ -27,6 +27,10 @@ jobs:
       - name: Install airflow deps
         run: |
           pip install -r requirements-airflow.txt
+
+      - name: Install DAG-specific packages
+        run: |
+          pip install -e dags/src/dois/
           
       - name: Run tests
         run: |
