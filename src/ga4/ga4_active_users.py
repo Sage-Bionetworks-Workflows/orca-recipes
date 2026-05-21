@@ -7,6 +7,7 @@ import json
 import re
 import sys
 from datetime import date
+from urllib.parse import urlparse
 
 from google.analytics.data_v1beta import BetaAnalyticsDataClient
 from google.analytics.data_v1beta.types import (
@@ -345,14 +346,26 @@ def get_monthly_active_domains(
     return out
 
 
-def get_data_catalog_segment(
+def url_to_page_path(url_or_path: str) -> str:
+    """Reduce a full URL to its path component; pass a bare path through.
+
+    e.g. "https://www.synapse.org/CuratorDashboard:0" → "/CuratorDashboard:0"
+         "/DataCatalog:0" → "/DataCatalog:0"
+    """
+    parsed = urlparse(url_or_path)
+    if parsed.scheme or parsed.netloc:
+        return parsed.path or "/"
+    return url_or_path
+
+
+def get_page_segment(
     credentials_path: str,
     start_date: str = "2026-01-01",
     end_date: str = "today",
     page_path: str = "/DataCatalog:0",
     property_id: str = PROPERTY_ID,
 ) -> dict:
-    """Active users on the DataCatalog page, outbound clicks, and internal navs.
+    """Active users on a given page, outbound clicks, and internal navs.
 
     Three GA4 queries:
       1) activeUsers filtered to pagePath == page_path.
@@ -368,13 +381,16 @@ def get_data_catalog_segment(
         credentials_path: Path to GA4 service account JSON file.
         start_date: ISO date string (YYYY-MM-DD) or relative.
         end_date: ISO date string (YYYY-MM-DD) or relative.
-        page_path: Path on www.synapse.org to scope the segment to.
+        page_path: Path on the analytics-tagged site to scope the segment to.
+            Full URLs are accepted and reduced via url_to_page_path.
         property_id: GA4 numeric property ID.
 
     Returns:
         Dict with active_users for the segment and outbound_links list
         (link_url + event_count, sorted desc).
     """
+    page_path = url_to_page_path(page_path)
+    print(page_path)
     client = get_client(credentials_path)
 
     page_filter = FilterExpression(
@@ -504,23 +520,21 @@ if __name__ == "__main__":
         help="Per-domain active users for each of the last 12 full months, as CSV on stdout",
     )
     parser.add_argument(
-        "--data-catalog",
-        action="store_true",
-        help="Active users + outbound clicks for the DataCatalog page segment",
-    )
-    parser.add_argument(
-        "--page-path",
-        default="/DataCatalog:0",
-        help="Path used by --data-catalog (default: /DataCatalog:0)",
+        "--page",
+        help=(
+            "URL or path to analyze — active users + outbound clicks + "
+            "internal navs (e.g. https://www.synapse.org/CuratorDashboard:0 "
+            "or /DataCatalog:0)"
+        ),
     )
     args = parser.parse_args()
 
-    if args.data_catalog:
-        result = get_data_catalog_segment(
+    if args.page:
+        result = get_page_segment(
             args.credentials,
             args.start,
             args.end,
-            page_path=args.page_path,
+            page_path=args.page,
             property_id=args.property_id,
         )
         print(json.dumps(result, indent=2))
