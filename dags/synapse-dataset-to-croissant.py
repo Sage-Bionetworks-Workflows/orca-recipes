@@ -81,7 +81,7 @@ from synapseclient.core.utils import delete_none_keys
 dag_params = {
     "snowflake_developer_service_conn": Param("SNOWFLAKE_DEVELOPER_SERVICE_RAW_CONN", type="string"),
     "synapse_conn_id": Param("SYNAPSE_ORCA_SERVICE_ACCOUNT_CONN", type="string"),
-    "dataset_collections": Param(["syn50913342", "syn68939725"], type="array"),
+    "dataset_collections": Param(["syn50913342", "syn68939725", "syn71493541"], type="array"),
     "push_results_to_s3": Param(True, type="boolean"),
     "push_links_to_synapse": Param(True, type="boolean"),
     "delete_out_of_date_from_s3": Param(True, type="boolean"),
