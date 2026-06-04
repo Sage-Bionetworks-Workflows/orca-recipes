@@ -87,11 +87,11 @@ dag_params = {
     "delete_out_of_date_from_s3": Param(True, type="boolean"),
     "delete_out_of_date_from_synapse": Param(True, type="boolean"),
     "dataset_collections": Param(["syn50913342", "syn68939725", "syn71493541"], type="array"),
-"push_results_to_s3": Param(True, type="boolean"),
-"push_links_to_synapse": Param(True, type="boolean"),
-"delete_out_of_date_from_s3": Param(True, type="boolean"),
-"delete_out_of_date_from_synapse": Param(True, type="boolean"),
-"dataset_collections_for_cleanup": Param(["syn50913342", "syn68939725", "syn71493541"], type="array"),
+    "push_results_to_s3": Param(True, type="boolean"),
+    "push_links_to_synapse": Param(True, type="boolean"),
+    "delete_out_of_date_from_s3": Param(True, type="boolean"),
+    "delete_out_of_date_from_synapse": Param(True, type="boolean"),
+    "dataset_collections_for_cleanup": Param(["syn50913342", "syn68939725", "syn71493541"], type="array"),
     "aws_conn_id": Param("AWS_SYNAPSE_CROISSANT_METADATA_S3_CONN", type="string"),
 }
 
