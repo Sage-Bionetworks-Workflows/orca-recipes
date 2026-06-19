@@ -399,7 +399,7 @@ def construct_distribution_section_for_files(files_attached_to_dataset: List[Fil
 
         distribution_files.append(
             {
-                "@type": "FileObject",
+                "@type": "cr:FileObject",
                 "@id": f"{file.id}.{file.version_number}",
                 "name": f"{file.name}",
                 "description": file.description if file.description else f"Data file associated with {file.name}",
@@ -439,7 +439,7 @@ def construct_record_set_section_for_files(files_attached_to_dataset: List[File]
     for key in unique_annotation_keys:
         metadata_fields.append(
             {
-                "@type": "Field",
+                "@type": "cr:Field",
                 "@id": f"metadata/{key}",
                 "name": key,
                 "description": "",
@@ -452,7 +452,7 @@ def construct_record_set_section_for_files(files_attached_to_dataset: List[File]
         )
 
     return {
-        "@type": "RecordSet",
+        "@type": "cr:RecordSet",
         "@id": "default",
         "name": "default",
         "description": "Metadata for the dataset",
@@ -1080,12 +1080,12 @@ def dataset_to_croissant() -> None:
             # used to describe the metadata associated with the dataset and where to find
             # it on the Synapse server (The Dataset view)
             distribution_files = [{
-                "@type": "FileObject",
+                "@type": "cr:FileObject",
                 "@id": "metadata",
                 "contentUrl": f"https://www.synapse.org/Synapse:{dataset_id}.{dataset_version}",
                 "name": "metadata",
                 "description": f"Metadata associated with {dataset.name}",
-                "encodingFormat": "application/csv",
+                "encodingFormat": "text/csv",
                 "md5": "unknown",
                 "sha256": "unknown"
             }] + construct_distribution_section_for_files(files_attached_to_dataset, **context)
@@ -1094,14 +1094,19 @@ def dataset_to_croissant() -> None:
                 files_attached_to_dataset=files_attached_to_dataset)
 
             croissant_file = {
-                "@context": {
+            "@context": {
                     "@language": "en",
-                    "@vocab": "https://schema.org/",
+                    "@vocab": "http://schema.org/",
+                    "sc": "http://schema.org/",
+                    "cr": "http://mlcommons.org/croissant/",
+                    "rai": "http://mlcommons.org/croissant/RAI/",
+                    "dct": "http://purl.org/dc/terms/",
+                    "annotation": "cr:annotation",
+                    "arrayShape": "cr:arrayShape",
                     "citeAs": "cr:citeAs",
                     "column": "cr:column",
                     "conformsTo": "dct:conformsTo",
-                    "cr": "http://mlcommons.org/croissant/",
-                    "rai": "http://mlcommons.org/croissant/RAI/",
+                    "containedIn": "cr:containedIn",
                     "data": {
                         "@id": "cr:data",
                         "@type": "@json"
@@ -1110,11 +1115,12 @@ def dataset_to_croissant() -> None:
                         "@id": "cr:dataType",
                         "@type": "@vocab"
                     },
-                    "dct": "http://purl.org/dc/terms/",
+                    "equivalentProperty": "cr:equivalentProperty",
                     "examples": {
                         "@id": "cr:examples",
                         "@type": "@json"
                     },
+                    "excludes": "cr:excludes",
                     "extract": "cr:extract",
                     "field": "cr:field",
                     "fileProperty": "cr:fileProperty",
@@ -1122,56 +1128,54 @@ def dataset_to_croissant() -> None:
                     "fileSet": "cr:fileSet",
                     "format": "cr:format",
                     "includes": "cr:includes",
+                    "isArray": "cr:isArray",
                     "isLiveDataset": "cr:isLiveDataset",
                     "jsonPath": "cr:jsonPath",
                     "key": "cr:key",
                     "md5": "cr:md5",
                     "parentField": "cr:parentField",
-                    "path": "cr:path",
                     "recordSet": "cr:recordSet",
                     "references": "cr:references",
                     "regex": "cr:regex",
-                    "repeated": "cr:repeated",
-                    "replace": "cr:replace",
-                    "sc": "https://schema.org/",
+                    "readLines": "cr:readLines",
+                    "sdVersion": "cr:sdVersion",
                     "separator": "cr:separator",
                     "source": "cr:source",
                     "subField": "cr:subField",
-                    "transform": "cr:transform"
+                    "transform": "cr:transform",
+                    "unArchive": "cr:unArchive",
+                    "value": "cr:value"
                 },
-                "@type": "Dataset",
+                "@type": "sc:Dataset",
                 "@id": f"{dataset_id}.{dataset_version}",
                 "name": f"{dataset.name}",
                 "description": dataset.description if hasattr(dataset, "description") and dataset.description else f"Dataset for {dataset.name}",
                 "url": f"https://www.synapse.org/Synapse:{dataset_id}.{dataset_version}",
-                "datePublished": dataset.modifiedOn,
-                "license": dataset.license[0] if hasattr(dataset, "license") else "unknown_license",
+                "datePublished": dataset.createdOn,
+                "dateModified": dataset.modifiedOn,
+                "license": (
+                    dataset.license[0]
+                    if hasattr(dataset, "license") and dataset.license
+                    else {
+                        "@type": "sc:CreativeWork",
+                        "name": "License not specified",
+                        "url": f"https://www.synapse.org/Synapse:{dataset_id}.{dataset_version}"
+                    }
+                ),
                 "version": dataset_version,
-                "dct:conformsTo": "http://mlcommons.org/croissant/1.0",
+                "dct:conformsTo": "http://mlcommons.org/croissant/1.1",
                 # https://github.com/nf-osi/nf-metadata-dictionary/blob/main/registered-json-schemas/PortalDataset.json
                 # These fields are derived from: https://raw.githubusercontent.com/nf-osi/nf-metadata-dictionary/refs/heads/main/registered-json-schemas/PortalDataset.json
                 # If a more specific schema is needed, then we can add a mapping for the dataset to point to the schema and pull these in dynamically.
                 "accessType": dataset.accessType[0] if hasattr(dataset, "accessType") else None,
                 "alternateName": dataset.alternateName[0] if hasattr(dataset, "alternateName") else None,
                 "citation": dataset.citation[0] if hasattr(dataset, "citation") else None,
-                "conditionsOfAccess": dataset.conditionsOfAccess[0] if hasattr(dataset, "conditionsOfAccess") else None,
                 "countryOfOrigin": dataset.countryOfOrigin if hasattr(dataset, "countryOfOrigin") else None,
-                "dataType": dataset.dataType if hasattr(dataset, "dataType") else None,
-                "dataUseModifiers": dataset.dataUseModifiers if hasattr(dataset, "dataUseModifiers") else None,
                 "diseaseFocus": dataset.diseaseFocus if hasattr(dataset, "diseaseFocus") else None,
-                "funder": dataset.funder if hasattr(dataset, "funder") else None,
-                "individualCount": dataset.individualCount[0] if hasattr(dataset, "individualCount") else None,
                 "keywords": dataset.keywords if hasattr(dataset, "keywords") else None,
-                "manifestation": dataset.manifestation if hasattr(dataset, "manifestation") else None,
                 "measurementTechnique": dataset.measurementTechnique if hasattr(dataset, "measurementTechnique") else None,
-                "series": dataset.series[0] if hasattr(dataset, "series") else None,
-                "species": dataset.species if hasattr(dataset, "species") else None,
-                "specimenCount": dataset.specimenCount[0] if hasattr(dataset, "specimenCount") else None,
-                "studyId": dataset.studyId[0] if hasattr(dataset, "studyId") else None,
                 "subject": dataset.subject if hasattr(dataset, "subject") else None,
                 "title": dataset.title[0] if hasattr(dataset, "title") else None,
-                "visualizeDataOn": dataset.visualizeDataOn if hasattr(dataset, "visualizeDataOn") else None,
-                "yearProcessed": dataset.yearProcessed[0] if hasattr(dataset, "yearProcessed") else None,
                 "distribution": distribution_files,
                 "recordSet": record_set,
             }
