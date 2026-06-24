@@ -1,6 +1,6 @@
 """
-This DAG demonstrates launching and monitoring a Nextflow workflow on Nextflow Tower.
-1. Launch the nextflow-io/hello workflow on Nextflow Tower
+This DAG demonstrates launching and monitoring a Nextflow workflow on Seqera Platform.
+1. Launch the nextflow-io/hello workflow on Seqera Platform
 2. Monitor the workflow until it completes
 """
 
