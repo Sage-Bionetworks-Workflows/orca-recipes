@@ -33,7 +33,7 @@ from airflow.models import Param, Variable
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 import requests
-from synapseclient import File
+from synapseclient.models import File, Folder
 
 from src.synapse_hook import SynapseHook
 
@@ -453,9 +453,10 @@ def zenodo_tep_metrics_dag():
         build_workbook(records, filepath)
         try:
             hook = SynapseHook(context["params"]["synapse_conn_id"])
-            uploaded = hook.client.store(
-                File(filepath, parent=context["params"]["synapse_export_folder"])
+            uploaded = File(path=filepath, parent_id=context["params"]["synapse_export_folder"]).store(
+                synapse_client=hook.client,
             )
+            
         finally:
             if os.path.exists(filepath):
                 os.remove(filepath)
@@ -490,4 +491,7 @@ def zenodo_tep_metrics_dag():
     notify_collaborators(file_info)
 
 
-zenodo_tep_metrics_dag()
+dag = zenodo_tep_metrics_dag()
+
+if __name__ == "__main__":
+    dag.test()
