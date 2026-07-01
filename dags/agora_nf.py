@@ -7,6 +7,10 @@ from orca.services.nextflowtower import NextflowTowerHook
 from orca.services.nextflowtower.models import LaunchInfo
 from slack_sdk import WebClient
 
+TOWER_HOST = "https://tower.sagebionetworks.org"
+TOWER_ORG_NAME = "Sage-Bionetworks"
+TOWER_WORKSPACE_NAME = "agora-project"
+
 dag_params = {
     "tower_conn_id": Param("AGORA_PROJECT_TOWER_CONN", type="string"),
     "tower_compute_env_type": Param("agora-project-ondemand-v13", type="string"),
@@ -90,12 +94,10 @@ def agora_nf_run_dag():
             f"Duration: {duration}\n"
         )
 
-        config = hook.ops.config
-        workspace = config.workspace or ""
-        host = (config.api_endpoint or "").removesuffix("/api")
-        if host and "/" in workspace:
-            org_name, workspace_name = workspace.split("/", 1)
-            message += f"\nView run: {host}/orgs/{org_name}/workspaces/{workspace_name}/watch/{workflow.id}"
+        message += (
+            f"\nView run: {TOWER_HOST}/orgs/{TOWER_ORG_NAME}"
+            f"/workspaces/{TOWER_WORKSPACE_NAME}/watch/{workflow.id}/v2/tasks"
+        )
 
         return message
 
