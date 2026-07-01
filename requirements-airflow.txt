@@ -10,4 +10,3 @@ jsonata-python ~=0.5.3
 boto3 >=1.7.0,<2.0
 requests ~=2.31
 PyYAML ~=6.0.3
-openpyxl ~=3.1

@@ -11,7 +11,7 @@ Synapse. The DAG follows these steps:
    the Zenodo API response and the computed aggregates. If the schema has
    changed or a value is missing, the task logs the problem and fails so that
    Airflow retries kick in and the failure alert is sent.
-3. Export the metrics to a styled Excel workbook report and upload it to a Synapse
+3. Export the metrics to CSV files and upload them to a Synapse
    folder.
 4. Notify the collaborator(s) via email that a new report is available.
 
@@ -23,15 +23,14 @@ The DAG runs monthly. The Zenodo API token is stored in the Airflow secrets
 backend as the ZENODO_API_TOKEN Variable.
 """
 
+import csv
 import logging
 import os
 from datetime import datetime
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, NamedTuple
 
 from airflow.decorators import dag, task
 from airflow.models import Param, Variable
-from openpyxl import Workbook
-from openpyxl.styles import Alignment, Font, PatternFill
 import requests
 from synapseclient.models import File, Folder
 
@@ -271,83 +270,85 @@ def validate_records(records: List[Dict[str, Any]]) -> None:
     logger.info(f"Validation passed for {len(records)} records.")
 
 
-def build_workbook(records: List[Dict[str, Any]], filepath: str) -> Tuple[int, int]:
-    """Build a Excel workbook of TEP metrics and save it locally.
+class CsvReport(NamedTuple):
+    """A single CSV report to write.
 
-    Creates two worksheets ("TEP Reports" and "TEP Components") split by record
-    category, each with a header row, rows of data, and a totals row.
+    Attributes:
+        path (str): Output path for the CSV file
+        records (List[Dict[str, Any]]): Records belonging to this report
+    """
+
+    path: str
+    records: List[Dict[str, Any]]
+
+
+def build_reports(records: List[Dict[str, Any]], filepath: str) -> Dict[str, Any]:
+    """Build CSV reports of TEP metrics and save them locally.
+
+    Writes two CSV files split by record category ("TEP Reports" and
+    "TEP Components"), each with a header row, rows of data, a spacer row, and a
+    totals row.
+
+    The two CSV paths are derived from filepath by stripping its extension and
+    appending _TEP_Reports.csv / _TEP_Components.csv.
 
     Arguments:
         records (List[Dict[str, Any]]): Validated TEP records
-        filepath (str): Path to write the .xlsx file to
+        filepath (str): Base path used to derive the two CSV file paths
 
     Returns:
-        Dict[str, int]: Counts of report records and component records
+        Dict[str, Any]: Counts of report/component records and the list of
+            written CSV file paths (under the "paths" key)
     """
     main_teps = [r for r in records if r["category"] == "report"]
     supporting = [r for r in records if r["category"] == "component"]
 
-    wb = Workbook()
-    wb.remove(wb.active)  # remove default sheet
+    base = os.path.splitext(filepath)[0]
+    outputs = [
+        CsvReport(path=f"{base}_TEP_Reports.csv", records=main_teps),
+        CsvReport(path=f"{base}_TEP_Components.csv", records=supporting),
+    ]
 
-    header_fill = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")
-    header_font = Font(bold=True, color="FFFFFF")
-    totals_fill = PatternFill(start_color="E7E6E6", end_color="E7E6E6", fill_type="solid")
-    totals_font = Font(bold=True)
-    column_widths = {"A": 60, "B": 18, "C": 12, "D": 12, "E": 15, "F": 17, "G": 50}
+    for output in outputs:
+        with open(output.path, "w", newline="") as f:
+            writer = csv.writer(f)
 
-    for sheet_name, sheet_records in [
-        ("TEP Reports", main_teps),
-        ("TEP Components", supporting),
-    ]:
-        ws = wb.create_sheet(title=sheet_name)
+            writer.writerow(EXCEL_HEADERS)
 
-        ws.append(EXCEL_HEADERS)
-        for cell in ws[1]:
-            cell.fill = header_fill
-            cell.font = header_font
-            cell.alignment = Alignment(horizontal="center", vertical="center")
+            for record in output.records:
+                writer.writerow(
+                    [
+                        record["title"],
+                        record["date"],
+                        record["views"],
+                        record["unique_views"],
+                        record["downloads"],
+                        record["unique_downloads"],
+                        record["link"],
+                    ]
+                )
 
-        for record in sheet_records:
-            ws.append(
+            writer.writerow([])  # spacer row
+            writer.writerow(
                 [
-                    record["title"],
-                    record["date"],
-                    record["views"],
-                    record["unique_views"],
-                    record["downloads"],
-                    record["unique_downloads"],
-                    record["link"],
+                    "TOTALS",
+                    "",
+                    sum(r["views"] for r in output.records),
+                    sum(r["unique_views"] for r in output.records),
+                    sum(r["downloads"] for r in output.records),
+                    sum(r["unique_downloads"] for r in output.records),
+                    "",
                 ]
             )
 
-        ws.append([])  # spacer row
-        totals_row_idx = len(sheet_records) + 3
-        ws.append(
-            [
-                "TOTALS",
-                "",
-                sum(r["views"] for r in sheet_records),
-                sum(r["unique_views"] for r in sheet_records),
-                sum(r["downloads"] for r in sheet_records),
-                sum(r["unique_downloads"] for r in sheet_records),
-                "",
-            ]
-        )
-        for cell in ws[totals_row_idx]:
-            cell.fill = totals_fill
-            cell.font = totals_font
-
-        for column, width in column_widths.items():
-            ws.column_dimensions[column].width = width
-
-    wb.save(filepath)
     logger.info(
-        f"Wrote workbook to {filepath} ({len(main_teps)} reports, {len(supporting)} components)"
+        f"Wrote CSV reports to {outputs[0].path} and {outputs[1].path} "
+        f"({len(main_teps)} reports, {len(supporting)} components)"
     )
     return {
         "report_records": len(main_teps),
         "component_records": len(supporting),
+        "paths": [output.path for output in outputs],
     }
 
 
@@ -437,46 +438,56 @@ def zenodo_tep_metrics_dag():
 
     @task
     def export_to_synapse(records: List[Dict[str, Any]], **context) -> Dict[str, str]:
-        """Build the Excel report and upload it to Synapse.
+        """Build the CSV reports and upload them to Synapse.
 
         Arguments:
             records (List[Dict[str, Any]]): Validated TEP records
             **context: Airflow task context containing DAG parameters
 
         Returns:
-            Dict[str, str]: Uploaded file info (id and name)
+            List[Dict[str, str]]: Uploaded file info (id and name) for each CSV
         """
         run_date = context["ds_nodash"]  # YYYYMMDD of the logical run date
-        filename = f"TREATAD_Target_Enabling_Metrics_{run_date}.xlsx"
-        filepath = os.path.join(os.getcwd(), filename)
+        base_filepath = os.path.join(
+            os.getcwd(), f"TREATAD_Target_Enabling_Metrics_{run_date}"
+        )
 
-        build_workbook(records, filepath)
+        csv_paths = build_reports(records, base_filepath)["paths"]
+        uploaded_files: List[Dict[str, str]] = []
         try:
             hook = SynapseHook(context["params"]["synapse_conn_id"])
-            uploaded = File(path=filepath, parent_id=context["params"]["synapse_export_folder"]).store(
-                synapse_client=hook.client,
-            )
-            
+            for csv_path in csv_paths:
+                filename = os.path.basename(csv_path)
+                uploaded = File(
+                    path=csv_path,
+                    parent_id=context["params"]["synapse_export_folder"],
+                ).store(synapse_client=hook.client)
+                logger.info(f"Uploaded {filename} to Synapse as {uploaded.id}")
+                uploaded_files.append({"id": uploaded.id, "name": filename})
         finally:
-            if os.path.exists(filepath):
-                os.remove(filepath)
+            for csv_path in csv_paths:
+                if os.path.exists(csv_path):
+                    os.remove(csv_path)
 
-        logger.info(f"Uploaded {filename} to Synapse as {uploaded.id}")
-        return {"id": uploaded.id, "name": filename}
+        return uploaded_files
 
     @task
-    def notify_collaborators(file_info: Dict[str, str], **context) -> None:
-        """Notify collaborator(s) that the monthly report is available.
+    def notify_collaborators(uploaded_files: List[Dict[str, str]], **context) -> None:
+        """Notify collaborator(s) that the monthly reports are available.
 
         Arguments:
-            file_info (Dict[str, str]): Uploaded file info from export_to_synapse.
+            uploaded_files (List[Dict[str, str]]): Uploaded file info from
+                export_to_synapse.
             **context: Airflow task context containing DAG parameters
         """
-        subject = "New TREAT-AD Target Enabling Metrics report available"
+        links = "\n".join(
+            f"- {f['name']}: https://www.synapse.org/Synapse:{f['id']}"
+            for f in uploaded_files
+        )
+        subject = "New TREAT-AD Target Enabling Metrics reports available"
         body = (
-            f"A new monthly TREAT-AD target enabling metrics report "
-            f"('{file_info['name']}') has been uploaded to Synapse: "
-            f"https://www.synapse.org/Synapse:{file_info['id']}"
+            "New monthly TREAT-AD target enabling metrics reports have been "
+            f"uploaded to Synapse:\n\n{links}"
         )
         _send_synapse_message(
             conn_id=context["params"]["synapse_conn_id"],
