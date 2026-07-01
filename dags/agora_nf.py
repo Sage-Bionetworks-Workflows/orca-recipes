@@ -91,7 +91,7 @@ def agora_nf_run_dag():
             f"{emoji} Tower workflow (Name: {workflow.run_name}, Id: {workflow.id}) "
             f"has completed with state: {workflow.status.state.value}\n"
             f"Dataset: {dataset}\n"
-            f"Duration: {duration}\n"
+            f"Duration (submission to completion): {duration}\n"
         )
 
         message += (
