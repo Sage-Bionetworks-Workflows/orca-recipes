@@ -10,6 +10,7 @@ from slack_sdk import WebClient
 TOWER_HOST = "https://tower.sagebionetworks.org"
 TOWER_ORG_NAME = "Sage-Bionetworks"
 TOWER_WORKSPACE_NAME = "agora-project"
+SLACK_CHANNEL = "test-agora-nextflow"
 
 dag_params = {
     "tower_conn_id": Param("AGORA_PROJECT_TOWER_CONN", type="string"),
@@ -105,7 +106,7 @@ def agora_nf_run_dag():
     def post_slack_messages(message: str) -> bool:
         """Post the top downloads to the slack channel."""
         client = WebClient(token=Variable.get("SLACK_DPE_TEAM_BOT_TOKEN"))
-        result = client.chat_postMessage(channel="test-agora-nextflow", text=message)
+        result = client.chat_postMessage(channel=SLACK_CHANNEL, text=message)
         print(f"Result of posting to slack: [{result}]")
         return result is not None
     
