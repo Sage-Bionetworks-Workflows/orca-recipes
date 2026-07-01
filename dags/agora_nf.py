@@ -75,7 +75,28 @@ def agora_nf_run_dag():
     def generate_message(run_id: str, **context):
         hook = NextflowTowerHook(context["params"]["tower_conn_id"])
         workflow = hook.ops.get_workflow(run_id)
-        message = f"Tower workflow {workflow.name} ({workflow.id}) has completed with state: {workflow.status.state.value}"
+
+        emoji = "🎉" if workflow.status.is_successful else "❌"
+        dataset = workflow.params.get("dataset") or "all datasets"
+
+        duration = "unknown"
+        if workflow.submit and workflow.complete:
+            duration = str(workflow.complete - workflow.submit)
+
+        message = (
+            f"{emoji} Tower workflow (Name: {workflow.run_name}, Id: {workflow.id}) "
+            f"has completed with state: {workflow.status.state.value}\n"
+            f"Dataset: {dataset}\n"
+            f"Duration: {duration}\n"
+        )
+
+        config = hook.ops.config
+        workspace = config.workspace or ""
+        host = (config.api_endpoint or "").removesuffix("/api")
+        if host and "/" in workspace:
+            org_name, workspace_name = workspace.split("/", 1)
+            message += f"\nView run: {host}/orgs/{org_name}/workspaces/{workspace_name}/watch/{workflow.id}"
+
         return message
 
     @task
