@@ -6,6 +6,7 @@ from airflow.models import Variable
 from orca.services.nextflowtower import NextflowTowerHook
 from orca.services.nextflowtower.models import LaunchInfo
 from slack_sdk import WebClient
+from orca.services.synapse import SynapseHook
 
 TOWER_HOST = "https://tower.sagebionetworks.org"
 TOWER_ORG_NAME = "Sage-Bionetworks"
@@ -13,6 +14,7 @@ TOWER_WORKSPACE_NAME = "agora-project"
 SLACK_CHANNEL = "test-agora-nextflow"
 
 dag_params = {
+    "synapse_conn_id": Param("SYNAPSE_ORCA_SERVICE_ACCOUNT_CONN", type="string"),
     "tower_conn_id": Param("AGORA_PROJECT_TOWER_CONN", type="string"),
     "tower_compute_env_type": Param("agora-project-ondemand-v13", type="string"),
     "tower_run_name": Param("airflow-agora-model-ad", type="string"),
@@ -110,12 +112,23 @@ def agora_nf_run_dag():
         print(f"Result of posting to slack: [{result}]")
         return result is not None
     
+    @task
+    def post_email_messages(message: str, **context) -> bool:
+        """Post the top downloads to the email channel."""
+        syn_client = SynapseHook(context["params"]["synapse_conn_id"]).client
+        syn_client.sendMessage(["3600433"], "Tower workflow completed", message)
+        print(f"Result of posting to email: [{message}]")
+        return True
+
+    
     run_id = launch_agora_on_tower()
     monitor_task = monitor_nf_genie_workflow(run_id=run_id)
     message = generate_message(run_id=run_id)
     post_to_slack = post_slack_messages(message=message)
+    post_to_email = post_email_messages(message=message)
     
-    run_id >> monitor_task >> message >> post_to_slack
+    run_id >> monitor_task >> message >> [post_to_slack, post_to_email]
+
     
 
 agora_nf_run_dag()
