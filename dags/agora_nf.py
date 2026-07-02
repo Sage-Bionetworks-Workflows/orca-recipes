@@ -12,10 +12,11 @@ TOWER_HOST = "https://tower.sagebionetworks.org"
 TOWER_ORG_NAME = "Sage-Bionetworks"
 TOWER_WORKSPACE_NAME = "agora-project"
 SLACK_CHANNEL = "test-agora-nextflow"
+SYNAPSE_TEAM_ID = "3600433" # my test team id for now
 
 dag_params = {
     "synapse_conn_id": Param("SYNAPSE_ORCA_SERVICE_ACCOUNT_CONN", type="string"),
-    "tower_conn_id": Param("AGORA_PROJECT_TOWER_CONN", type="string"),
+    "tower_conn_id": Param("AGORA_PROJECT_TOWER_CONN", type="string"), # personal access token belongs to Lingling Peng
     "tower_compute_env_type": Param("agora-project-ondemand-v13", type="string"),
     "tower_run_name": Param("airflow-agora-model-ad", type="string"),
     "pipeline": Param("Sage-Bionetworks-Workflows/nf-agora", type="string"),
@@ -116,7 +117,7 @@ def agora_nf_run_dag():
     def post_email_messages(message: str, **context) -> bool:
         """Post the top downloads to the email channel."""
         syn_client = SynapseHook(context["params"]["synapse_conn_id"]).client
-        syn_client.sendMessage(["3600433"], "Tower workflow completed", message)
+        syn_client.sendMessage([SYNAPSE_TEAM_ID], "Tower workflow completed", message)
         print(f"Result of posting to email: [{message}]")
         return True
 
