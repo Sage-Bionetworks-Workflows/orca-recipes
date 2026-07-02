@@ -130,6 +130,7 @@ def agora_nf_run_dag():
     
     run_id >> monitor_task >> message >> [post_to_slack, post_to_email]
 
-    
+dag = agora_nf_run_dag()
 
-agora_nf_run_dag()
+if __name__ == "__main__":
+    dag.test()
