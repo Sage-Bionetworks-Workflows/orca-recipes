@@ -123,3 +123,30 @@ def test_generate_message(
     assert f"Tower workflow (Name: {RUN_NAME}, Id: {RUN_ID}) has completed with state: {state.value}" in message
     assert f"Duration (submission to completion): {complete - submit}" in message
     assert f"Dataset: {expected_dataset}" in message
+
+def test_post_slack_messages() -> None:
+    """Tests that post_slack_messages returns True when the Slack API call succeeds."""
+    with (
+        patch("dags.agora_nf.WebClient") as mock_web_client,
+        patch("dags.agora_nf.Variable.get", return_value="fake-token"),
+    ):
+        mock_web_client.return_value.chat_postMessage.return_value = {"ok": True}
+
+        raw_python_function = dag.get_task("post_slack_messages").python_callable
+        result = raw_python_function(message="Test message")
+
+        assert result is True
+        mock_web_client.return_value.chat_postMessage.assert_called_once()
+
+
+def test_post_email_messages(fake_context: dict[str, dict[str, Any]]) -> None:
+    """Tests that post_email_messages returns True when the Synapse API call succeeds."""
+    with patch("dags.agora_nf.SynapseHook") as mock_synapse_hook:
+        mock_synapse_client = MagicMock()
+        mock_synapse_hook.return_value.client = mock_synapse_client
+
+        raw_python_function = dag.get_task("post_email_messages").python_callable
+        result = raw_python_function(message="Test message", **fake_context)
+
+        assert result is True
+        mock_synapse_client.sendMessage.assert_called_once()
