@@ -1,3 +1,4 @@
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -14,7 +15,7 @@ mock_ops_client.launch_workflow.return_value = RUN_ID
 
 
 @pytest.fixture
-def fake_context():
+def fake_context() -> dict[str, dict[str, Any]]:
     """Mimics the Airflow task context, which exposes DAG run params under "params"."""
     return {
         "params": {
@@ -35,7 +36,7 @@ def fake_context():
 
 
 @patch.object(NextflowTowerHook, 'ops', new=mock_ops_client)
-def test_launch_agora_on_tower(fake_context):
+def test_launch_agora_on_tower(fake_context: dict[str, dict[str, Any]]) -> None:
     """Tests the launch_agora_on_tower task with input parameters."""
 
     # Task functions are wrapped by the @task decorator; python_callable is the underlying function
@@ -68,7 +69,7 @@ def test_launch_agora_on_tower(fake_context):
     [WorkflowState.SUCCEEDED, WorkflowState.FAILED, WorkflowState.CANCELLED, WorkflowState.UNKNOWN, WorkflowState.RUNNING],
 )
 @patch.object(NextflowTowerHook, 'ops', new=mock_ops_client)
-def test_monitor_agora_workflow_state(fake_context, state):
+def test_monitor_agora_workflow_state(fake_context: dict[str, dict[str, Any]], state: WorkflowState) -> None:
     """Tests that monitor_nf_agora_workflow reports done only for terminal workflow states."""
     mock_ops_client.reset_mock()
     mock_ops_client.get_workflow.return_value.status = WorkflowStatus(state=state)
