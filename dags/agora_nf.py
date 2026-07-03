@@ -73,7 +73,7 @@ def agora_nf_run_dag():
         return run_id
 
     @task.sensor(poke_interval=300, timeout=604800, mode="reschedule")
-    def monitor_nf_genie_workflow(run_id: str, **context):
+    def monitor_nf_agora_workflow(run_id: str, **context):
         hook = NextflowTowerHook(context["params"]["tower_conn_id"])
         workflow = hook.ops.get_workflow(run_id)
         print(f"Current workflow state: {workflow.status.state.value}")
@@ -123,7 +123,7 @@ def agora_nf_run_dag():
 
     
     run_id = launch_agora_on_tower()
-    monitor_task = monitor_nf_genie_workflow(run_id=run_id)
+    monitor_task = monitor_nf_agora_workflow(run_id=run_id)
     message = generate_message(run_id=run_id)
     post_to_slack = post_slack_messages(message=message)
     post_to_email = post_email_messages(message=message)

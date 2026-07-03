@@ -69,11 +69,11 @@ def test_launch_agora_on_tower(fake_context):
 )
 @patch.object(NextflowTowerHook, 'ops', new=mock_ops_client)
 def test_monitor_agora_workflow_state(fake_context, state):
-    """Tests that monitor_nf_genie_workflow reports done only for terminal workflow states."""
+    """Tests that monitor_nf_agora_workflow reports done only for terminal workflow states."""
     mock_ops_client.reset_mock()
     mock_ops_client.get_workflow.return_value.status = WorkflowStatus(state=state)
 
-    raw_python_function = dag.get_task("monitor_nf_genie_workflow").python_callable
+    raw_python_function = dag.get_task("monitor_nf_agora_workflow").python_callable
     workflow_state = raw_python_function(run_id=RUN_ID, **fake_context)
 
     # RUNNING is the only non-terminal state in this list, so it's the only one expecting False
