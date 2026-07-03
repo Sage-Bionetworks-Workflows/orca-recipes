@@ -160,6 +160,14 @@ python dags/<your-dag-file>.py
 
 DAG files with an `if __name__ == "__main__":` block that calls `dag.test()` can be run directly this way.
 
+##### Troubleshooting: `ModuleNotFoundError: No module named 'pkg_resources'`
+
+`synapseclient` depends on `opentelemetry-instrumentation`, which still imports the deprecated `pkg_resources` module. `setuptools` 82+ removed `pkg_resources` entirely, so this import fails if your virtual environment has a recent `setuptools`. `requirements-local-airflow.txt` pins `setuptools <82` to avoid this, but if you still hit it (e.g. something else upgraded `setuptools` afterward), reinstall the pin:
+
+```console
+pip install "setuptools<82"
+```
+
 ### Local DAGs
 
 This repository also contains recipes for specific projects that either don't need to be deployed to Airflow or are not ready to be deployed to Airflow. These recipes can be run locally from the `local` directory. Each sub-directory contains recipes specific to a project and those project folders have their own documentation for running the recipes.
