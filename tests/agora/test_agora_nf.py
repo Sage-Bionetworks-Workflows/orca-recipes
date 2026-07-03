@@ -9,6 +9,7 @@ from orca.services.nextflowtower.models import WorkflowState, WorkflowStatus
 
 
 RUN_ID = "tw-run"
+RUN_NAME = "test_run"
 
 mock_ops_client = MagicMock()
 mock_ops_client.launch_workflow.return_value = RUN_ID
@@ -22,7 +23,7 @@ def fake_context() -> dict[str, dict[str, Any]]:
             "tower_conn_id": "nextflow_default",
             "synapse_conn_id": "synapse_default",
             "tower_compute_env_type": "agora-project-ondemand-v13-test",
-            "tower_run_name": "test_run",
+            "tower_run_name": RUN_NAME,
             "pipeline": "Sage-Bionetworks-Workflows/nf-agora",
             "revision": "test_branch_name",
             "profile": "test_profile",
@@ -49,7 +50,7 @@ def test_launch_agora_on_tower(fake_context: dict[str, dict[str, Any]]) -> None:
     called_args, called_kwargs = mock_ops_client.launch_workflow.call_args
     launched_info_object, compute_env = called_args
 
-    assert launched_info_object.run_name == "test_run"
+    assert launched_info_object.run_name == RUN_NAME
     assert launched_info_object.pipeline == "Sage-Bionetworks-Workflows/nf-agora"
     assert launched_info_object.revision == "test_branch_name"
     assert launched_info_object.work_dir == "s3://agora-project-tower-test/work"
@@ -83,3 +84,21 @@ def test_monitor_agora_workflow_state(fake_context: dict[str, dict[str, Any]], s
     else:
         assert workflow_state is True
     mock_ops_client.get_workflow.assert_called_once_with(RUN_ID)
+
+
+@pytest.mark.parametrize(
+    "state",
+    [WorkflowState.SUCCEEDED, WorkflowState.FAILED, WorkflowState.CANCELLED, WorkflowState.UNKNOWN],
+)
+@patch.object(NextflowTowerHook, 'ops', new=mock_ops_client)
+def test_generate_message(fake_context: dict[str, dict[str, Any]], state: WorkflowState) -> None:
+    """Tests that generate_message returns a string containing the run_id."""
+    mock_ops_client.reset_mock()
+    mock_ops_client.get_workflow.return_value.status = WorkflowStatus(state=state)
+    mock_ops_client.get_workflow.return_value.run_name = RUN_NAME
+    mock_ops_client.get_workflow.return_value.id = RUN_ID
+
+    raw_python_function = dag.get_task("generate_message").python_callable
+    message = raw_python_function(run_id=RUN_ID, **fake_context)
+
+    assert f"Tower workflow (Name: {RUN_NAME}, Id: {RUN_ID}) has completed with state: {state.value}" in message
