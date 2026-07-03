@@ -132,6 +132,12 @@ Then install `synapseclient` separately. This must be done after the above to av
 pip install "synapseclient[pandas]"
 ```
 
+Then install `py-orca`, which depends on `synapseclient` and pulls in the same `urllib3` conflict, so it must also be installed after the above:
+
+```console
+pip install "py-orca[all]==1.5.2"
+```
+
 #### 2. Initialize the Airflow database
 
 ```console
