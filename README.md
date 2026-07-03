@@ -2,6 +2,29 @@
 
 This repository contains Airflow recipes (DAGs) for data processing and engineering at Sage Bionetworks. If you want to develop a workflow to process data, you've come to the right place.
 
+## Table of Contents
+
+- [Example Workflows](#example-workflows)
+- [Airflow Development](#airflow-development)
+  - [Setting up the Dev Environment](#setting-up-the-dev-environment)
+    - [Dev Container](#dev-container)
+      - [Codespaces](#codespaces)
+      - [VS Code](#vs-code)
+    - [Docker Compose](#docker-compose)
+  - [Interfacing with Airflow](#interfacing-with-airflow)
+    - [CLI](#cli)
+    - [Browser](#browser)
+  - [Testing DAGs Locally](#testing-dags-locally)
+    - [Local Development (without Dev Container)](#local-development-without-dev-container)
+      - [1. Install dependencies](#1-install-dependencies)
+      - [2. Initialize the Airflow database](#2-initialize-the-airflow-database)
+      - [3. Configure environment variables](#3-configure-environment-variables)
+        - [Alternative: skip AWS Secrets Manager with a local connections file](#alternative-skip-aws-secrets-manager-with-a-local-connections-file)
+      - [4. Run a DAG locally](#4-run-a-dag-locally)
+  - [Local DAGs](#local-dags)
+- [Contributing](#contributing)
+- [Releases](#releases)
+
 ## Example Workflows
 
 - **Challenge Automation** - Automatically evaluate challenge submissions by fetching entries from Synapse and orchestrating Nextflow workflows via Seqera Platform.
@@ -116,11 +139,19 @@ The username and password will be "airflow".
 If you encounter the `nginx bad gateway` errors when navigating to the forwarded port, just wait and refresh a couple of times. Airflow takes a few minutes to become available.
 
 
-### Local Development (without Dev Container)
+### Testing DAGs Locally
+
+There are two distinct ways to test a DAG's task logic without deploying to Airflow:
+
+- **Unit tests** — mock external dependencies (hooks like `NextflowTowerHook`/`SynapseHook`, `WebClient`, `Variable`, etc.) and call each task's `python_callable` directly. These are fast, require no credentials or network access, and run automatically in CI on every push. They validate your Python logic (parameter wiring, branching, string formatting), not whether the real external services behave as you assume. See `tests/` for examples.
+
+- **Local integration runs** via `dag.test()` (below) — hit real external services with real credentials pulled from AWS Secrets Manager. These validate the real integration (e.g., actually launching a Nextflow Tower workflow or posting to Slack), but are slower, require AWS SSO access, and can have real side effects. Use this as a manual sanity check before/after changing integration behavior, not as an automated substitute for unit tests.
+
+#### Local Development (without Dev Container)
 
 If you want to test a DAG locally without Docker or Codespaces, you can run it directly against a local Airflow SQLite database.
 
-#### 1. Install dependencies
+##### 1. Install dependencies
 
 ```console
 pip install -r requirements-local-airflow.txt
@@ -132,13 +163,7 @@ Then install `synapseclient` separately. This must be done after the above to av
 pip install "synapseclient[pandas]"
 ```
 
-Then install `py-orca`, which depends on `synapseclient` and pulls in the same `urllib3` conflict, so it must also be installed after the above:
-
-```console
-pip install "py-orca[all]==1.5.2"
-```
-
-#### 2. Initialize the Airflow database
+##### 2. Initialize the Airflow database
 
 ```console
 airflow db migrate
@@ -146,7 +171,7 @@ airflow db migrate
 
 This creates the local SQLite metadata database (including the `task_instance` table) that Airflow needs to run `dag.test()`.
 
-#### 3. Configure environment variables
+##### 3. Configure environment variables
 
 Set the following exports (e.g., in your shell profile) so Airflow can resolve connections and variables from AWS Secrets Manager and deserialize custom dataclasses passed between tasks:
 
@@ -158,21 +183,50 @@ export AIRFLOW__CORE__ALLOWED_DESERIALIZATION_CLASSES="airflow.* astro.* __main_
 
 You'll need to be authenticated to AWS with a profile (use `aws sso login --profile <<your-aws-profile>`) that has read access to the Secrets Manager secrets under `airflow/connections/` and `airflow/variables/`.
 
-#### 4. Run a DAG locally
+###### Alternative: skip AWS Secrets Manager with a local connections file
+
+If you'd rather not authenticate to AWS just to test a DAG (e.g., to talk to the real Nextflow Tower), use Airflow's `LocalFilesystemBackend` instead, backed by a local `connections.yaml` file:
+
+```console
+export AIRFLOW__SECRETS__BACKEND=airflow.secrets.local_filesystem.LocalFilesystemBackend
+export AIRFLOW__SECRETS__BACKEND_KWARGS='{"connections_file_path": "connections.yaml"}'
+```
+
+Create `connections.yaml` from the template:
+
+```console
+cp connections.yaml.example connections.yaml
+```
+
+Fill in the real credentials for whichever connections your DAG needs. For example, to launch workflows on the real Nextflow Tower:
+
+```yaml
+AGORA_PROJECT_TOWER_CONN:
+  conn_type: tower
+  host: tower.sagebionetworks.org
+  schema: api
+  password: "<your-tower-personal-access-token>"
+  extra:
+    workspace: sage-bionetworks/<your-workspace>
+```
+
+`host`/`schema` become the Tower API endpoint (`https://<host>/<schema>`), `password` is your Tower personal access token, and `extra.workspace` is the fully-qualified `<org>/<workspace>` name.
+
+`LocalFilesystemBackend`'s `connections_file_path` config above only covers Connections, not Airflow **Variables**. Some DAGs also call `Variable.get("SOME_NAME")` — for example, `SLACK_DPE_TEAM_BOT_TOKEN`, a Slack bot token normally pulled from AWS Secrets Manager. Once you switch away from `SecretsManagerBackend`, there's no source for Variables at all — a plain env var like `SLACK_DPE_TEAM_BOT_TOKEN` in your shell or `.env` is **not** visible to `Variable.get()`.
+
+To fill that gap without AWS access, prefix the Variable's name with `AIRFLOW_VAR_` and export it as a real environment variable. Airflow always checks for `AIRFLOW_VAR_<NAME>` env vars first when resolving `Variable.get(<NAME>)`, before falling through to whatever backend is configured — this is why it matters here specifically: it's the only way to supply a Variable's value once `LocalFilesystemBackend` (which has no Variables source) is in the picture.
+
+```console
+export AIRFLOW_VAR_SLACK_DPE_TEAM_BOT_TOKEN="<the-secret-value>"
+```
+
+##### 4. Run a DAG locally
 
 ```console
 python dags/<your-dag-file>.py
 ```
 
 DAG files with an `if __name__ == "__main__":` block that calls `dag.test()` can be run directly this way.
-
-##### Troubleshooting: `ModuleNotFoundError: No module named 'pkg_resources'`
-
-`synapseclient` depends on `opentelemetry-instrumentation`, which still imports the deprecated `pkg_resources` module. `setuptools` 82+ removed `pkg_resources` entirely, so this import fails if your virtual environment has a recent `setuptools`. `requirements-local-airflow.txt` pins `setuptools <82` to avoid this, but if you still hit it (e.g. something else upgraded `setuptools` afterward), reinstall the pin:
-
-```console
-pip install "setuptools<82"
-```
 
 ### Local DAGs
 
