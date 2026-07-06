@@ -97,6 +97,46 @@ tests/
 │   └── test_mydag.py         # Test suite
 ```
 
+##### Writing tests for a DAG
+
+The repo's [pytest.ini](./pytest.ini) puts both `src/` and `dags/` on the import
+path (`pythonpath = src dags`), so a test can import a DAG module directly along
+with any shared hooks or utilities it depends on:
+
+```python
+from dags import zenodo_tep_metrics_dag as dag_module   # the DAG under test
+```
+
+A few requirements make this import work:
+
+- **The DAG filename must be a valid Python module name** — use underscores, not
+  hyphens so it can be imported with `from dags import <dag_module>` (e.g.
+  `dags/zenodo_tep_metrics_dag.py`, not `dags/zenodo-tep-metrics-dag.py`)
+- **Keep `dags/`, and the top-level `src/` as namespace packages**, 
+  do not add an `__init__.py` to any of them. Because neither `src/` nor
+  `dags/src/` has an `__init__.py`, `import src` resolves to a single namespace
+  package spanning both, so a DAG's `from src.synapse_hook import SynapseHook` and
+  a test's `from src.datacite... import ...` both resolve. Adding an `__init__.py`
+  to `dags/src/` turns it into a regular package that shadows the top-level `src/`
+  and breaks the other test suites.
+
+Prefer testing a DAG's **task-logic functions** (the module-level helper
+functions) directly rather than the `@dag`/`@task` wiring, and mock any external
+calls (HTTP, Synapse, Snowflake) so tests are self-contained and need no credentials.
+See [tests/dags/test_zenodo_tep_metrics_dag.py](./tests/dags/test_zenodo_tep_metrics_dag.py)
+for a worked example that mocks `requests` for the Zenodo API pull and stubs
+`SynapseHook` for the notification logic:
+
+```python
+def test_categorize_title():
+    assert dag_module.categorize_title("A Useful Component") == "component"
+
+def test_fetch_tep_records(monkeypatch):
+    monkeypatch.setattr(dag_module.requests, "get", mock_get)
+    records = dag_module.fetch_tep_records(api_token="fake-token")
+    assert records == [...]
+```
+
 #### Integration Testing
 
 Presently, integration testing means triggering your DAG in Airflow and manually inspecting the results. See the [README.md](README.md) on how to deploy and connect to Airflow.
@@ -117,6 +157,7 @@ Integration testing can be performed by triggering a DAG via the Airflow command
 > Some DAGs use runtime configuration in the form of Params or Connections and Secrets. It's not always well-documented in the DAG itself how the runtime configuration is set up, so if your DAG uses runtime configuration, yet it's not clear how these values are passed through to the DAG itself, it's generally better to test the DAG in GitHub Codespaces. 
 
 Logs can be inspected with docker compose:
+
 ```console
 # All logs
 docker compose logs -f
@@ -153,16 +194,19 @@ There is a helper script in this repository for accessing this Airflow server.
 Follow these best practices when developing DAGs to ensure reliability and maintainability. For comprehensive guidance, refer to the [Airflow Best Practices documentation](https://airflow.apache.org/docs/apache-airflow/stable/best-practices.html).
 
 ### Communication Between Tasks
+
 * **Treat tasks as transactions** - Tasks should produce the same outcome on every re-run and never produce incomplete results
 * **Use XCom for small messages** - For passing small data between tasks in distributed environments
 * **Choose appropriate storage for data files** - Use temporary files for small data that can be quickly transferred, and S3 for larger datasets. Pass file paths via XCom rather than storing files locally on workers
 * **Store authentication securely** - Use [Airflow Connections](https://airflow.apache.org/docs/apache-airflow/stable/authoring-and-scheduling/connections.html) instead of hardcoding passwords or tokens in tasks
 
 ### Code Quality
+
 * **Avoid top-level code** - Minimize code outside of operators and DAG definitions to improve scheduler performance and scalability
 * **Use local imports** - Import heavy libraries inside task functions rather than at the top level to reduce DAG parsing time
 
 ### Testing and Validation
+
 * **Test DAGs in Codespaces first** - Always test new DAGs thoroughly in your GitHub Codespaces development environment before deploying to production
 * **Verify task functionality** - Ensure all tasks execute successfully and produce expected outputs in the development environment
 * **Validate production deployment** - After deploying to production, monitor initial DAG runs to confirm they function as expected with production data and resources
