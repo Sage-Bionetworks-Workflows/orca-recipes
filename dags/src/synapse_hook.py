@@ -2,7 +2,7 @@ import os
 from typing import Union
 
 import synapseclient
-from synapseclient.models import query, SubmissionStatus
+from synapseclient.models import query
 
 
 class SynapseHook:
@@ -37,9 +37,9 @@ class SynapseHook:
     ) -> None:
         if type(submission_id) not in [str, int]:
             raise TypeError("submission_id must be a string or int.")
-        sub_status = SubmissionStatus(id=submission_id).get()
+        sub_status = self.client.getSubmissionStatus(submission_id)
         sub_status.status = submission_status
-        sub_status.store()
+        self.client.store(sub_status)
 
     def _login(self) -> synapseclient.Synapse:
         auth_token = self._resolve_token()
