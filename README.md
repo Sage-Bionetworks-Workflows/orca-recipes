@@ -12,6 +12,8 @@ This repository contains Airflow recipes (DAGs) for data processing and engineer
       - [VS Code](#vs-code)
     - [Docker Compose](#docker-compose)
   - [Testing DAGs Locally](#testing-dags-locally)
+    - [Skip AWS Secrets Manager for Local Development](#skip-aws-secrets-manager-for-local-development)
+    - [Passing Custom Config with `dag.test()`](#passing-custom-config-with-dagtest)
   - [Interfacing with Airflow](#interfacing-with-airflow)
     - [CLI](#cli)
     - [Browser](#browser)
@@ -83,6 +85,58 @@ There are two distinct ways to test a DAG's task logic without deploying to Airf
 - **Unit tests** — mock external dependencies (hooks like `NextflowTowerHook`/`SynapseHook`, `WebClient`, `Variable`, etc.) and call each task's `python_callable` directly. These are fast, require no credentials or network access, and run automatically in CI on every push. They validate your Python logic (parameter wiring, branching, string formatting), not whether the real external services behave as you assume. See `tests/` for examples.
 
 - **Local integration runs** via `dag.test()` — hit real external services with real credentials pulled from AWS Secrets Manager. These validate the real integration (e.g., actually launching a Nextflow Tower workflow or posting to Slack), but are slower, require AWS SSO access, and can have real side effects. Use this as a manual sanity check before/after changing integration behavior, not as an automated substitute for unit tests.
+
+#### Skip AWS Secrets Manager for Local Development
+
+If you'd rather not authenticate to AWS just to test a DAG (e.g., to talk to the real Nextflow Tower), use Airflow's `LocalFilesystemBackend` instead, backed by a local `connections.yaml` file:
+
+```console
+export AIRFLOW__SECRETS__BACKEND=airflow.secrets.local_filesystem.LocalFilesystemBackend
+export AIRFLOW__SECRETS__BACKEND_KWARGS='{"connections_file_path": "connections.yaml"}'
+```
+
+Create `connections.yaml` from the template:
+
+```console
+cp connections.yaml.example connections.yaml
+```
+
+Fill in the real credentials for whichever connections your DAG needs. For example, to launch workflows on the real Nextflow Tower:
+
+```yaml
+AGORA_PROJECT_TOWER_CONN:
+  conn_type: tower
+  host: tower.sagebionetworks.org
+  schema: api
+  password: "<your-tower-personal-access-token>"
+  extra:
+    workspace: sage-bionetworks/<your-workspace>
+```
+
+`host`/`schema` become the Tower API endpoint (`https://<host>/<schema>`), `password` is your Tower personal access token, and `extra.workspace` is the fully-qualified `<org>/<workspace>` name.
+
+`LocalFilesystemBackend`'s `connections_file_path` config above only covers Connections, not Airflow **Variables**. Some DAGs also call `Variable.get("SOME_NAME")` — for example, `SLACK_DPE_TEAM_BOT_TOKEN`, a Slack bot token normally pulled from AWS Secrets Manager. Once you switch away from `SecretsManagerBackend`, there's no source for Variables at all — a plain env var like `SLACK_DPE_TEAM_BOT_TOKEN` in your shell or `.env` is **not** visible to `Variable.get()`.
+
+To fill that gap without AWS access, prefix the Variable's name with `AIRFLOW_VAR_` and export it as a real environment variable. Airflow always checks for `AIRFLOW_VAR_<NAME>` env vars first when resolving `Variable.get(<NAME>)`, before falling through to whatever backend is configured — this is why it matters here specifically: it's the only way to supply a Variable's value once `LocalFilesystemBackend` (which has no Variables source) is in the picture.
+
+```console
+export AIRFLOW_VAR_SLACK_DPE_TEAM_BOT_TOKEN="<the-secret-value>"
+```
+
+#### Passing Custom Config with `dag.test()`
+
+When calling `dag.test()` directly (e.g., from a DAG file's `if __name__ == "__main__":` block), you can override the DAG's default `Param` values for that run via the `run_conf` argument, the same way `-c`/`--conf` works with `airflow dags test <dag_id>` on the CLI:
+
+```python
+if __name__ == "__main__":
+    dag.test(run_conf={
+        "tower_run_name": "my-test-run",
+        "profile": "model_ad_preprod",
+        "dataset": "model_details",
+    })
+```
+
+Only keys that match one of the DAG's declared `Param` names actually take effect — anything else in `run_conf` is ignored by your params.
 
 ### Interfacing with Airflow
 

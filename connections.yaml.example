@@ -1,0 +1,7 @@
+AGORA_PROJECT_TOWER_CONN:
+  conn_type: tower
+  host: tower.sagebionetworks.org
+  schema: api
+  password: "<your-tower-personal-access-token>"
+  extra:
+    workspace: sage-bionetworks/<Your workspace>
