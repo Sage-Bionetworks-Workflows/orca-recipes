@@ -261,7 +261,7 @@ def test_alert_on_failure_calls_send_synapse_message(monkeypatch):
         task_id = "fetch_metrics"
         dag_id = "zenodo_tep_metrics_dag"
         run_id = "manual__2025-01-01"
-        log_url = "http://airflow/log"
+        log_url = "https://airflow/log"
 
     monkeypatch.setattr(
         dag_module,
