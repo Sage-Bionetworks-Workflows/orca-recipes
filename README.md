@@ -117,7 +117,7 @@ AGORA_PROJECT_TOWER_CONN:
 
 `LocalFilesystemBackend`'s `connections_file_path` config above only covers Connections, not Airflow **Variables**. Some DAGs also call `Variable.get("SOME_NAME")` — for example, `SLACK_DPE_TEAM_BOT_TOKEN`, a Slack bot token normally pulled from AWS Secrets Manager. Once you switch away from `SecretsManagerBackend`, there's no source for Variables at all — a plain env var like `SLACK_DPE_TEAM_BOT_TOKEN` in your shell or `.env` is **not** visible to `Variable.get()`.
 
-To fill that gap without AWS access, prefix the Variable's name with `AIRFLOW_VAR_` and export it as a real environment variable. Airflow always checks for `AIRFLOW_VAR_<NAME>` env vars first when resolving `Variable.get(<NAME>)`, before falling through to whatever backend is configured — this is why it matters here specifically: it's the only way to supply a Variable's value once `LocalFilesystemBackend` (which has no Variables source) is in the picture.
+To fill that gap without AWS access, prefix the Variable's name with `AIRFLOW_VAR_` and export it as a regular environment variable, e.g. `AIRFLOW_VAR_SLACK_DPE_TEAM_BOT_TOKEN`. Airflow checks for this automatically, regardless of which secrets backend is configured — so it works even with `LocalFilesystemBackend`, which has no Variables source of its own.
 
 ```console
 export AIRFLOW_VAR_SLACK_DPE_TEAM_BOT_TOKEN="<the-secret-value>"
