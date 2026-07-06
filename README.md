@@ -11,6 +11,7 @@ This repository contains Airflow recipes (DAGs) for data processing and engineer
       - [Codespaces](#codespaces)
       - [VS Code](#vs-code)
     - [Docker Compose](#docker-compose)
+  - [Testing DAGs Locally](#testing-dags-locally)
   - [Interfacing with Airflow](#interfacing-with-airflow)
     - [CLI](#cli)
     - [Browser](#browser)
@@ -75,6 +76,14 @@ docker compose up --build --detach
 
 Congrats! You have completed set up of the dev environment.
 
+### Testing DAGs Locally
+
+There are two distinct ways to test a DAG's task logic without deploying to Airflow:
+
+- **Unit tests** — mock external dependencies (hooks like `NextflowTowerHook`/`SynapseHook`, `WebClient`, `Variable`, etc.) and call each task's `python_callable` directly. These are fast, require no credentials or network access, and run automatically in CI on every push. They validate your Python logic (parameter wiring, branching, string formatting), not whether the real external services behave as you assume. See `tests/` for examples.
+
+- **Local integration runs** via `dag.test()` — hit real external services with real credentials pulled from AWS Secrets Manager. These validate the real integration (e.g., actually launching a Nextflow Tower workflow or posting to Slack), but are slower, require AWS SSO access, and can have real side effects. Use this as a manual sanity check before/after changing integration behavior, not as an automated substitute for unit tests.
+
 ### Interfacing with Airflow
 
 Airflow is made up of multiple components or services working together. The webserver exposes a browser-accessible port, but in a development environment we often want to interface with Airflow through its CLI.
@@ -132,7 +141,6 @@ Airflow’s webserver listens on port 8080 by default via the localhost url: htt
 The username and password will be "airflow".
 
 If you encounter the `nginx bad gateway` errors when navigating to the forwarded port, just wait and refresh a couple of times. Airflow takes a few minutes to become available.
-
 
 ### Local DAGs
 
