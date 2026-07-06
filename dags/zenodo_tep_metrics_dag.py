@@ -99,7 +99,7 @@ dag_config = {
     "start_date": datetime(2025, 1, 1),
     "catchup": False,
     "default_args": {
-        "retries": 0,
+        "retries": 3,
     },
     "tags": ["zenodo", "treat-ad"],
     "params": dag_params,
@@ -189,6 +189,65 @@ def categorize_title(title: str) -> str:
     if "component" in title_lower or "resource" in title_lower:
         return "component"
     return "report"
+
+
+def validate_records(records: List[Dict[str, Any]]) -> None:
+    """Validate the pulled TEP metrics for schema stability.
+
+    Logs all validation issues and only raises at the end if at least one check
+    fails, so the Airflow logs contain maximum debug info while still failing the
+    run (and triggering the failure alert) on bad output.
+
+    Checks performed:
+      1) At least one record was returned.
+      2) Every record contains all REQUIRED_RECORD_FIELDS
+      3) Metric fields are non-negative integers
+      4) title, date and link fields have non-empty values
+
+    Arguments:
+        records (List[Dict[str, Any]]): Processed records from fetch_tep_records
+
+    Raises:
+        ValueError: If one or more validation checks fail with the details of 
+            all failures
+    """
+    errors: List[str] = []
+
+    if not records:
+        msg = "Validation failed: Zenodo returned zero TREAT-AD TEP records."
+        logger.error(msg)
+        errors.append(msg)
+
+    for i, record in enumerate(records):
+        missing = [f for f in REQUIRED_RECORD_FIELDS if f not in record]
+        if missing:
+            msg = f"Validation failed: record {i} missing fields: {missing}"
+            logger.error(msg)
+            errors.append(msg)
+
+        for field in METRIC_FIELDS:
+            value = record.get(field)
+            if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+                msg = (
+                    f"Validation failed: record {i} field '{field}' is not a "
+                    f"non-negative integer (got {value!r})."
+                )
+                logger.error(msg)
+                errors.append(msg)
+
+        for field in ["title", "date", "link"]:
+            if not record.get(field):
+                msg = f"Validation failed: record {i} has empty '{field}'."
+                logger.error(msg)
+                errors.append(msg)
+
+    if errors:
+        raise ValueError(
+            "Zenodo TEP metrics validation failed:\n- " + "\n- ".join(errors)
+        )
+
+    logger.info(f"Validation passed for {len(records)} records.")
+
 
 class CsvReport(NamedTuple):
     """A single CSV report to write.
@@ -327,64 +386,6 @@ def alert_on_failure(context: Dict[str, Any]) -> None:
         )
     except Exception:
         logger.exception("Failed to send Synapse failure alert.")
-
-
-def validate_records(records: List[Dict[str, Any]]) -> None:
-    """Validate the pulled TEP metrics for schema stability.
-
-    Logs all validation issues and only raises at the end if at least one check
-    fails, so the Airflow logs contain maximum debug info while still failing the
-    run (and triggering the failure alert) on bad output.
-
-    Checks performed:
-      1) At least one record was returned.
-      2) Every record contains all REQUIRED_RECORD_FIELDS
-      3) Metric fields are non-negative integers
-      4) title, date and link fields have non-empty values
-
-    Arguments:
-        records (List[Dict[str, Any]]): Processed records from fetch_tep_records
-
-    Raises:
-        ValueError: If one or more validation checks fail with the details of 
-            all failures
-    """
-    errors: List[str] = []
-
-    if not records:
-        msg = "Validation failed: Zenodo returned zero TREAT-AD TEP records."
-        logger.error(msg)
-        errors.append(msg)
-
-    for i, record in enumerate(records):
-        missing = [f for f in REQUIRED_RECORD_FIELDS if f not in record]
-        if missing:
-            msg = f"Validation failed: record {i} missing fields: {missing}"
-            logger.error(msg)
-            errors.append(msg)
-
-        for field in METRIC_FIELDS:
-            value = record.get(field)
-            if not isinstance(value, int) or isinstance(value, bool) or value < 0:
-                msg = (
-                    f"Validation failed: record {i} field '{field}' is not a "
-                    f"non-negative integer (got {value!r})."
-                )
-                logger.error(msg)
-                errors.append(msg)
-
-        for field in ["title", "date", "link"]:
-            if not record.get(field):
-                msg = f"Validation failed: record {i} has empty '{field}'."
-                logger.error(msg)
-                errors.append(msg)
-
-    if errors:
-        raise ValueError(
-            "Zenodo TEP metrics validation failed:\n- " + "\n- ".join(errors)
-        )
-
-    logger.info(f"Validation passed for {len(records)} records.")
 
 
 @dag(on_failure_callback=alert_on_failure, **dag_config)
