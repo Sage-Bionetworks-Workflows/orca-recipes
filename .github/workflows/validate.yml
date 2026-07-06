@@ -30,4 +30,4 @@ jobs:
           
       - name: Run tests
         run: |
-          PYTHONPATH=src:dags python -m pytest tests/ -v --tb=short
+          python -m pytest tests/ -v --tb=short
