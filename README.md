@@ -84,7 +84,7 @@ There are two distinct ways to test a DAG's task logic without deploying to Airf
 
 - **Unit tests** — mock external dependencies (hooks like `NextflowTowerHook`/`SynapseHook`, `WebClient`, `Variable`, etc.) and call each task's `python_callable` directly. These are fast, require no credentials or network access, and run automatically in CI on every push. They validate your Python logic (parameter wiring, branching, string formatting), not whether the real external services behave as you assume. See `tests/` for examples.
 
-- **Local integration runs** via `dag.test()` — hit real external services with real credentials pulled from AWS Secrets Manager. These validate the real integration (e.g., actually launching a Nextflow Tower workflow or posting to Slack), but are slower, require AWS SSO access, and can have real side effects. Use this as a manual sanity check before/after changing integration behavior, not as an automated substitute for unit tests.
+- **Local integration runs** via `dag.test()` — hit real external services using real credentials. Credentials can come from AWS Secrets Manager (matching production) or from a local `connections.yaml/AIRFLOW_VAR_*` configuration via `LocalFilesystemBackend`. These validate the real integration (e.g., actually launching a Nextflow Tower workflow or posting to Slack), but are slower, require AWS SSO access, and can have real side effects. Use this as a manual sanity check before/after changing integration behavior, not as an automated substitute for unit tests.
 
 #### Skip AWS Secrets Manager for Local Development
 
