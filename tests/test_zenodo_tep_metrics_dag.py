@@ -109,7 +109,7 @@ class MockZenodoResponse:
         return self.payload
 
 
-def test_fetch_tep_records_filters_dedupes_and_categorizes(monkeypatch):
+def test_fetch_tep_records_processes_and_categorizes(monkeypatch):
     payload = {
         "hits": {
             "total": 2,
@@ -119,7 +119,6 @@ def test_fetch_tep_records_filters_dedupes_and_categorizes(monkeypatch):
                     "metadata": {
                         "title": "Target Enabling Package Report",
                         "publication_date": "2025-01-01",
-                        "communities": [{"id": "treatad"}],
                     },
                     "stats": {
                         "views": 10,
@@ -131,11 +130,10 @@ def test_fetch_tep_records_filters_dedupes_and_categorizes(monkeypatch):
                 {
                     "id": 456,
                     "metadata": {
-                        "title": "Other Community Report",
+                        "title": "Supporting Component Dataset",
                         "publication_date": "2025-01-02",
-                        "communities": [{"id": "other"}],
                     },
-                    "stats": {},
+                    "stats": {},  # missing metrics should default to 0
                 },
             ],
         }
@@ -148,7 +146,6 @@ def test_fetch_tep_records_filters_dedupes_and_categorizes(monkeypatch):
 
     records = dag_module.fetch_tep_records(
         api_token="fake-token",
-        search_terms=["target enabling"],
         community_id="treatad",
     )
 
@@ -162,7 +159,17 @@ def test_fetch_tep_records_filters_dedupes_and_categorizes(monkeypatch):
             "unique_downloads": 3,
             "link": "https://zenodo.org/records/123",
             "category": "report",
-        }
+        },
+        {
+            "title": "Supporting Component Dataset",
+            "date": "2025-01-02",
+            "views": 0,
+            "unique_views": 0,
+            "downloads": 0,
+            "unique_downloads": 0,
+            "link": "https://zenodo.org/records/456",
+            "category": "component",
+        },
     ]
 
 
@@ -175,7 +182,6 @@ def test_fetch_tep_records_paginates(monkeypatch):
             "metadata": {
                 "title": f"Report {record_id}",
                 "publication_date": "2025-01-01",
-                "communities": [{"id": "treatad"}],
             },
             "stats": {},
         }
@@ -202,7 +208,6 @@ def test_fetch_tep_records_paginates(monkeypatch):
 
     records = dag_module.fetch_tep_records(
         api_token="fake-token",
-        search_terms=["target enabling"],
         community_id="treatad",
     )
 

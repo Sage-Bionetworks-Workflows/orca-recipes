@@ -4,7 +4,7 @@ This DAG automates the monthly collection of TEP usage metrics (views and
 downloads) from the Zenodo API for the TREAT-AD community and exports them to
 Synapse. The DAG follows these steps:
 
-1. Fetch target enabling/enablement records from the Zenodo API using an
+1. Fetch the TREAT-AD community's records from the Zenodo API using an
    authentication token stored in Airflow Variables (paginated, with Airflow
    retries handling transient/busy API responses).
 2. Validate the pulled metrics against an expected schema to ensure stability of
@@ -38,14 +38,11 @@ from src.synapse_hook import SynapseHook
 
 logger = logging.getLogger(__name__)
 
-# Zenodo records API endpoint
-ZENODO_RECORDS_URL = "https://zenodo.org/api/records"
+# Zenodo communities API endpoint. Records are pulled from the community's
+# records collection: {ZENODO_COMMUNITIES_URL}/{community_id}/records
+ZENODO_COMMUNITIES_URL = "https://zenodo.org/api/communities"
 
-# Title search terms used to discover TEP records in Zenodo. Both spellings are
-# searched because records use either "enabling" or "enablement".
-SEARCH_TERMS = ['"target enabling"', '"target enablement"']
-
-# Zenodo community that TEP records must belong to
+# Zenodo community whose records we pull (the TREAT-AD TEP community)
 TREATAD_COMMUNITY_ID = "treatad"
 
 # Fields we expect on every processed record. Used by the validation task to
@@ -103,21 +100,18 @@ dag_config = {
 
 def fetch_tep_records(
     api_token: str,
-    search_terms: List[str] = SEARCH_TERMS,
     community_id: str = TREATAD_COMMUNITY_ID,
 ) -> List[Dict[str, Any]]:
-    """Fetch and process TREAT-AD target enabling/enablement records from Zenodo.
+    """Fetch and process the TREAT-AD community's records from Zenodo.
 
-    Searches the Zenodo records API for each search term (handling pagination),
-    de-duplicates by record id, filters to the given community, and truncates each
-    record down to the metric fields of interest. Each record is tagged with a
-    category of "report" (Package/Report) or "component"
+    Pulls every record in the given Zenodo community (handling pagination) and
+    truncates each record down to the metric fields of interest. Each record is
+    tagged with a category of "report" (Package/Report) or "component"
     (Component/Resource) based on its title.
 
     Arguments:
         api_token (str): Zenodo API token
-        search_terms (List[str]): Title search terms to query
-        community_id (str): Zenodo community id that records must belong to
+        community_id (str): Zenodo community whose records to pull
 
     Returns:
         List[Dict[str, Any]]: Processed TEP records
@@ -128,68 +122,45 @@ def fetch_tep_records(
             busy/transient API.
     """
     headers = {"Authorization": f"Bearer {api_token}"}
-    all_records: List[Dict[str, Any]] = []
-
-    for search_term in search_terms:
-        logger.info(f"Searching Zenodo for {search_term}")
-        params: Dict[str, Any] = {
-            "q": f"metadata.title:{search_term}",
-            "size": 100,
-            "page": 1,
-        }
-        while True:
-            logger.info(f"  Fetching page {params['page']} for {search_term}")
-            response = requests.get(
-                ZENODO_RECORDS_URL, params=params, headers=headers, timeout=30
-            )
-            response.raise_for_status()
-            data = response.json()
-
-            hits = data["hits"]["hits"]
-            if not hits:
-                break
-
-            all_records.extend(hits)
-            logger.info(f"    Retrieved {len(hits)} records")
-
-            total_records = data["hits"]["total"]
-            if len(all_records) >= total_records or len(hits) < params["size"]:
-                break
-            params["page"] += 1
-
-    logger.info(f"Retrieved {len(all_records)} total records (pre-dedup)")
-
-    # Remove duplicates (same record id)
-    seen_ids = set()
-    unique_records = []
-    for record in all_records:
-        if record["id"] not in seen_ids:
-            seen_ids.add(record["id"])
-            unique_records.append(record)
-    logger.info(f"After removing duplicates: {len(unique_records)} unique records")
+    community_url = f"{ZENODO_COMMUNITIES_URL}/{community_id}/records"
 
     teps: List[Dict[str, Any]] = []
-    for record in unique_records:
-        communities = record.get("metadata", {}).get("communities", [])
-        if not any(comm.get("id") == community_id for comm in communities):
-            continue  # Skip non-TREAT-AD records
-
-        title = record["metadata"]["title"]
-        stats = record.get("stats", {})
-        teps.append(
-            {
-                "title": title,
-                "date": record["metadata"]["publication_date"],
-                "views": stats.get("views", 0),
-                "unique_views": stats.get("unique_views", 0),
-                "downloads": stats.get("downloads", 0),
-                "unique_downloads": stats.get("unique_downloads", 0),
-                "link": f"https://zenodo.org/records/{record['id']}",
-                "category": categorize_title(title),
-            }
+    params: Dict[str, Any] = {"size": 100, "page": 1}
+    while True:
+        logger.info(f"Fetching page {params['page']} of community '{community_id}'")
+        response = requests.get(
+            community_url, params=params, headers=headers, timeout=30
         )
+        response.raise_for_status()
+        data = response.json()
 
-    logger.info(f"Found {len(teps)} TREAT-AD TEP records after community filtering")
+        hits = data["hits"]["hits"]
+        if not hits:
+            break
+
+        for record in hits:
+            title = record["metadata"]["title"]
+            stats = record.get("stats", {})
+            teps.append(
+                {
+                    "title": title,
+                    "date": record["metadata"]["publication_date"],
+                    "views": stats.get("views", 0),
+                    "unique_views": stats.get("unique_views", 0),
+                    "downloads": stats.get("downloads", 0),
+                    "unique_downloads": stats.get("unique_downloads", 0),
+                    "link": f"https://zenodo.org/records/{record['id']}",
+                    "category": categorize_title(title),
+                }
+            )
+        logger.info(f"  Retrieved {len(hits)} records")
+
+        total_records = data["hits"]["total"]
+        if len(teps) >= total_records or len(hits) < params["size"]:
+            break
+        params["page"] += 1
+
+    logger.info(f"Found {len(teps)} TREAT-AD community records")
     return teps
 
 
@@ -437,7 +408,7 @@ def zenodo_tep_metrics_dag():
         return records
 
     @task
-    def export_to_synapse(records: List[Dict[str, Any]], **context) -> Dict[str, str]:
+    def export_to_synapse(records: List[Dict[str, Any]], **context) -> List[Dict[str, str]]:
         """Build the CSV reports and upload them to Synapse.
 
         Arguments:
