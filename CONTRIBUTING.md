@@ -1,5 +1,40 @@
 # Contribution Guidelines
 
+## Table of Contents
+
+- [Development](#development)
+  - [Environment](#environment)
+    - [Infrastructure](#infrastructure)
+      - [Core Infrastructure Files](#core-infrastructure-files)
+      - [Development Environment Files](#development-environment-files)
+    - [Code](#code)
+  - [Structure](#structure)
+  - [Testing](#testing)
+    - [Unit Testing](#unit-testing)
+      - [Writing tests for a DAG](#writing-tests-for-a-dag)
+      - [Validating DAG structure](#validating-dag-structure)
+    - [Integration Testing](#integration-testing)
+      - [DAG Set Up](#dag-set-up)
+      - [DAG Testing](#dag-testing)
+- [Deployment Infrastructure](#deployment-infrastructure)
+- [DAG Development Best Practices](#dag-development-best-practices)
+  - [Communication Between Tasks](#communication-between-tasks)
+  - [Code Quality](#code-quality)
+  - [Testing and Validation](#testing-and-validation)
+  - [DAG Failure Alerts](#dag-failure-alerts)
+- [Secrets](#secrets)
+  - [Creating a New Secret](#creating-a-new-secret)
+  - [Configuring a SynapseHook Connection Secret](#configuring-a-synapsehook-connection-secret)
+  - [Configuring a SnowflakeHook Connection Secret](#configuring-a-snowflakehook-connection-secret)
+- [Contributing a Challenge DAG](#contributing-a-challenge-dag)
+  - [TL;DR](#tldr)
+  - [Overview](#overview)
+  - [Creating Your Challenge DAG Config](#creating-your-challenge-dag-config)
+    - [Parameters](#parameters)
+  - [Contributing a New Challenge DAG](#contributing-a-new-challenge-dag)
+  - [Troubleshooting](#troubleshooting)
+    - [Airflow provider hooks failing to connect — outdated Codespace secrets](#airflow-provider-hooks-failing-to-connect--outdated-codespace-secrets)
+    
 ## Development
 
 The following section is divided into three parts:
@@ -242,6 +277,79 @@ Follow these best practices when developing DAGs to ensure reliability and maint
 * **Test DAGs in Codespaces first** - Always test new DAGs thoroughly in your GitHub Codespaces development environment before deploying to production
 * **Verify task functionality** - Ensure all tasks execute successfully and produce expected outputs in the development environment
 * **Validate production deployment** - After deploying to production, monitor initial DAG runs to confirm they function as expected with production data and resources
+
+### DAG Failure Alerts
+
+Production DAGs should surface failures rather than relying on
+someone watching the Airflow UI. There are two pieces to this:
+
+**Send alerts via Synapse messages (delivered as email).** Since our DAGs
+already use a `SynapseHook`, the simplest, dependency-free way to notify people
+is [`synapse_client.sendMessage`](https://python-docs.synapse.org/en/stable/reference/client/?h=sendmessage#synapseclient.Synapse.sendMessage). Synapse delivers the
+message as an email to the recipients. This avoids configuring SMTP on the
+Airflow deployment and works for **any** alert (task failures, "report is ready"
+notices, data-quality warnings, etc.). Resolve Synapse usernames or numeric IDs
+to owner ids with `getUserProfile(...)` first.
+
+**Link alerts to the DAG's `on_failure_callback`.** Set a DAG-level
+`on_failure_callback` so that when a task fails (after retries are exhausted) and
+the DagRun ends as failed, Airflow invokes your alert function with the task
+context. [See Airflow's callback docs for more info.](https://airflow.apache.org/docs/apache-airflow/stable/administration-and-deployment/logging-monitoring/callbacks.html#callbacks) See `alert_on_failure` in
+[dags/zenodo_tep_metrics_dag.py](./dags/zenodo_tep_metrics_dag.py) for a worked
+example that emails the dev list the DAG id, run id, execution date, exception,
+and a link to the task logs.
+
+```python
+def alert_on_failure(context: dict) -> None:
+    ti = context.get("task_instance")
+    subject = f"{ti.dag_id} failed on task '{ti.task_id}'"
+    body = (
+        f"Run: {ti.run_id}\n"
+        f"Exception: {context.get('exception')}\n"
+        f"Logs: {ti.log_url}"
+    )
+    try:
+        client = SynapseHook(context["params"]["synapse_conn_id"]).client
+        owner_ids = [client.getUserProfile(u).get("ownerId") for u in dev_user_list]
+        client.sendMessage(owner_ids, subject, body)
+    except Exception:
+        # Never let a notification failure mask the original task error.
+        logger.exception("Failed to send failure alert.")
+
+
+@dag(on_failure_callback=alert_on_failure, **dag_config)
+def my_dag():
+    ...
+```
+
+**Testing the alert:**
+
+- **A DAG level `on_failure_callback` is run by the scheduler**, *not* by
+  `dag.test()` / `airflow dags test`. It fires in **any environment with a
+  running scheduler**, including the local docker-compose Airflow (webserver +
+  scheduler + workers), so this is *not* production-only. To exercise it
+  end-to-end, bring the stack up and trigger a run with a task forced to fail
+  (e.g. temporarily raise inside a task):
+
+  ```console
+  docker compose up --build --detach
+  ./airflow.sh dags trigger <dag_id>          # unpause first if needed
+  docker compose logs -f airflow-scheduler    # watch the callback fire
+  ```
+
+  Note the callback firing is separate from the email arriving: `sendMessage`
+  only emails if the `SynapseHook` connection/token resolves (configured in
+  Codespaces; a pure-local docker run needs AWS creds or `SYNAPSE_AUTH_TOKEN`).
+- For a quick local check via `python dags/<dag>.py` (which calls `dag.test()`),
+  attach the same callback at the **task** level
+  (`@task(on_failure_callback=alert_on_failure)`), since task-level callbacks
+  *do* run under `dag.test()`.
+- Set `retries` to `0` while testing so the failure (and the callback) fire
+  immediately instead of after the retry delay (Airflow's default is ~5 min per
+  retry).
+- The Synapse send email only succeeds if the connection/token resolves; otherwise the
+  guarded `try/except` logs "Failed to send failure alert", which still confirms
+  the callback ran.
 
 ## Secrets
 
