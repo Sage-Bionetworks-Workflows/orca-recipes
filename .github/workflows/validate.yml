@@ -44,13 +44,20 @@ jobs:
       - name: Install ruff
         run: pip install "ruff>=0.15.17"
 
-      # AIR3 = Ruff's Airflow 3.x deprecation/removal rules (e.g. schedule_interval,
-      # execution_date). Catches DAG code that will break on the Airflow 3 upgrade
-      # only with changed files
-      - name: Lint DAGs for Airflow 3 deprecations
+      - name: Lint changed DAGs for Airflow 3 deprecations
         continue-on-error: true
         run: |
-          files=$(git diff --name-only origin/${{ github.base_ref }}...HEAD -- 'dags/**/*.py' 'dags/*.py')
+          BASE_BRANCH="${{ github.base_ref }}"
+          if [ -z "$BASE_BRANCH" ]; then
+            BASE_BRANCH="main"
+          fi
+
+          git fetch origin "$BASE_BRANCH"
+
+          files=$(git diff --name-only "origin/$BASE_BRANCH"...HEAD -- 'dags/**/*.py' 'dags/*.py')
+
           if [ -n "$files" ]; then
             ruff check $files --select AIR3 --output-format=github
+          else
+            echo "No changed DAG files to lint."
           fi
