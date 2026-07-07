@@ -12,7 +12,7 @@ Synapse. The DAG follows these steps:
    changed or a value is missing, the task logs the problem and fails so that
    Airflow retries kick in and the failure alert is sent.
 3. Export the metrics to CSV files and upload them to a Synapse
-   folder. The reports will contain the following variables: 
+   folder. The reports will contain the following variables:
     - "Title"
     - "Publication Date"
     - "Total Views"
@@ -27,7 +27,7 @@ On any task failure (after retries are exhausted), a Synapse message is sent to
 the DPE/developer list via the DAG's on_failure_callback so that schema
 changes or other breakages are surfaced.
 
-The DAG runs monthly. The Zenodo API token is stored in the Airflow secrets 
+The DAG runs monthly. The Zenodo API token is stored in the Airflow secrets
 backend as the ZENODO_API_TOKEN Variable.
 """
 
@@ -88,14 +88,14 @@ dag_params = {
     # Comma-separated Synapse usernames of collaborator(s) to notify when the
     # monthly report is available. (No support for python lists in Params.)
     "collaborator_user_list": Param("3460442", type="string"),
-    # Comma-separated Synapse usernames or IDs of DPE/developers to 
+    # Comma-separated Synapse usernames or IDs of DPE/developers to
     # alert on failure.
     "dev_user_list": Param("3460442", type="string"),
 }
 
 dag_config = {
     # Run on the first day of the month at midnight
-    "schedule_interval": "0 0 1 * *", 
+    "schedule_interval": "0 0 1 * *",
     "start_date": datetime(2025, 1, 1),
     "catchup": False,
     "default_args": {
@@ -208,7 +208,7 @@ def validate_records(records: List[Dict[str, Any]]) -> None:
         records (List[Dict[str, Any]]): Processed records from fetch_tep_records
 
     Raises:
-        ValueError: If one or more validation checks fail with the details of 
+        ValueError: If one or more validation checks fail with the details of
             all failures
     """
     errors: List[str] = []
@@ -365,7 +365,9 @@ def alert_on_failure(context: Dict[str, Any]) -> None:
     exception = context.get("exception")
     task_id = getattr(task_instance, "task_id", "unknown_task")
     log_url = getattr(task_instance, "log_url", "")
-    dag_id = getattr(task_instance, "dag_id", getattr(context.get("dag"), "dag_id", "unknown_dag"))
+    dag_id = getattr(
+        task_instance, "dag_id", getattr(context.get("dag"), "dag_id", "unknown_dag")
+    )
     run_id = getattr(task_instance, "run_id", context.get("run_id", "unknown_run"))
     # logical_date is the modern key; fall back to execution_date for older runs.
     execution_date = context.get("logical_date") or context.get("execution_date") or ""
@@ -382,7 +384,10 @@ def alert_on_failure(context: Dict[str, Any]) -> None:
     )
     try:
         _send_synapse_message(
-            conn_id=params.get("synapse_conn_id", ""), usernames=dev_user_list.split(","), subject=subject, body=body
+            conn_id=params.get("synapse_conn_id", ""),
+            usernames=dev_user_list.split(","),
+            subject=subject,
+            body=body,
         )
     except Exception:
         logger.exception("Failed to send Synapse failure alert.")
@@ -401,7 +406,7 @@ def zenodo_tep_metrics_dag():
         """
         api_token = Variable.get("ZENODO_API_TOKEN")
         return []
-        #return fetch_tep_records(api_token)
+        # return fetch_tep_records(api_token)
 
     @task
     def validate_metrics(records: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -417,7 +422,9 @@ def zenodo_tep_metrics_dag():
         return records
 
     @task
-    def export_to_synapse(records: List[Dict[str, Any]], **context) -> List[Dict[str, str]]:
+    def export_to_synapse(
+        records: List[Dict[str, Any]], **context
+    ) -> List[Dict[str, str]]:
         """Build the CSV reports and upload them to Synapse.
 
         Arguments:

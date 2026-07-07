@@ -21,7 +21,9 @@ def test_categorize_title_report():
 
 
 def test_categorize_title_component():
-    assert dag_module.categorize_title("Target Enabling Component Dataset") == "component"
+    assert (
+        dag_module.categorize_title("Target Enabling Component Dataset") == "component"
+    )
     assert dag_module.categorize_title("Supporting Resource File") == "component"
 
 
@@ -36,7 +38,7 @@ def test_validate_records_accepts_valid_record():
         ({**VALID_RECORD, "views": True}, "non-negative integer"),
         ({**VALID_RECORD, "title": ""}, "empty 'title'"),
     ],
-    ids = ["negative views", "boolean views", "empty title"]
+    ids=["negative views", "boolean views", "empty title"],
 )
 def test_validate_records_rejects_invalid_record(bad_record, expected_message):
     with pytest.raises(ValueError, match=expected_message):
@@ -213,8 +215,8 @@ def test_fetch_tep_records_paginates(monkeypatch):
 
     assert calls == [1, 2]
     assert len(records) == 101
-    
-    
+
+
 def test_send_synapse_message(monkeypatch):
     sent = {}
 
