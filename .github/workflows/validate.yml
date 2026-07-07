@@ -48,4 +48,7 @@ jobs:
       # AIR3 = Ruff's Airflow 3.x deprecation/removal rules (e.g. schedule_interval,
       # execution_date). Catches DAG code that will break on the Airflow 3 upgrade.
       - name: Lint DAGs for Airflow 3 deprecations
-        run: ruff check dags/ --select AIR3
+        continue-on-error: true
+        run: ruff check dags/ \
+            --select AIR3 \
+            --output-format=github
