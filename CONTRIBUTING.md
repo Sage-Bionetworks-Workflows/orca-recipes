@@ -149,7 +149,7 @@ To run the same check locally before pushing:
 
 ```console
 pip install "ruff>=0.15.17"
-ruff check dags/ --select AIR3
+ruff check dags/<your_dag_name> --select AIR3
 ```
 
 See [Airflow's documentation on linting for best practices and how to contribute your own](https://airflow.apache.org/docs/apache-airflow/stable/best-practices.html#code-quality-and-linting)
