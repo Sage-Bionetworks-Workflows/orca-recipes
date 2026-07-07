@@ -178,12 +178,42 @@ GitHub Actions workflow that runs the tests
 `schedule_interval` → `schedule`, `execution_date`, moved import paths) so DAGs
 don't silently break when the Airflow runtime is upgraded.
 
-To run the same check locally before pushing:
+`ruff` is included in [requirements-dev.txt](./requirements-dev.txt), so once
+your dev environment is set up (`pip install -r requirements-dev.txt`) you can
+run the same check locally before pushing — no separate install needed:
 
 ```console
-pip install "ruff>=0.15.17"
 ruff check dags/<your_dag_name> --select AIR3
 ```
+
+##### Pre-commit hooks
+
+So the same checks run automatically on every commit, the repo ships a
+[.pre-commit-config.yaml](./.pre-commit-config.yaml) that wires up Ruff (via
+[ruff-pre-commit](https://github.com/astral-sh/ruff-pre-commit), pinned to the
+same version and `AIR3` ruleset as CI) plus a few standard hygiene hooks
+(`check-yaml`, `end-of-file-fixer`, `trailing-whitespace`, etc.).
+
+`pre-commit` is included in [requirements-dev.txt](./requirements-dev.txt). Set
+it up once in your dev environment:
+
+```console
+pip install pre-commit        # or: pip install -r requirements-dev.txt
+pre-commit install            # installs the git hook; runs on every `git commit`
+```
+
+The hooks then run on staged files at commit time. To run them across the whole
+repo on demand (useful the first time, or in CI):
+
+```console
+pre-commit run --all-files
+```
+
+> [!NOTE]
+> The first run may modify files (e.g. `end-of-file-fixer` /
+> `trailing-whitespace`) and the Ruff hook auto-fixes fixable `AIR3` issues. When
+> a hook changes a file, the commit is aborted so you can review and re-stage the
+> changes, then commit again.
 
 See [Airflow's documentation on linting for best practices and how to contribute your own](https://airflow.apache.org/docs/apache-airflow/stable/best-practices.html#code-quality-and-linting)
 

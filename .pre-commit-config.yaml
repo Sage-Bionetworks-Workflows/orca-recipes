@@ -1,0 +1,28 @@
+# Pre-commit hooks for orca-recipes.
+#
+# One-time setup (in your dev environment):
+#   pip install pre-commit
+#   pre-commit install          # installs the git hook so it runs on `git commit`
+#
+# Run manually across the whole repo:
+#   pre-commit run --all-files
+repos:
+  # Ruff — lints DAGs for Airflow 3.x deprecations/removals (same AIR3 ruleset
+  # the CI "lint" job runs). See https://github.com/astral-sh/ruff-pre-commit
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.15.17
+    hooks:
+      - id: ruff-check
+        name: ruff (Airflow AIR3 deprecations, dags/)
+        args: [--select, AIR3, --fix]
+        files: ^dags/.*\.py$
+
+  # Standard hygiene hooks. See https://github.com/pre-commit/pre-commit-hooks
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: check-yaml
+      - id: check-merge-conflict
+      - id: check-added-large-files
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
