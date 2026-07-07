@@ -4,6 +4,8 @@ External dependencies (the Synapse client, the module-level ``query`` helper, an
 Airflow's ``BaseHook``) are mocked so the tests need no Synapse credentials or
 Airflow metadata database.
 """
+import airflow.hooks.base as base
+
 import pytest
 
 from src import synapse_hook
@@ -28,23 +30,22 @@ def test_client_is_lazy_and_cached(monkeypatch):
 
 
 def test_resolve_token_prefers_airflow_connection(monkeypatch):
-    import airflow.hooks.base as base
+    mock_token = "unit-test-token"
 
     class MockConnection:
-        password = "conn-token"
+        def __init__(self, token):
+            self.password = token
 
     monkeypatch.setattr(
         base.BaseHook,
         "get_connection",
-        classmethod(lambda cls, conn_id: MockConnection()),
+        classmethod(lambda cls, conn_id: MockConnection(mock_token)),
     )
 
-    assert SynapseHook("MY_CONN")._resolve_token() == "conn-token"
+    assert SynapseHook("MY_CONN")._resolve_token() == mock_token
 
 
 def test_resolve_token_falls_back_to_env(monkeypatch):
-    import airflow.hooks.base as base
-
     def mock_get_connection(cls, conn_id):
         raise RuntimeError("no such connection")
 
@@ -57,8 +58,6 @@ def test_resolve_token_falls_back_to_env(monkeypatch):
 
 
 def test_resolve_token_raises_when_unresolvable(monkeypatch):
-    import airflow.hooks.base as base
-
     def mock_get_connection(cls, conn_id):
         raise RuntimeError("no such connection")
 
