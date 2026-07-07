@@ -412,9 +412,11 @@ def test_dag_loads_without_import_errors():
 
 def test_dag_structure():
     dagbag = DagBag(dag_folder="dags/zenodo_tep_metrics_dag.py", include_examples=False)
-    dag = dagbag.get_dag("zenodo_tep_metrics_dag")
+    # Read from the parsed .dags dict (get_dag() hits the Airflow metadata DB,
+    # which isn't available in CI).
+    assert "zenodo_tep_metrics_dag" in dagbag.dags, "zenodo_tep_metrics_dag failed to load"
+    dag = dagbag.dags["zenodo_tep_metrics_dag"]
 
-    assert dag is not None, "zenodo_tep_metrics_dag failed to load"
     assert {task.task_id for task in dag.tasks} == {
         "fetch_metrics",
         "validate_metrics",
