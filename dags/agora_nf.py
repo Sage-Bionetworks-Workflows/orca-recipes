@@ -1,5 +1,5 @@
+import pendulum
 from datetime import datetime
-
 from airflow.decorators import dag, task
 from airflow.models.param import Param
 from airflow.models import Variable
@@ -30,8 +30,8 @@ dag_params = {
 }
 
 dag_config = {
-    "schedule": None,
-    # "start_date": datetime(2023, 2, 21),
+    "schedule": "0 21 * * *",  # 9:00 PM ET nightly
+    "start_date": datetime(2026, 7, 7),
     "catchup": False,
     "default_args": {
         "retries": 1,
