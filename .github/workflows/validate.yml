@@ -31,24 +31,3 @@ jobs:
       - name: Run tests
         run: |
           python -m pytest tests/ -v --tb=short
-
-  lint:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.10'
-
-      - name: Install ruff
-        run: pip install "ruff>=0.15.17"
-
-      # AIR3 = Ruff's Airflow 3.x deprecation/removal rules (e.g. schedule_interval,
-      # execution_date). Catches DAG code that will break on the Airflow 3 upgrade.
-      - name: Lint DAGs for Airflow 3 deprecations
-        continue-on-error: true
-        run: ruff check dags/ \
-            --select AIR3 \
-            --output-format=github

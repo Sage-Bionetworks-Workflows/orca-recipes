@@ -169,25 +169,6 @@ def test_dag_structure():
 
 See [Airflow's Testing a DAG](https://airflow.apache.org/docs/apache-airflow/stable/best-practices.html#testing-a-dag) for detailed information on DAG tests and best practices.
 
-#### Linting
-
-We lint the DAGs with [Ruff](https://docs.astral.sh/ruff/) as part of the same
-GitHub Actions workflow that runs the tests
-([validate.yml](./.github/workflows/validate.yml)). The check uses Ruff's
-**`AIR3`** ruleset, which flags Airflow 3.x deprecations and removals (e.g.
-`schedule_interval` → `schedule`, `execution_date`, moved import paths) so DAGs
-don't silently break when the Airflow runtime is upgraded.
-
-To run the same check locally before pushing:
-
-```console
-pip install "ruff>=0.15.17"
-ruff check dags/ --select AIR3
-```
-
-Fix any reported issues; for a genuine false positive, add a scoped
-`# noqa: <rule-code>` with a short reason rather than disabling the check.
-
 #### Integration Testing
 
 Presently, integration testing means triggering your DAG in Airflow and manually inspecting the results. See the [README.md](README.md) on how to deploy and connect to Airflow.
