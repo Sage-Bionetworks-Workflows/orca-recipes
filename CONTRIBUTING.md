@@ -285,42 +285,52 @@ someone watching the Airflow UI. There are two pieces to this:
 
 **Send alerts via Synapse messages (delivered as email).** Since our DAGs
 already use a `SynapseHook`, the simplest, dependency-free way to notify people
-is [`synapse_client.sendMessage`](https://python-docs.synapse.org/en/stable/reference/client/?h=sendmessage#synapseclient.Synapse.sendMessage). Synapse delivers the
-message as an email to the recipients. This avoids configuring SMTP on the
-Airflow deployment and works for **any** alert (task failures, "report is ready"
-notices, data-quality warnings, etc.). Resolve Synapse usernames or numeric IDs
-to owner ids with `getUserProfile(...)` first.
+is [`synapse_client.sendMessage`](https://python-docs.synapse.org/en/stable/reference/client/?h=sendmessage#synapseclient.Synapse.sendMessage), which Synapse delivers as an
+email. Rather than calling it directly, use the shared helper
+`send_synapse_message(conn_id, usernames, subject, body)` in
+[dags/src/synapse_alerts.py](./dags/src/synapse_alerts.py) — it resolves Synapse
+usernames/numeric ids to owner ids and sends the message for you. This avoids
+configuring SMTP on the Airflow deployment and works for **any** alert (task
+failures, "report is ready" notices, data-quality warnings, etc.).
 
-**Link alerts to the DAG's `on_failure_callback`.** Set a DAG-level
-`on_failure_callback` so that when a task fails (after retries are exhausted) and
-the DagRun ends as failed, Airflow invokes your alert function with the task
-context. [See Airflow's callback docs for more info.](https://airflow.apache.org/docs/apache-airflow/stable/administration-and-deployment/logging-monitoring/callbacks.html#callbacks) See `alert_on_failure` in
-[dags/zenodo_tep_metrics_dag.py](./dags/zenodo_tep_metrics_dag.py) for a worked
-example that emails the dev list the DAG id, run id, execution date, exception,
-and a link to the task logs.
+**Link failure alerts to the DAG's `on_failure_callback`.** For the common case,
+email a failure alert to the DAG's own dev list, use the shared
+`synapse_failure_callback(...)` function (also in
+[dags/src/synapse_alerts.py](./dags/src/synapse_alerts.py)). It returns a
+DAG-level `on_failure_callback` that, when a task fails (after retries are
+exhausted) and the DagRun ends as failed, reads the Synapse connection id and
+recipient list from your DAG params, builds a standard failure message (DAG id,
+task id, run id, execution date, exception, and a link to the task logs), and
+appends your optional DAG-specific note. The send is wrapped in a `try/except` so
+a notification failure can never mask the original task error.
+[See Airflow's callback docs for more info.](https://airflow.apache.org/docs/apache-airflow/stable/administration-and-deployment/logging-monitoring/callbacks.html#callbacks)
 
 ```python
-def alert_on_failure(context: dict) -> None:
-    ti = context.get("task_instance")
-    subject = f"{ti.dag_id} failed on task '{ti.task_id}'"
-    body = (
-        f"Run: {ti.run_id}\n"
-        f"Exception: {context.get('exception')}\n"
-        f"Logs: {ti.log_url}"
-    )
-    try:
-        client = SynapseHook(context["params"]["synapse_conn_id"]).client
-        owner_ids = [client.getUserProfile(u).get("ownerId") for u in dev_user_list]
-        client.sendMessage(owner_ids, subject, body)
-    except Exception:
-        # Never let a notification failure mask the original task error.
-        logger.exception("Failed to send failure alert.")
+from airflow.decorators import dag
+from airflow.models import Param
+
+from src.synapse_alerts import synapse_failure_callback
 
 
-@dag(on_failure_callback=alert_on_failure, **dag_config)
+@dag(
+    on_failure_callback=synapse_failure_callback(
+        message="This may indicate a Zenodo API schema change.",  # optional note
+    ),
+    params={
+        "synapse_conn_id": Param("SYNAPSE_ORCA_SERVICE_ACCOUNT_CONN", type="string"),
+        # who to alert on failure (comma-separated usernames or numeric ids)
+        "dev_user_list": Param("3460442", type="string"),
+    },
+    ...
+)
 def my_dag():
     ...
 ```
+
+By default the callback reads the `synapse_conn_id` and `dev_user_list` params;
+pass `conn_id_param` / `user_list_param` to `synapse_failure_callback(...)` if
+your DAG names them differently. See it wired up in
+[dags/zenodo_tep_metrics_dag.py](./dags/zenodo_tep_metrics_dag.py).
 
 **Testing the alert:**
 
@@ -342,8 +352,8 @@ def my_dag():
   Codespaces; a pure-local docker run needs AWS creds or `SYNAPSE_AUTH_TOKEN`).
 - For a quick local check via `python dags/<dag>.py` (which calls `dag.test()`),
   attach the same callback at the **task** level
-  (`@task(on_failure_callback=alert_on_failure)`), since task-level callbacks
-  *do* run under `dag.test()`.
+  (`@task(on_failure_callback=synapse_failure_callback(...))`), since task-level
+  callbacks *do* run under `dag.test()`.
 - Set `retries` to `0` while testing so the failure (and the callback) fire
   immediately instead of after the retry delay (Airflow's default is ~5 min per
   retry).

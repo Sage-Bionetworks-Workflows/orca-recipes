@@ -43,6 +43,7 @@ import requests
 from synapseclient.models import File
 
 from src.synapse_hook import SynapseHook
+from src.synapse_alerts import send_synapse_message, synapse_failure_callback
 
 logger = logging.getLogger(__name__)
 
@@ -389,69 +390,15 @@ def export_reports_to_synapse(
     return uploaded_files
 
 
-def _send_synapse_message(
-    conn_id: str, usernames: List[str], subject: str, body: str
-) -> None:
-    """Send a Synapse message (delivered as email) to a list of usernames.
-
-    Arguments:
-        conn_id (str): Synapse connection id
-        usernames (List[str]): Synapse usernames to message
-        subject (str): Message subject
-        body (str): Message body
-    """
-    usernames = [u.strip() for u in usernames if u.strip()]
-    if not usernames:
-        logger.warning(f"No Synapse usernames provided; skipping message: {subject}")
-        return
-    client = SynapseHook(conn_id).client
-    owner_ids = [client.getUserProfile(u).get("ownerId") for u in usernames]
-    client.sendMessage(owner_ids, subject, body)
-    logger.info(f"Sent Synapse message '{subject}' to {usernames}")
-
-
-def alert_on_failure(context: Dict[str, Any]) -> None:
-    """DAG on_failure_callback that alerts DPE/developers via Synapse message
-    through email when a task fails after retries are exhausted.
-
-    Arguments:
-        context (Dict[str, Any]): Airflow task context for the failed task
-    """
-    params = context.get("params", {})
-    dev_user_list = params.get("dev_user_list", "")
-    task_instance = context.get("task_instance")
-    exception = context.get("exception")
-    task_id = getattr(task_instance, "task_id", "unknown_task")
-    log_url = getattr(task_instance, "log_url", "")
-    dag_id = getattr(
-        task_instance, "dag_id", getattr(context.get("dag"), "dag_id", "unknown_dag")
-    )
-    run_id = getattr(task_instance, "run_id", context.get("run_id", "unknown_run"))
-    # logical_date is the modern key; fall back to execution_date for older runs.
-    execution_date = context.get("logical_date") or context.get("execution_date") or ""
-
-    subject = f"Zenodo TEP Metrics DAG failure: {dag_id}"
-    body = (
-        f"The Zenodo TEP metrics DAG '{dag_id}' failed on task '{task_id}'.\n\n"
-        f"Run ID: {run_id}\n"
-        f"Execution date: {execution_date}\n\n"
-        f"Exception: {exception}\n\n"
-        f"Logs: {log_url}\n\n"
-        "This may indicate a Zenodo API schema change or a transient API issue. "
-        "Please review the task logs."
-    )
-    try:
-        _send_synapse_message(
-            conn_id=params.get("synapse_conn_id", ""),
-            usernames=dev_user_list.split(","),
-            subject=subject,
-            body=body,
+@dag(
+    on_failure_callback=synapse_failure_callback(
+        message=(
+            "This may indicate a Zenodo API schema change or a transient API "
+            "issue. Please review the task logs."
         )
-    except Exception:
-        logger.exception("Failed to send Synapse failure alert.")
-
-
-@dag(on_failure_callback=alert_on_failure, **dag_config)
+    ),
+    **dag_config,
+)
 def zenodo_tep_metrics_dag() -> AirflowDAG:
     """Pull TREAT-AD TEP metrics from Zenodo, validate, export to Synapse, notify."""
 
@@ -516,7 +463,7 @@ def zenodo_tep_metrics_dag() -> AirflowDAG:
             "New monthly TREAT-AD target enabling metrics reports have been "
             f"uploaded to Synapse:\n\n{links}"
         )
-        _send_synapse_message(
+        send_synapse_message(
             conn_id=context["params"]["synapse_conn_id"],
             usernames=context["params"]["collaborator_user_list"].split(","),
             subject=subject,
