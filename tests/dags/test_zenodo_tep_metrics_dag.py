@@ -58,6 +58,46 @@ def test_validate_records_rejects_empty_records():
         dag_module.validate_records([])
 
 
+def test_validate_record_returns_no_errors_for_valid_record():
+    assert dag_module._validate_record(0, VALID_RECORD) == []
+
+
+@pytest.mark.parametrize(
+    "bad_record, expected_message",
+    [
+        ({**VALID_RECORD, "downloads": -5}, "non-negative integer"),
+        ({**VALID_RECORD, "downloads": True}, "non-negative integer"),
+        ({**VALID_RECORD, "downloads": "4"}, "non-negative integer"),
+        ({**VALID_RECORD, "date": ""}, "empty 'date'"),
+    ],
+    ids=["negative", "boolean", "non-int", "empty date"],
+)
+def test_validate_record_flags_bad_field(bad_record, expected_message):
+    errors = dag_module._validate_record(2, bad_record)
+    assert len(errors) == 1
+    assert expected_message in errors[0]
+    assert "record 2" in errors[0]  # the record index is included in the message
+
+
+def test_validate_record_reports_missing_field():
+    bad_record = VALID_RECORD.copy()
+    bad_record.pop("link")
+
+    joined = "\n".join(dag_module._validate_record(0, bad_record))
+    assert "missing fields" in joined
+    assert "link" in joined
+
+
+def test_validate_record_aggregates_multiple_errors():
+    bad_record = {**VALID_RECORD, "views": -1, "title": ""}
+
+    errors = dag_module._validate_record(3, bad_record)
+    joined = "\n".join(errors)
+    assert len(errors) == 2
+    assert "non-negative integer" in joined
+    assert "empty 'title'" in joined
+
+
 def _read_csv(path):
     """Read a CSV file into a list of rows (each row a list of string cells)."""
     with open(path, newline="") as f:

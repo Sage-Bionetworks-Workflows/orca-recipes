@@ -191,6 +191,44 @@ def categorize_title(title: str) -> str:
     return "report"
 
 
+def _validate_record(index: int, record: Dict[str, Any]) -> List[str]:
+    """Validate a single TEP record and return (and log) any error messages.
+
+    Checks performed:
+      1) The record contains all REQUIRED_RECORD_FIELDS
+      2) Metric fields are non-negative integers
+      3) title, date and link fields have non-empty values
+
+    Arguments:
+        index (int): Position of the record in the batch (for error messages)
+        record (Dict[str, Any]): A single processed record
+
+    Returns:
+        List[str]: Validation error messages (empty if the record is valid)
+    """
+    errors: List[str] = []
+
+    missing = [f for f in REQUIRED_RECORD_FIELDS if f not in record]
+    if missing:
+        errors.append(f"Validation failed: record {index} missing fields: {missing}")
+
+    for field in METRIC_FIELDS:
+        value = record.get(field)
+        if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+            errors.append(
+                f"Validation failed: record {index} field '{field}' is not a "
+                f"non-negative integer (got {value!r})."
+            )
+
+    for field in ["title", "date", "link"]:
+        if not record.get(field):
+            errors.append(f"Validation failed: record {index} has empty '{field}'.")
+
+    for msg in errors:
+        logger.error(msg)
+    return errors
+
+
 def validate_records(records: List[Dict[str, Any]]) -> None:
     """Validate the pulled TEP metrics for schema stability.
 
@@ -200,9 +238,7 @@ def validate_records(records: List[Dict[str, Any]]) -> None:
 
     Checks performed:
       1) At least one record was returned.
-      2) Every record contains all REQUIRED_RECORD_FIELDS
-      3) Metric fields are non-negative integers
-      4) title, date and link fields have non-empty values
+      2) Each record passes the per-record checks in ``_validate_record``.
 
     Arguments:
         records (List[Dict[str, Any]]): Processed records from fetch_tep_records
@@ -219,27 +255,7 @@ def validate_records(records: List[Dict[str, Any]]) -> None:
         errors.append(msg)
 
     for i, record in enumerate(records):
-        missing = [f for f in REQUIRED_RECORD_FIELDS if f not in record]
-        if missing:
-            msg = f"Validation failed: record {i} missing fields: {missing}"
-            logger.error(msg)
-            errors.append(msg)
-
-        for field in METRIC_FIELDS:
-            value = record.get(field)
-            if not isinstance(value, int) or isinstance(value, bool) or value < 0:
-                msg = (
-                    f"Validation failed: record {i} field '{field}' is not a "
-                    f"non-negative integer (got {value!r})."
-                )
-                logger.error(msg)
-                errors.append(msg)
-
-        for field in ["title", "date", "link"]:
-            if not record.get(field):
-                msg = f"Validation failed: record {i} has empty '{field}'."
-                logger.error(msg)
-                errors.append(msg)
+        errors.extend(_validate_record(i, record))
 
     if errors:
         raise ValueError(
@@ -394,7 +410,7 @@ def alert_on_failure(context: Dict[str, Any]) -> None:
 
 
 @dag(on_failure_callback=alert_on_failure, **dag_config)
-def zenodo_tep_metrics_dag():
+def zenodo_tep_metrics_dag() -> None:
     """Pull TREAT-AD TEP metrics from Zenodo, validate, export to Synapse, notify."""
 
     @task
@@ -405,8 +421,7 @@ def zenodo_tep_metrics_dag():
             List[Dict[str, Any]]: Processed TEP records
         """
         api_token = Variable.get("ZENODO_API_TOKEN")
-        return []
-        # return fetch_tep_records(api_token)
+        return fetch_tep_records(api_token)
 
     @task
     def validate_metrics(records: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
