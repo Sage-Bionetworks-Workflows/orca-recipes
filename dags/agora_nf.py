@@ -134,7 +134,7 @@ def agora_nf_run_dag():
     run_id >> monitor_task >> message >> [post_to_slack, post_to_email]
 
 
-def check_required_secrets():
+def check_required_secrets() -> None:
     """Fail fast if any Connection/Variable this DAG needs isn't resolvable."""
     missing = []
 
