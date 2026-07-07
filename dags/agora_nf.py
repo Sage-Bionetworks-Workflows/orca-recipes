@@ -1,4 +1,3 @@
-import pendulum
 from datetime import datetime
 from airflow.decorators import dag, task
 from airflow.models.param import Param
@@ -30,7 +29,7 @@ dag_params = {
 }
 
 dag_config = {
-    "schedule": "0 21 * * *",  # 9:00 PM ET nightly
+    "schedule": "0 21 * * *",
     "start_date": datetime(2026, 7, 7),
     "catchup": False,
     "default_args": {
@@ -133,4 +132,4 @@ def agora_nf_run_dag():
 dag = agora_nf_run_dag()
 
 if __name__ == "__main__":
-    dag.test()
+    dag.test(run_conf={"dataset": "model_details"})
