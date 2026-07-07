@@ -35,7 +35,7 @@ class SynapseHook:
         submission_id: Union[int, str],
         submission_status: str,
     ) -> None:
-        if type(submission_id) not in [str, int]:
+        if not isinstance(submission_id, (str, int)):
             raise TypeError("submission_id must be a string or int.")
         sub_status = self.client.getSubmissionStatus(submission_id)
         sub_status.status = submission_status
