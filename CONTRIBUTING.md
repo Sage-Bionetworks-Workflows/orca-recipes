@@ -137,6 +137,36 @@ def test_fetch_tep_records(monkeypatch):
     assert records == [...]
 ```
 
+#### Validating DAG structure
+
+As a best practice, add a
+`test_dag_structure` test in your DAG's own test module that asserts the exact
+task set and the dependency edges you expect. This catches a miswired pipeline
+(e.g: a dropped `>>`, a task pointed at the wrong upstream). Load just your DAG file so unrelated DAGs can't interfere:
+
+```python
+from airflow.models import DagBag
+
+def test_dag_structure():
+    dagbag = DagBag(
+        dag_folder="dags/zenodo_tep_metrics_dag.py", include_examples=False
+    )
+    dag = dagbag.get_dag("zenodo_tep_metrics_dag")
+
+    assert dag is not None, "zenodo_tep_metrics_dag failed to load"
+    # Exact task set
+    assert {task.task_id for task in dag.tasks} == {
+        "fetch_metrics",
+        "validate_metrics",
+        "export_to_synapse",
+        "notify_collaborators",
+    }
+    # Dependency chain: fetch -> validate -> export -> notify
+    assert dag.get_task("fetch_metrics").downstream_task_ids == {"validate_metrics"}
+    assert dag.get_task("validate_metrics").downstream_task_ids == {"export_to_synapse"}
+    assert dag.get_task("export_to_synapse").downstream_task_ids == {"notify_collaborators"}
+```
+
 #### Integration Testing
 
 Presently, integration testing means triggering your DAG in Airflow and manually inspecting the results. See the [README.md](README.md) on how to deploy and connect to Airflow.
