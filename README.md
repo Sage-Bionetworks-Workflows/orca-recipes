@@ -102,10 +102,10 @@ Create `connections.yaml` from the template:
 cp connections.yaml.example connections.yaml
 ```
 
-Fill in the real credentials for whichever connections your DAG needs. For example, to launch workflows on the real Nextflow Tower:
+Fill in the real credentials for whichever connections your DAG needs, keyed by your DAG's `tower_conn_id` param value: 
 
 ```yaml
-AGORA_PROJECT_TOWER_CONN:
+<your_tower_conn_id, i.e. AGORA_PROJECT_TOWER_CONN>:
   conn_type: tower
   host: tower.sagebionetworks.org
   schema: api
