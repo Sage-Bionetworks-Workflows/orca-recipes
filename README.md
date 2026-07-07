@@ -13,6 +13,7 @@ This repository contains Airflow recipes (DAGs) for data processing and engineer
     - [Docker Compose](#docker-compose)
   - [Testing DAGs Locally](#testing-dags-locally)
     - [Skip AWS Secrets Manager for Local Development](#skip-aws-secrets-manager-for-local-development)
+    - [Handling Airflow Variables Locally](#handling-airflow-variables-locally)
     - [Passing Custom Config with `dag.test()`](#passing-custom-config-with-dagtest)
   - [Interfacing with Airflow](#interfacing-with-airflow)
     - [CLI](#cli)
@@ -115,13 +116,36 @@ AGORA_PROJECT_TOWER_CONN:
 
 `host`/`schema` become the Tower API endpoint (`https://<host>/<schema>`), `password` is your Tower personal access token, and `extra.workspace` is the fully-qualified `<org>/<workspace>` name.
 
-`LocalFilesystemBackend`'s `connections_file_path` config above only covers Connections, not Airflow **Variables**. Some DAGs also call `Variable.get("SOME_NAME")` — for example, `SLACK_DPE_TEAM_BOT_TOKEN`, a Slack bot token normally pulled from AWS Secrets Manager. Once you switch away from `SecretsManagerBackend`, there's no source for Variables at all — a plain env var like `SLACK_DPE_TEAM_BOT_TOKEN` in your shell or `.env` is **not** visible to `Variable.get()`.
+#### Handling Airflow Variables Locally
 
-To fill that gap without AWS access, prefix the Variable's name with `AIRFLOW_VAR_` and export it as a regular environment variable, e.g. `AIRFLOW_VAR_SLACK_DPE_TEAM_BOT_TOKEN`. Airflow checks for this automatically, regardless of which secrets backend is configured — so it works even with `LocalFilesystemBackend`, which has no Variables source of its own.
+`LocalFilesystemBackend`'s `connections_file_path` config above only covers Connections, not Airflow **Variables**. Some DAGs also call `Variable.get("SOME_NAME")` — for example, `SLACK_DPE_TEAM_BOT_TOKEN`, a Slack bot token normally pulled from AWS Secrets Manager. Once you switch away from `SecretsManagerBackend`, there's no source for Variables at all — a plain env var like `SLACK_DPE_TEAM_BOT_TOKEN` in your shell or `.env` is **not** visible to `Variable.get()`. There are two ways to fill that gap without AWS access:
+
+**Option A: `AIRFLOW_VAR_` environment variable**
+
+Prefix the Variable's name with `AIRFLOW_VAR_` and export it as a regular environment variable, e.g. `AIRFLOW_VAR_SLACK_DPE_TEAM_BOT_TOKEN`. Airflow checks for this automatically, regardless of which secrets backend is configured — so it works even with `LocalFilesystemBackend`, which has no Variables source of its own.
 
 ```console
 export AIRFLOW_VAR_SLACK_DPE_TEAM_BOT_TOKEN="<the-secret-value>"
 ```
+
+**Option B: `variables_file_path` via `LocalFilesystemBackend`**
+
+Alternatively, point `LocalFilesystemBackend` at a local `variables.json` file the same way you did for `connections.yaml`, by adding `variables_file_path` to the backend kwargs:
+
+```console
+export AIRFLOW__SECRETS__BACKEND=airflow.secrets.local_filesystem.LocalFilesystemBackend
+export AIRFLOW__SECRETS__BACKEND_KWARGS='{"variables_file_path": "variables.json", "connections_file_path": "connections.yaml"}'
+```
+
+Then create `variables.json` with the Variables your DAG needs:
+
+```json
+{
+  "SLACK_DPE_TEAM_BOT_TOKEN": "<the-secret-value>"
+}
+```
+
+This keeps all your local secrets (Connections and Variables) sourced the same way, which is handy if a DAG needs several Variables.
 
 #### Passing Custom Config with `dag.test()`
 
