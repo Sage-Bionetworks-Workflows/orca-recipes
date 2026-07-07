@@ -1,5 +1,38 @@
 # Contribution Guidelines
 
+## Table of Contents
+
+- [Development](#development)
+  - [Environment](#environment)
+    - [Infrastructure](#infrastructure)
+      - [Core Infrastructure Files](#core-infrastructure-files)
+      - [Development Environment Files](#development-environment-files)
+    - [Code](#code)
+  - [Structure](#structure)
+  - [Testing](#testing)
+    - [Unit Testing](#unit-testing)
+    - [Integration Testing](#integration-testing)
+      - [DAG Set Up](#dag-set-up)
+      - [DAG Testing](#dag-testing)
+    - [Linting](#linting)
+- [Deployment Infrastructure](#deployment-infrastructure)
+- [DAG Development Best Practices](#dag-development-best-practices)
+  - [Communication Between Tasks](#communication-between-tasks)
+  - [Code Quality](#code-quality)
+  - [Testing and Validation](#testing-and-validation)
+- [Secrets](#secrets)
+  - [Creating a New Secret](#creating-a-new-secret)
+  - [Configuring a SynapseHook Connection Secret](#configuring-a-synapsehook-connection-secret)
+  - [Configuring a SnowflakeHook Connection Secret](#configuring-a-snowflakehook-connection-secret)
+- [Contributing a Challenge DAG](#contributing-a-challenge-dag)
+  - [TL;DR](#tldr)
+  - [Overview](#overview)
+  - [Creating Your Challenge DAG Config](#creating-your-challenge-dag-config)
+    - [Parameters](#parameters)
+  - [Contributing a New Challenge DAG](#contributing-a-new-challenge-dag)
+  - [Troubleshooting](#troubleshooting)
+    - [Airflow Provider Hooks Failing to Connect — Outdated Codespace Secrets](#airflow-provider-hooks-failing-to-connect--outdated-codespace-secrets)
+
 ## Development
 
 The following section is divided into three parts:
