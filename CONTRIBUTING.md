@@ -136,6 +136,24 @@ docker compose up --build --detach
 # docker compose up --no-cache --build --detach 
 ```
 
+#### Linting
+
+We lint the DAGs with [Ruff](https://docs.astral.sh/ruff/) as part of the same
+GitHub Actions workflow that runs the tests
+([validate.yml](./.github/workflows/validate.yml)). The check uses Ruff's
+**`AIR3`** ruleset, which flags Airflow 3.x deprecations and removals (e.g.
+`schedule_interval` → `schedule`, `execution_date`, moved import paths) so DAGs
+don't silently break when the Airflow runtime is upgraded.
+
+To run the same check locally before pushing:
+
+```console
+pip install "ruff>=0.15.17"
+ruff check dags/ --select AIR3
+```
+
+See [Airflow's documentation on linting for best practices and how to contribute your own](https://airflow.apache.org/docs/apache-airflow/stable/best-practices.html#code-quality-and-linting)
+
 ## Deployment Infrastructure
 
 We have both dev and prod Airflow servers, although the dev server is not always running and there may not be feature parity between dev and prod (e.g., not all prod secrets have analogues in dev):
