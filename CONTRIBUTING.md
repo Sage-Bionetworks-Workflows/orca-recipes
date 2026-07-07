@@ -15,6 +15,7 @@
       - [DAG Set Up](#dag-set-up)
       - [DAG Testing](#dag-testing)
     - [Linting](#linting)
+    - [Pre-commit hooks](#pre-commit-hooks)
 - [Deployment Infrastructure](#deployment-infrastructure)
 - [DAG Development Best Practices](#dag-development-best-practices)
   - [Communication Between Tasks](#communication-between-tasks)
