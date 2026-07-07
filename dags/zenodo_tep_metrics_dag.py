@@ -38,9 +38,9 @@ from datetime import datetime
 from typing import Any, Dict, List, NamedTuple
 
 from airflow.decorators import dag, task
-from airflow.models import Param, Variable
+from airflow.models import DAG as AirflowDAG, Param, Variable
 import requests
-from synapseclient.models import File, Folder
+from synapseclient.models import File
 
 from src.synapse_hook import SynapseHook
 
@@ -95,7 +95,7 @@ dag_params = {
 
 dag_config = {
     # Run on the first day of the month at midnight
-    "schedule_interval": "0 0 1 * *",
+    "schedule": "0 0 1 * *",
     "start_date": datetime(2025, 1, 1),
     "catchup": False,
     "default_args": {
@@ -347,6 +347,48 @@ def build_reports(records: List[Dict[str, Any]], filepath: str) -> Dict[str, Any
     }
 
 
+def export_reports_to_synapse(
+    records: List[Dict[str, Any]],
+    run_date: str,
+    synapse_conn_id: str,
+    folder_id: str,
+) -> List[Dict[str, str]]:
+    """Build the CSV reports and upload them to a Synapse folder.
+
+    Local CSV files are always removed afterwards, even if an upload fails.
+
+    Arguments:
+        records (List[Dict[str, Any]]): Validated TEP records
+        run_date (str): YYYYMMDD date string used in the report filenames
+        synapse_conn_id (str): Synapse connection id
+        folder_id (str): Synapse folder/project to upload the reports to
+
+    Returns:
+        List[Dict[str, str]]: Uploaded file info ("id" and "name") for each CSV
+    """
+    base_filepath = os.path.join(
+        os.getcwd(), f"TREATAD_Target_Enabling_Metrics_{run_date}"
+    )
+
+    csv_paths = build_reports(records, base_filepath)["paths"]
+    uploaded_files: List[Dict[str, str]] = []
+    try:
+        client = SynapseHook(synapse_conn_id).client
+        for csv_path in csv_paths:
+            filename = os.path.basename(csv_path)
+            uploaded = File(path=csv_path, parent_id=folder_id).store(
+                synapse_client=client
+            )
+            logger.info(f"Uploaded {filename} to Synapse as {uploaded.id}")
+            uploaded_files.append({"id": uploaded.id, "name": filename})
+    finally:
+        for csv_path in csv_paths:
+            if os.path.exists(csv_path):
+                os.remove(csv_path)
+
+    return uploaded_files
+
+
 def _send_synapse_message(
     conn_id: str, usernames: List[str], subject: str, body: str
 ) -> None:
@@ -410,7 +452,7 @@ def alert_on_failure(context: Dict[str, Any]) -> None:
 
 
 @dag(on_failure_callback=alert_on_failure, **dag_config)
-def zenodo_tep_metrics_dag() -> None:
+def zenodo_tep_metrics_dag() -> AirflowDAG:
     """Pull TREAT-AD TEP metrics from Zenodo, validate, export to Synapse, notify."""
 
     @task
@@ -449,29 +491,12 @@ def zenodo_tep_metrics_dag() -> None:
         Returns:
             List[Dict[str, str]]: Uploaded file info (id and name) for each CSV
         """
-        run_date = context["ds_nodash"]  # YYYYMMDD of the logical run date
-        base_filepath = os.path.join(
-            os.getcwd(), f"TREATAD_Target_Enabling_Metrics_{run_date}"
+        return export_reports_to_synapse(
+            records,
+            run_date=context["ds_nodash"],  # YYYYMMDD of the logical run date
+            synapse_conn_id=context["params"]["synapse_conn_id"],
+            folder_id=context["params"]["synapse_export_folder"],
         )
-
-        csv_paths = build_reports(records, base_filepath)["paths"]
-        uploaded_files: List[Dict[str, str]] = []
-        try:
-            hook = SynapseHook(context["params"]["synapse_conn_id"])
-            for csv_path in csv_paths:
-                filename = os.path.basename(csv_path)
-                uploaded = File(
-                    path=csv_path,
-                    parent_id=context["params"]["synapse_export_folder"],
-                ).store(synapse_client=hook.client)
-                logger.info(f"Uploaded {filename} to Synapse as {uploaded.id}")
-                uploaded_files.append({"id": uploaded.id, "name": filename})
-        finally:
-            for csv_path in csv_paths:
-                if os.path.exists(csv_path):
-                    os.remove(csv_path)
-
-        return uploaded_files
 
     @task
     def notify_collaborators(uploaded_files: List[Dict[str, str]], **context) -> None:

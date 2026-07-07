@@ -1,6 +1,8 @@
 import csv
+import os
 
 import pytest
+from airflow.models import DagBag
 
 from dags import zenodo_tep_metrics_dag as dag_module
 
@@ -328,3 +330,100 @@ def test_alert_on_failure_calls_send_synapse_message(monkeypatch):
     assert "Zenodo TEP Metrics DAG failure" in sent["subject"]
     assert "fetch_metrics" in sent["body"]
     assert "boom" in sent["body"]
+
+
+def test_export_reports_to_synapse(monkeypatch, tmp_path):
+    # Write the CSVs into tmp_path instead of the real working directory.
+    monkeypatch.setattr(dag_module.os, "getcwd", lambda: str(tmp_path))
+
+    class MockUploaded:
+        def __init__(self, id):
+            self.id = id
+
+    class MockFile:
+        def __init__(self, path, parent_id):
+            self.path = path
+            self.parent_id = parent_id
+
+        def store(self, synapse_client=None):
+            return MockUploaded(id="syn_" + os.path.basename(self.path))
+
+    class MockSynapseHook:
+        def __init__(self, conn_id):
+            self.client = object()
+
+    monkeypatch.setattr(dag_module, "File", MockFile)
+    monkeypatch.setattr(dag_module, "SynapseHook", MockSynapseHook)
+
+    result = dag_module.export_reports_to_synapse(
+        [VALID_RECORD],
+        run_date="20250101",
+        synapse_conn_id="conn",
+        folder_id="syn123",
+    )
+
+    # One entry per uploaded CSV, with the derived filename and returned id.
+    assert result == [
+        {
+            "id": "syn_TREATAD_Target_Enabling_Metrics_20250101_TEP_Reports.csv",
+            "name": "TREATAD_Target_Enabling_Metrics_20250101_TEP_Reports.csv",
+        },
+        {
+            "id": "syn_TREATAD_Target_Enabling_Metrics_20250101_TEP_Components.csv",
+            "name": "TREATAD_Target_Enabling_Metrics_20250101_TEP_Components.csv",
+        },
+    ]
+    # Local CSV files are cleaned up after upload.
+    assert not list(tmp_path.glob("*.csv"))
+
+
+def test_export_reports_to_synapse_cleans_up_on_upload_failure(monkeypatch, tmp_path):
+    monkeypatch.setattr(dag_module.os, "getcwd", lambda: str(tmp_path))
+
+    class MockFailingFile:
+        def __init__(self, path, parent_id):
+            pass
+
+        def store(self, synapse_client=None):
+            raise RuntimeError("Synapse upload failed")
+
+    class MockSynapseHook:
+        def __init__(self, conn_id):
+            self.client = object()
+
+    monkeypatch.setattr(dag_module, "File", MockFailingFile)
+    monkeypatch.setattr(dag_module, "SynapseHook", MockSynapseHook)
+
+    with pytest.raises(RuntimeError, match="Synapse upload failed"):
+        dag_module.export_reports_to_synapse(
+            [VALID_RECORD],
+            run_date="20250101",
+            synapse_conn_id="conn",
+            folder_id="syn123",
+        )
+    # Even when the upload raises, the local CSVs are removed.
+    assert not list(tmp_path.glob("*.csv"))
+
+
+def test_dag_loads_without_import_errors():
+    dagbag = DagBag(dag_folder="dags/zenodo_tep_metrics_dag.py", include_examples=False)
+    assert dagbag.import_errors == {}
+
+
+def test_dag_structure():
+    dagbag = DagBag(dag_folder="dags/zenodo_tep_metrics_dag.py", include_examples=False)
+    dag = dagbag.get_dag("zenodo_tep_metrics_dag")
+
+    assert dag is not None, "zenodo_tep_metrics_dag failed to load"
+    assert {task.task_id for task in dag.tasks} == {
+        "fetch_metrics",
+        "validate_metrics",
+        "export_to_synapse",
+        "notify_collaborators",
+    }
+    # Verify the linear dependency chain fetch -> validate -> export -> notify.
+    assert dag.get_task("fetch_metrics").downstream_task_ids == {"validate_metrics"}
+    assert dag.get_task("validate_metrics").downstream_task_ids == {"export_to_synapse"}
+    assert dag.get_task("export_to_synapse").downstream_task_ids == {
+        "notify_collaborators"
+    }
