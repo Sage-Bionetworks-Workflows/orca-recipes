@@ -6,6 +6,9 @@ from orca.services.nextflowtower import NextflowTowerHook
 from orca.services.nextflowtower.models import LaunchInfo
 from slack_sdk import WebClient
 from orca.services.synapse import SynapseHook
+from airflow.exceptions import AirflowNotFoundException
+from airflow.hooks.base import BaseHook
+
 
 TOWER_HOST = "https://tower.sagebionetworks.org"
 TOWER_ORG_NAME = "Sage-Bionetworks"
@@ -29,8 +32,9 @@ dag_params = {
 }
 
 dag_config = {
-    "schedule": "0 21 * * *",
-    "start_date": datetime(2026, 7, 7),
+    # "schedule": "0 21 * * *",
+    # "start_date": datetime(2026, 7, 7),
+    "schedule": None,
     "catchup": False,
     "default_args": {
         "retries": 1,
@@ -129,7 +133,33 @@ def agora_nf_run_dag():
     
     run_id >> monitor_task >> message >> [post_to_slack, post_to_email]
 
+
+def check_required_secrets():
+    """Fail fast if any Connection/Variable this DAG needs isn't resolvable."""
+    missing = []
+
+    for conn_id in (
+        dag_params["tower_conn_id"].value,
+        dag_params["synapse_conn_id"].value,
+    ):
+        try:
+            BaseHook.get_connection(conn_id)
+        except AirflowNotFoundException:
+            missing.append(f"connection: {conn_id}")
+
+    for var_name in ("SLACK_DPE_TEAM_BOT_TOKEN",):
+        try:
+            Variable.get(var_name)
+        except KeyError:
+            missing.append(f"variable: {var_name}")
+
+    if missing:
+        raise SystemExit(
+            "Missing required secrets before running locally:\n  "
+            + "\n  ".join(missing)
+        )
 dag = agora_nf_run_dag()
 
 if __name__ == "__main__":
+    check_required_secrets()
     dag.test(run_conf={"dataset": "model_details"})
