@@ -1,4 +1,4 @@
-"""This script is used to run the main Genie validation workflow on Seqera Tower.
+"""This script is used to run the main GENIE validation workflow on Seqera Tower.
 This runs twice a day. The workflow is configured to only run the data validation process."""
 
 from datetime import datetime
