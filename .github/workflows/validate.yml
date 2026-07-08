@@ -10,6 +10,7 @@ on: # Run on new commits and PR openings
 
 env:
   PYTHON_VERSION: "3.10"
+  RUFF_VERSION: "0.15.20"
 
 jobs:
   test:
@@ -46,10 +47,8 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements-dev.txt
+      - name: Install ruff
+        run: pip install "ruff==${{ env.RUFF_VERSION }}"
 
       # AIR3 = Ruff's Airflow 3.x deprecation/removal rules (e.g. schedule_interval,
       # execution_date). Catches DAG code that will break on the Airflow 3 upgrade.
