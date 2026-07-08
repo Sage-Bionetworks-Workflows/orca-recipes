@@ -1,3 +1,35 @@
+"""Launches the Agora Nextflow pipeline (nf-agora) on Nextflow Tower, monitors the
+workflow until it reaches a terminal state, and notifies collaborators of the
+outcome via Slack and email.
+
+Steps:
+1. `launch_agora_on_tower`: Launches the pipeline on Nextflow Tower with the
+   configured params (pipeline, revision, profile, work dir, memory settings,
+   optional single `dataset`) and returns the run's `run_id`.
+2. `monitor_nf_agora_workflow`: Polls Tower every `poke_interval` until the run
+   reaches a terminal state (success, failure, or cancellation).
+3. `generate_message`: Builds a summary message from the finished workflow
+   (state, dataset, duration, link to the run in Tower's UI).
+4. `post_slack_messages` / `post_email_messages`: Post that summary to Slack
+   and send it via Synapse messaging, in parallel.
+
+DAG Parameters:
+- `synapse_conn_id`: Connection ID for the Synapse service account, used to send
+  completion emails.
+- `tower_conn_id`: Connection ID for the Nextflow Tower workspace.
+- `tower_compute_env_type`: Tower compute environment to launch the workflow on.
+- `tower_run_name`: Name assigned to the Tower workflow run.
+- `pipeline`: Nextflow pipeline to launch (e.g. `Sage-Bionetworks-Workflows/nf-agora`).
+- `revision`: Pipeline revision (branch/tag/commit) to run.
+- `profile`: Nextflow config profile to apply.
+- `work_dir`: S3 working directory for the pipeline run.
+- `default_memory_gb` / `large_memory_gb`: Memory allocations for standard vs.
+  large-memory datasets.
+- `large_memory_datasets`: Comma-separated list of datasets that should use
+  `large_memory_gb` instead of `default_memory_gb`.
+- `dataset`: Optional single dataset to process; if unset, all datasets are
+  processed.
+"""
 from datetime import datetime
 from airflow.decorators import dag, task
 from airflow.models.param import Param
