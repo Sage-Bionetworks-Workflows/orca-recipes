@@ -216,10 +216,13 @@ pre-commit run --all-files
 ```
 
 > [!NOTE]
-> The first run may modify files (e.g. `end-of-file-fixer` /
-> `trailing-whitespace`) and the Ruff hook auto-fixes fixable `AIR3` issues. When
-> a hook changes a file, the commit is aborted so you can review and re-stage the
-> changes, then commit again.
+> The Airflow `AIR3` findings are **advisory, not enforced**. The Ruff hook runs
+> with `--exit-zero` (and the CI lint job uses `continue-on-error`), so it
+> *reports* Airflow 3.x deprecation warnings but never blocks your commit or the
+> build. They flag Airflow-3 migration items — e.g. `airflow.decorators` /
+> `airflow.models.Param` moving to `airflow.sdk` — that can't be fixed while the
+> repo runs Airflow 2.10, so treat them as a heads-up for the eventual upgrade
+> rather than something to resolve now.
 
 See [Airflow's documentation on linting for best practices and how to contribute your own](https://airflow.apache.org/docs/apache-airflow/stable/best-practices.html#code-quality-and-linting)
 
