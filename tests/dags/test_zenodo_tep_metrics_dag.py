@@ -332,18 +332,23 @@ def test_export_reports_to_synapse_cleans_up_on_upload_failure(monkeypatch, tmp_
     assert not list(tmp_path.glob("*.csv"))
 
 
-def test_dag_loads_without_import_errors():
-    dagbag = DagBag(dag_folder="dags/zenodo_tep_metrics_dag.py", include_examples=False)
+# DAG specific tests
+@pytest.fixture
+def dagbag():
+    return DagBag(dag_folder="dags/zenodo_tep_metrics_dag.py", include_examples=False)
+
+
+def test_dag_loads_with_no_issues(dagbag):
     assert dagbag.import_errors == {}
+    dag = dagbag.dags["zenodo_tep_metrics_dag"]
+    assert dag is not None
 
 
-def test_dag_structure():
-    dagbag = DagBag(dag_folder="dags/zenodo_tep_metrics_dag.py", include_examples=False)
+def test_dag_structure_is_correct(dagbag):
     # Read from the parsed .dags dict (get_dag() hits the Airflow metadata DB,
     # which isn't available in CI).
     assert "zenodo_tep_metrics_dag" in dagbag.dags, "zenodo_tep_metrics_dag failed to load"
     dag = dagbag.dags["zenodo_tep_metrics_dag"]
-
     assert {task.task_id for task in dag.tasks} == {
         "fetch_metrics",
         "validate_metrics",
