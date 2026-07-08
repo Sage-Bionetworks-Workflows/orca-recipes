@@ -30,6 +30,7 @@ DAG Parameters:
 - `dataset`: Optional single dataset to process; if unset, all datasets are
   processed.
 """
+
 from datetime import datetime
 from airflow.decorators import dag, task
 from airflow.models.param import Param
@@ -38,19 +39,20 @@ from orca.services.nextflowtower import NextflowTowerHook
 from orca.services.nextflowtower.models import LaunchInfo
 from slack_sdk import WebClient
 from orca.services.synapse import SynapseHook
-from airflow.exceptions import AirflowNotFoundException
-from airflow.hooks.base import BaseHook
+from src.utils import validate_required_secrets
 
 
 TOWER_HOST = "https://tower.sagebionetworks.org"
 TOWER_ORG_NAME = "Sage-Bionetworks"
 TOWER_WORKSPACE_NAME = "agora-project"
 SLACK_CHANNEL = "test-agora-nextflow"
-SYNAPSE_TEAM_ID = "3600433" # my test team id for now
+SYNAPSE_TEAM_ID = "3600433"  # my test team id for now
 
 dag_params = {
     "synapse_conn_id": Param("SYNAPSE_ORCA_SERVICE_ACCOUNT_CONN", type="string"),
-    "tower_conn_id": Param("AGORA_PROJECT_TOWER_CONN", type="string"), # personal access token belongs to Lingling Peng
+    "tower_conn_id": Param(
+        "AGORA_PROJECT_TOWER_CONN", type="string"
+    ),  # personal access token belongs to Lingling Peng
     "tower_compute_env_type": Param("agora-project-ondemand-v13", type="string"),
     "tower_run_name": Param("airflow-agora-model-ad", type="string"),
     "pipeline": Param("Sage-Bionetworks-Workflows/nf-agora", type="string"),
@@ -59,7 +61,9 @@ dag_params = {
     "work_dir": Param("s3://agora-project-tower-scratch/work", type="string"),
     "default_memory_gb": Param(32, type=["null", "integer"]),
     "large_memory_gb": Param(64, type=["null", "integer"]),
-    "large_memory_datasets": Param("rna_de_individual,rna_de_aggregate", type=["null", "string"]),
+    "large_memory_datasets": Param(
+        "rna_de_individual,rna_de_aggregate", type=["null", "string"]
+    ),
     "dataset": Param(None, type=["null", "string"]),
 }
 
@@ -147,7 +151,7 @@ def agora_nf_run_dag():
         result = client.chat_postMessage(channel=SLACK_CHANNEL, text=message)
         print(f"Result of posting to slack: [{result}]")
         return result is not None
-    
+
     @task
     def post_email_messages(message: str, **context) -> bool:
         """Post the top downloads to the email channel."""
@@ -156,42 +160,23 @@ def agora_nf_run_dag():
         print(f"Result of posting to email: [{message}]")
         return True
 
-    
     run_id = launch_agora_on_tower()
     monitor_task = monitor_nf_agora_workflow(run_id=run_id)
     message = generate_message(run_id=run_id)
     post_to_slack = post_slack_messages(message=message)
     post_to_email = post_email_messages(message=message)
-    
+
     run_id >> monitor_task >> message >> [post_to_slack, post_to_email]
 
 
-def check_required_secrets() -> None:
-    """Fail fast if any Connection/Variable this DAG needs isn't resolvable."""
-    missing = []
-
-    for conn_id in (
-        dag_params["tower_conn_id"].value,
-        dag_params["synapse_conn_id"].value,
-    ):
-        try:
-            BaseHook.get_connection(conn_id)
-        except AirflowNotFoundException:
-            missing.append(f"connection: {conn_id}")
-
-    for var_name in ("SLACK_DPE_TEAM_BOT_TOKEN",):
-        try:
-            Variable.get(var_name)
-        except KeyError:
-            missing.append(f"variable: {var_name}")
-
-    if missing:
-        raise SystemExit(
-            "Missing required secrets before running locally:\n  "
-            + "\n  ".join(missing)
-        )
 dag = agora_nf_run_dag()
 
 if __name__ == "__main__":
-    check_required_secrets()
+    validate_required_secrets(
+        connection_ids=[
+            dag_params["tower_conn_id"].value,
+            dag_params["synapse_conn_id"].value,
+        ],
+        variable_names=["SLACK_DPE_TEAM_BOT_TOKEN"],
+    )
     dag.test(run_conf={"dataset": "model_details"})
