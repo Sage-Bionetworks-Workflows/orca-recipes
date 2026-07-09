@@ -1,7 +1,7 @@
 """Unit tests for the shared SynapseHook (dags/src/synapse_hook.py).
 
-External dependencies (the Synapse client, the module-level ``query`` helper, and
-Airflow's ``BaseHook``) are mocked so the tests need no Synapse credentials or
+External dependencies (the Synapse client, the module-level query helper, and
+Airflow's BaseHook) are mocked so the tests need no Synapse credentials or
 Airflow metadata database.
 """
 import airflow.hooks.base as base

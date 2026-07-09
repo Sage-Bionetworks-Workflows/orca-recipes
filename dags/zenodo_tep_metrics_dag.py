@@ -117,6 +117,13 @@ def fetch_tep_records(
     truncates each record down to the metric fields of interest. Each record is
     tagged with a category of "report" (Package/Report) or "component"
     (Component/Resource) based on its title.
+    
+    The search will stop when either:
+      1) The API returns an empty page of results, or
+      2) The number of records pulled is greater than or equal to the total
+         number of records reported by the API, or
+      3) The number of records returned on the current page is less than the
+         requested page size (indicating the last page).
 
     Arguments:
         api_token (str): Zenodo API token
@@ -479,4 +486,8 @@ def zenodo_tep_metrics_dag() -> AirflowDAG:
 dag = zenodo_tep_metrics_dag()
 
 if __name__ == "__main__":
-    dag.test()
+    dag.test(
+        {
+            "synapse_export_folder": "syn75951837",
+        }
+    )
