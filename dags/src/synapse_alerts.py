@@ -12,10 +12,24 @@ See CONTRIBUTION.md section DAG Failure Alerts for more info and usage examples.
 """
 import logging
 from typing import Any, Callable, Dict, List, Optional
+from urllib.parse import urlparse
 
 from src.synapse_hook import SynapseHook
 
 logger = logging.getLogger(__name__)
+
+
+def is_shareable_url(url: str) -> bool:
+    """Check if a URL is shareable (not localhost or private IP).
+
+    Args:
+        url (str): The URL to check
+
+    Returns:
+        bool: True if the URL is shareable, False otherwise
+    """
+    hostname = urlparse(url).hostname
+    return hostname not in {"localhost", "127.0.0.1", "0.0.0.0", None}
 
 
 def send_synapse_message(
@@ -53,6 +67,10 @@ def synapse_failure_callback(
 
     The send is wrapped in a try/except so a notification failure can never mask
     the original task error.
+    
+    If the task logs are not available as a shareable URL (e.g. when running Airflow 
+    locally or in GitHub Codespaces), the alert will include a note about how to
+    configure Airflow's webserver base URL to make the logs shareable.
 
     Arguments:
         message (Optional[str]): DAG-specific note appended to the alert body
@@ -88,7 +106,16 @@ def synapse_failure_callback(
             f"Run ID: {run_id}\n"
             f"Execution date: {execution_date}\n\n"
             f"Exception: {exception}\n\n"
-            f"Logs: {log_url}"
+        )
+        if log_url and is_shareable_url(log_url):
+            body += f"\n\nLogs: {log_url}"
+        else:
+            body += (
+                "\n\nLogs: not available as a shareable URL in this environment.\n\n"
+                "If you're running Airflow locally or in GitHub Codespaces, configure "
+                "Airflow's webserver base URL to match the URL where the Airflow UI is "
+                "accessible before starting the Airflow server. For example, in Codespaces:\n\n"
+                'export AIRFLOW__WEBSERVER__BASE_URL="https://<codespace-name>-8080.app.github.dev"\n'
         )
         if message:
             body += f"\n\n{message}"

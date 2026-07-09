@@ -123,3 +123,36 @@ def test_failure_callback_swallows_send_errors(monkeypatch):
             "exception": RuntimeError("boom"),
         }
     )
+
+class MockLocalTaskInstance:
+    task_id = "fetch_metrics"
+    dag_id = "some_dag"
+    run_id = "manual__2025-01-01"
+    log_url = "http://localhost:8080/dags/some_dag/grid?tab=logs"
+
+
+def test_failure_callback_replaces_localhost_log_url_with_guidance(monkeypatch):
+    sent = {}
+
+    def mock_send(conn_id, usernames, subject, body):
+        sent.update(conn_id=conn_id, usernames=usernames, subject=subject, body=body)
+
+    monkeypatch.setattr(synapse_alerts, "send_synapse_message", mock_send)
+
+    callback = synapse_alerts.synapse_failure_callback()
+    callback(
+        {
+            "params": {
+                "synapse_conn_id": "synapse_conn",
+                "dev_user_list": "alice",
+            },
+            "task_instance": MockLocalTaskInstance(),
+            "exception": RuntimeError("boom"),
+            "logical_date": "2025-01-01",
+        }
+    )
+
+    assert "http://localhost:8080" not in sent["body"]
+    assert "Logs: not available as a shareable URL" in sent["body"]
+    assert "AIRFLOW__WEBSERVER__BASE_URL" in sent["body"]
+    assert "https://<codespace-name>-8080.app.github.dev" in sent["body"]
