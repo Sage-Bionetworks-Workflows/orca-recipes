@@ -31,6 +31,7 @@ DAG Parameters:
   processed.
 """
 
+import os
 from datetime import datetime
 from airflow.decorators import dag, task
 from airflow.models.param import Param
@@ -45,8 +46,8 @@ from src.utils import validate_required_secrets
 TOWER_HOST = "https://tower.sagebionetworks.org"
 TOWER_ORG_NAME = "Sage-Bionetworks"
 TOWER_WORKSPACE_NAME = "agora-project"
-SLACK_CHANNEL = "test-agora-nextflow"
-SYNAPSE_TEAM_ID = "3600433"  # my test team id for now
+SLACK_CHANNEL = os.environ.get("SLACK_CHANNEL", "nf-agora-notifications") # Slack channel for ADT Airflow Notifications
+SYNAPSE_TEAM_ID = os.environ.get("SYNAPSE_TEAM_ID", "3600443") # Synapse ID for ADT Airflow Notifications
 
 dag_params = {
     "synapse_conn_id": Param("SYNAPSE_ORCA_SERVICE_ACCOUNT_CONN", type="string"),
@@ -68,9 +69,9 @@ dag_params = {
 }
 
 dag_config = {
-    # "schedule": "0 21 * * *",
-    # "start_date": datetime(2026, 7, 7),
-    "schedule": None,
+    "schedule": "0 1 * * *",
+    # July 10, 2026 at 01:00 UTC
+    "start_date": datetime(2026, 7, 10, 1, 0),
     "catchup": False,
     "default_args": {
         "retries": 1,
