@@ -147,6 +147,8 @@ class MockZenodoResponse:
         self.payload = payload
 
     def raise_for_status(self):
+        """Empty to simulate a successful HTTP response
+        """
         pass
 
     def json(self):
@@ -309,6 +311,11 @@ def test_export_reports_to_synapse_cleans_up_on_upload_failure(monkeypatch, tmp_
 
     class MockFailingFile:
         def __init__(self, path, parent_id):
+            """The constructor accepts the same arguments as the real File class but
+            intentionally ignores them because relevant test is only verifying that
+            export_reports_to_synapse() cleans up temporary CSVs when store()
+            raises an exception.
+            """
             pass
 
         def store(self, synapse_client=None):
