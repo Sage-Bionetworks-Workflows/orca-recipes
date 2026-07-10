@@ -1,18 +1,18 @@
-"""Tests for src/utils.py."""
+"""Tests for dags/src/utils.py."""
 
 from unittest.mock import MagicMock, patch
 
 import pytest
 from airflow.exceptions import AirflowNotFoundException
 
-from src.utils import validate_required_secrets
+from dags.src.utils import validate_required_secrets
 
 
 class TestValidateRequiredSecrets:
     """Tests for validate_required_secrets."""
 
-    @patch("src.utils.Variable")
-    @patch("src.utils.BaseHook")
+    @patch("dags.src.utils.Variable")
+    @patch("dags.src.utils.BaseHook")
     def test_all_resolved(self, mock_base_hook: MagicMock, mock_variable: MagicMock) -> None:
         """No error is raised when every connection and variable resolves."""
         mock_base_hook.get_connection.return_value = MagicMock()
@@ -25,8 +25,8 @@ class TestValidateRequiredSecrets:
         mock_base_hook.get_connection.assert_called_once_with("conn_a")
         mock_variable.get.assert_called_once_with("var_a")
 
-    @patch("src.utils.Variable")
-    @patch("src.utils.BaseHook")
+    @patch("dags.src.utils.Variable")
+    @patch("dags.src.utils.BaseHook")
     def test_multiple_all_resolved(self, mock_base_hook: MagicMock, mock_variable: MagicMock) -> None:
         """Every connection ID and variable name provided is checked."""
         mock_base_hook.get_connection.return_value = MagicMock()
@@ -48,8 +48,8 @@ class TestValidateRequiredSecrets:
         ],
         ids=["missing_connection", "missing_variable", "missing_both"],
     )
-    @patch("src.utils.Variable")
-    @patch("src.utils.BaseHook")
+    @patch("dags.src.utils.Variable")
+    @patch("dags.src.utils.BaseHook")
     def test_missing_secrets_raise_value_error(
         self,
         mock_base_hook: MagicMock,

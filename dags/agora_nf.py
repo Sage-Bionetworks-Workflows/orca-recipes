@@ -42,7 +42,7 @@ from orca.services.nextflowtower import NextflowTowerHook
 from orca.services.nextflowtower.models import LaunchInfo
 from slack_sdk import WebClient
 from orca.services.synapse import SynapseHook
-from src.utils import validate_required_secrets
+from dags.src.utils import validate_required_secrets
 
 
 TOWER_HOST = "https://tower.sagebionetworks.org"
