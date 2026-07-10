@@ -1,3 +1,5 @@
+"""Tests for src/utils.py."""
+
 from unittest.mock import MagicMock, patch
 
 import pytest
