@@ -183,7 +183,7 @@ don't silently break when the Airflow runtime is upgraded.
 your dev environment is set up via:
 
 ```console
-pip install -r requirements-dev.txt`
+pip install -r requirements-dev.txt
 ```
 
 you can then run the same check locally before pushing with no separate install needed:
