@@ -37,41 +37,36 @@ class TestValidateRequiredSecrets:
         assert mock_base_hook.get_connection.call_count == 2
         assert mock_variable.get.call_count == 2
 
+    @pytest.mark.parametrize(
+        "connection_fails, variable_fails, expected_substrings",
+        [
+            (True, False, ["connection: conn_a"]),
+            (False, True, ["variable: var_a"]),
+            (True, True, ["connection: conn_a", "variable: var_a"]),
+        ],
+        ids=["missing_connection", "missing_variable", "missing_both"],
+    )
     @patch("src.utils.Variable")
     @patch("src.utils.BaseHook")
-    def test_missing_connection(self, mock_base_hook: MagicMock, mock_variable: MagicMock) -> None:
-        """An unresolvable connection raises a ValueError naming it."""
-        mock_base_hook.get_connection.side_effect = AirflowNotFoundException()
+    def test_missing_secrets_raise_value_error(
+        self,
+        mock_base_hook: MagicMock,
+        mock_variable: MagicMock,
+        connection_fails: bool,
+        variable_fails: bool,
+        expected_substrings: list[str],
+    ) -> None:
+        """Unresolvable connections/variables are named in the raised ValueError."""
+        mock_base_hook.get_connection.side_effect = (
+            AirflowNotFoundException() if connection_fails else None
+        )
+        mock_variable.get.side_effect = KeyError("var_a") if variable_fails else None
         mock_variable.get.return_value = "some_value"
 
-        # When the connection can't be resolved
-        # Then a ValueError naming that connection is raised
-        with pytest.raises(ValueError, match="connection: conn_a"):
-            validate_required_secrets(["conn_a"], ["var_a"])
-
-    @patch("src.utils.Variable")
-    @patch("src.utils.BaseHook")
-    def test_missing_variable(self, mock_base_hook: MagicMock, mock_variable: MagicMock) -> None:
-        """An unresolvable variable raises a ValueError naming it."""
-        mock_base_hook.get_connection.return_value = MagicMock()
-        mock_variable.get.side_effect = KeyError("var_a")
-
-        # When the variable can't be resolved
-        # Then a ValueError naming that variable is raised
-        with pytest.raises(ValueError, match="variable: var_a"):
-            validate_required_secrets(["conn_a"], ["var_a"])
-
-    @patch("src.utils.Variable")
-    @patch("src.utils.BaseHook")
-    def test_missing_both(self, mock_base_hook: MagicMock, mock_variable: MagicMock) -> None:
-        """Both a missing connection and a missing variable are reported together."""
-        mock_base_hook.get_connection.side_effect = AirflowNotFoundException()
-        mock_variable.get.side_effect = KeyError("var_a")
-
-        # When neither the connection nor the variable can be resolved
+        # When the connection and/or variable can't be resolved
         with pytest.raises(ValueError) as exc_info:
             validate_required_secrets(["conn_a"], ["var_a"])
 
-        # Then the error message names both of them
-        assert "connection: conn_a" in str(exc_info.value)
-        assert "variable: var_a" in str(exc_info.value)
+        # Then the error message names each unresolvable one
+        for substring in expected_substrings:
+            assert substring in str(exc_info.value)
