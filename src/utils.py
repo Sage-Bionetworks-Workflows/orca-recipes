@@ -8,6 +8,11 @@ def validate_required_secrets(connection_ids: list[str], variable_names: list[st
     Args:
         connection_ids: Airflow connection IDs that must resolve via BaseHook.get_connection.
         variable_names: Airflow Variable names that must resolve via Variable.get.
+
+    Raises:
+        ValueError: If any connection or variable fails to resolve, listing each
+            missing one as "connection: <id>" or "variable: <name>", e.g.:
+            "Missing required secrets before running locally:\\n  connection: MY_CONN\\n  variable: MY_VAR"
     """
     missing = []
 
