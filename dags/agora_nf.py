@@ -33,6 +33,7 @@ DAG Parameters:
 
 import os
 from datetime import datetime
+from typing import Any
 from airflow.decorators import dag, task
 from airflow.models.param import Param
 from airflow.models import Variable
@@ -82,7 +83,7 @@ dag_config = {
 
 
 @dag(**dag_config)
-def agora_nf_run_dag():
+def agora_nf_run_dag() -> None:
     @task()
     def launch_agora_on_tower(**context):
         """
@@ -113,14 +114,34 @@ def agora_nf_run_dag():
         return run_id
 
     @task.sensor(poke_interval=300, timeout=604800, mode="reschedule")
-    def monitor_nf_agora_workflow(run_id: str, **context):
+    def monitor_nf_agora_workflow(run_id: str, **context: Any) -> bool:
+        """Poll the Tower workflow until it reaches a terminal state.
+
+        Args:
+            run_id: Tower run ID returned by launch_agora_on_tower.
+            context: Airflow task context; used to read the tower_conn_id param.
+
+        Returns:
+            True once the workflow has reached a terminal state (success,
+            failure, or cancellation), signaling the sensor to stop poking.
+        """
         hook = NextflowTowerHook(context["params"]["tower_conn_id"])
         workflow = hook.ops.get_workflow(run_id)
         print(f"Current workflow state: {workflow.status.state.value}")
         return workflow.status.is_done
 
     @task
-    def generate_message(run_id: str, **context):
+    def generate_message(run_id: str, **context: Any) -> str:
+        """Build a summary message for a finished Tower workflow run.
+
+        Args:
+            run_id: Tower run ID returned by launch_agora_on_tower.
+            context: Airflow task context; used to read the tower_conn_id param.
+
+        Returns:
+            A message reporting the workflow's dataset, terminal state,
+            duration, and a link to the run in Tower's UI.
+        """
         hook = NextflowTowerHook(context["params"]["tower_conn_id"])
         workflow = hook.ops.get_workflow(run_id)
 
@@ -147,15 +168,30 @@ def agora_nf_run_dag():
 
     @task
     def post_slack_messages(message: str) -> bool:
-        """Post the top downloads to the slack channel."""
+        """Post the workflow summary message to the configured Slack channel.
+
+        Args:
+            message: Summary message produced by generate_message.
+
+        Returns:
+            True if the Slack API call returned a result, False otherwise.
+        """
         client = WebClient(token=Variable.get("SLACK_DPE_TEAM_BOT_TOKEN"))
         result = client.chat_postMessage(channel=SLACK_CHANNEL, text=message)
         print(f"Result of posting to slack: [{result}]")
         return result is not None
 
     @task
-    def post_email_messages(message: str, **context) -> bool:
-        """Post the top downloads to the email channel."""
+    def post_email_messages(message: str, **context: Any) -> bool:
+        """Send the workflow summary message to collaborators via Synapse messaging.
+
+        Args:
+            message: Summary message produced by generate_message.
+            context: Airflow task context; used to read the synapse_conn_id param.
+
+        Returns:
+            True once the Synapse message has been sent.
+        """
         syn_client = SynapseHook(context["params"]["synapse_conn_id"]).client
         syn_client.sendMessage([SYNAPSE_TEAM_ID], "Tower workflow completed", message)
         print(f"Result of posting to email: [{message}]")
