@@ -1,5 +1,26 @@
 # ORCA Recipes
 
+## Table of Contents
+
+- [Example Workflows](#example-workflows)
+- [Airflow Development](#airflow-development)
+  - [Setting up the Dev Environment](#setting-up-the-dev-environment)
+    - [Dev Container](#dev-container)
+      - [Codespaces](#codespaces)
+      - [VS Code](#vs-code)
+    - [Docker Compose](#docker-compose)
+  - [Interfacing with Airflow](#interfacing-with-airflow)
+    - [CLI](#cli)
+    - [Browser](#browser)
+  - [Local Development (without Dev Container)](#local-development-without-dev-container)
+    - [1. Install dependencies](#1-install-dependencies)
+    - [2. Initialize the Airflow database](#2-initialize-the-airflow-database)
+    - [3. Configure environment variables](#3-configure-environment-variables)
+    - [4. Run a DAG locally](#4-run-a-dag-locally)
+- [Local DAGs](#local-dags)
+- [Contributing](#contributing)
+- [Releases](#releases)
+
 This repository contains Airflow recipes (DAGs) for data processing and engineering at Sage Bionetworks. If you want to develop a workflow to process data, you've come to the right place.
 
 ## Example Workflows
