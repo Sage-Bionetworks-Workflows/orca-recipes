@@ -85,7 +85,7 @@ dag_config = {
 @dag(**dag_config)
 def agora_nf_run_dag() -> None:
     @task()
-    def launch_agora_on_tower(**context):
+    def launch_agora_on_tower(**context: Any) -> str:
         """
         Launches tower workflow
 
