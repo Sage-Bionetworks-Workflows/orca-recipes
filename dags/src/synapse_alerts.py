@@ -113,14 +113,7 @@ def synapse_failure_callback(
             body += (
                 "Logs: Not available as a shareable URL in this environment.\n"
                 "If you're running Airflow locally or in GitHub Codespaces, view the task "
-                "logs directly in the Airflow UI or inspect the Airflow container logs.\n\n"
-                "Github Codespaces (Optional) \n"
-                "-----------------------------------\n"
-                "To generate shareable log URLs in failure notifications, configure Airflow's "
-                "webserver base URL before starting Airflow:\n\n"
-                'export AIRFLOW__WEBSERVER__BASE_URL="https://YOUR_CODESPACE_NAME-8080.app.github.dev"\n\n'
-                "Replace YOUR_CODESPACE_NAME with the name of your Codespace, then restart "
-                "the Airflow webserver.\n"
+                "logs directly in the Airflow UI or inspect the Airflow container logs.\n"
             )
         if message:
             if message:
