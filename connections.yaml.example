@@ -1,4 +1,4 @@
-<Your tower project environment name, i.e. AGORA_PROJECT_TOWER_CONN>:
+<your_tower_conn_id, i.e. AGORA_PROJECT_TOWER_CONN>:
   conn_type: tower
   host: tower.sagebionetworks.org
   schema: api
