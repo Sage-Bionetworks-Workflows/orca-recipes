@@ -133,6 +133,8 @@ logs/
 
 # Secrets environment
 .env
+connections.yaml
+variables.json
 
 # metaflow artifacts
 .metaflow/

@@ -1,3 +1,6 @@
+"""This script is used to run the main GENIE validation workflow on Seqera Tower.
+This runs twice a day. The workflow is configured to only run the data validation process."""
+
 from datetime import datetime
 
 from airflow.decorators import dag, task

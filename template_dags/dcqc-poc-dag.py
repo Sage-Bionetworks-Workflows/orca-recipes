@@ -1,3 +1,15 @@
+"""
+This DAG demonstrates running the nf-dcqc workflow on Seqera Platform against a
+manifest staged in Synapse.
+1. Find manifest files uploaded to a Synapse container within the last 24 hours
+2. Verify exactly one manifest is present (stop if none, error if more than one)
+3. Stage the manifest file in S3
+4. Launch the nf-dcqc workflow on Seqera Platform
+5. Monitor the workflow until it completes
+6. Download the output file and upload it back to Synapse
+If no new manifest is found, the DAG will stop and launch no workflow.
+"""
+
 import os
 import uuid
 

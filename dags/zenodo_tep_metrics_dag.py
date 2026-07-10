@@ -70,8 +70,8 @@ REQUIRED_RECORD_FIELDS = [
 # Numeric metric fields that must be non-negative integers
 METRIC_FIELDS = ["views", "unique_views", "downloads", "unique_downloads"]
 
-# Headers for the Excel report (in the order they appear in the workbook)
-EXCEL_HEADERS = [
+# Headers for the csv report (in the order they appear in the workbook)
+CSV_HEADERS = [
     "Title",
     "Publication Date",
     "Total Views",
@@ -81,11 +81,13 @@ EXCEL_HEADERS = [
     "Link",
 ]
 
+
+
 dag_params = {
     "synapse_conn_id": Param("SYNAPSE_ORCA_SERVICE_ACCOUNT_CONN", type="string"),
-    # Synapse folder/project the Excel report is uploaded to. Update to the
+    # Synapse id of the Synapse folder/project the csv report is uploaded to. Update to the
     # shared TREAT-AD reporting location.
-    "synapse_export_folder": Param("syn75951837", type="string"),
+    "synapse_export_folder_id": Param("syn75951837", type="string"),
     # Comma-separated Synapse usernames of collaborator(s) to notify when the
     # monthly report is available. (No support for python lists in Params.)
     "collaborator_user_list": Param("3460442", type="string"),
@@ -117,7 +119,7 @@ def fetch_tep_records(
     truncates each record down to the metric fields of interest. Each record is
     tagged with a category of "report" (Package/Report) or "component"
     (Component/Resource) based on its title.
-    
+
     The search will stop when either:
       1) The API returns an empty page of results, or
       2) The number of records pulled is greater than or equal to the total
@@ -316,7 +318,7 @@ def build_reports(records: List[Dict[str, Any]], filepath: str) -> Dict[str, Any
         with open(output.path, "w", newline="") as f:
             writer = csv.writer(f)
 
-            writer.writerow(EXCEL_HEADERS)
+            writer.writerow(CSV_HEADERS)
 
             for record in output.records:
                 writer.writerow(
@@ -369,7 +371,7 @@ def export_reports_to_synapse(
         records (List[Dict[str, Any]]): Validated TEP records
         run_date (str): YYYYMMDD date string used in the report filenames
         synapse_conn_id (str): Synapse connection id
-        folder_id (str): Synapse folder/project to upload the reports to
+        folder_id (str): Synapse ID of the Synapse folder/project to upload the reports to
 
     Returns:
         List[Dict[str, str]]: Uploaded file info ("id" and "name") for each CSV
@@ -449,7 +451,7 @@ def zenodo_tep_metrics_dag() -> AirflowDAG:
             records,
             run_date=context["ds_nodash"],  # YYYYMMDD of the logical run date
             synapse_conn_id=context["params"]["synapse_conn_id"],
-            folder_id=context["params"]["synapse_export_folder"],
+            folder_id=context["params"]["synapse_export_folder_id"],
         )
 
     @task

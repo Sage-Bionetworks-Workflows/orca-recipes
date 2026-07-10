@@ -133,7 +133,7 @@ def test_build_reports_creates_expected_csvs_and_totals(tmp_path):
 
     # CSV cells are read back as strings.
     reports = _read_csv(reports_path)
-    assert reports[0] == dag_module.EXCEL_HEADERS  # header row
+    assert reports[0] == dag_module.CSV_HEADERS  # header row
     assert reports[1][0] == "Target Enabling Package Report"  # data row
     assert reports[-1] == ["TOTALS", "", "10", "7", "4", "3", ""]  # totals row
 

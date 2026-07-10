@@ -16,6 +16,12 @@
     - [Integration Testing](#integration-testing)
       - [DAG Set Up](#dag-set-up)
       - [DAG Testing](#dag-testing)
+    - [Testing DAGs Locally](#testing-dags-locally)
+      - [Skip AWS Secrets Manager for Local Development](#skip-aws-secrets-manager-for-local-development)
+      - [Handling Airflow Variables Locally](#handling-airflow-variables-locally)
+      - [Passing Custom Config with `dag.test()`](#passing-custom-config-with-dagtest)
+  - [Linting](#linting)
+  - [Pre-commit hooks](#pre-commit-hooks)
 - [Deployment Infrastructure](#deployment-infrastructure)
 - [DAG Development Best Practices](#dag-development-best-practices)
   - [Communication Between Tasks](#communication-between-tasks)
@@ -33,8 +39,8 @@
     - [Parameters](#parameters)
   - [Contributing a New Challenge DAG](#contributing-a-new-challenge-dag)
   - [Troubleshooting](#troubleshooting)
-    - [Airflow provider hooks failing to connect — outdated Codespace secrets](#airflow-provider-hooks-failing-to-connect--outdated-codespace-secrets)
-    
+    - [Airflow Provider Hooks Failing to Connect — Outdated Codespace Secrets](#airflow-provider-hooks-failing-to-connect--outdated-codespace-secrets)
+
 ## Development
 
 The following section is divided into three parts:
@@ -63,7 +69,7 @@ The Airflow infrastructure is containerized and orchestrated using Docker Compos
    * Container networking, volumes, and health checks
 
 * `Dockerfile` - Builds the custom Airflow Docker image:
-   * All Python DAGs run within this environment 
+   * All Python DAGs run within this environment
 
 * `config/airflow.cfg` - Airflow configuration file that controls:
    * Scheduler behavior and intervals
@@ -114,9 +120,9 @@ Unit tests can be found in `tests/`. We use `pytest` as part of a Github actions
 python -m pytest tests/ -v --tb=short
 ```
 
-Because of the wide variety of use-cases which this repo supports, we further divide tests into subdirectories within `tests/` depending on their domain. For example, the `tests/datacite/` directory contains tests for everything in the `src/datacite/` directory. 
+Because of the wide variety of use-cases which this repo supports, we further divide tests into subdirectories within `tests/` depending on their domain. For example, the `tests/datacite/` directory contains tests for everything in the `src/datacite/` directory.
 
-DAG unit tests belong in the `tests/dags/` directory. Unlike DAG task logic, which is much more diverse, DAG logic is homogenous enough that we can organize all DAG unit tests in a single directory.  
+DAG unit tests belong in the `tests/dags/` directory. Unlike DAG task logic, which is much more diverse, DAG logic is homogenous enough that we can organize all DAG unit tests in a single directory.
 
 You are welcome to write tests in any form which `pytest` supports, although it is recommended that you make use of fixtures to keep tests easy to maintain and organize unit tests into classes for ease of testing.
 
@@ -147,7 +153,7 @@ A few requirements make this import work:
 - **The DAG filename must be a valid Python module name** — use underscores, not
   hyphens so it can be imported with `from dags import <dag_module>` (e.g.
   `dags/zenodo_tep_metrics_dag.py`, not `dags/zenodo-tep-metrics-dag.py`)
-- **Keep `dags/`, and the top-level `src/` as namespace packages**, 
+- **Keep `dags/`, and the top-level `src/` as namespace packages**,
   do not add an `__init__.py` to any of them. Because neither `src/` nor
   `dags/src/` has an `__init__.py`, `import src` resolves to a single namespace
   package spanning both, so a DAG's `from src.synapse_hook import SynapseHook` and
@@ -221,7 +227,7 @@ docker compose restart
 Integration testing can be performed by triggering a DAG via the Airflow command-line or web UI. Note that for testing of the DAGs directly on Airflow locally via Dev Containers, it's best to leave the DAG **unpaused** when triggering the DAG with various updates, otherwise you might be triggering the DAG twice and/or triggering it in its original state that had its parameters set to production mode.
 
 > [!NOTE]
-> Some DAGs use runtime configuration in the form of Params or Connections and Secrets. It's not always well-documented in the DAG itself how the runtime configuration is set up, so if your DAG uses runtime configuration, yet it's not clear how these values are passed through to the DAG itself, it's generally better to test the DAG in GitHub Codespaces. 
+> Some DAGs use runtime configuration in the form of Params or Connections and Secrets. It's not always well-documented in the DAG itself how the runtime configuration is set up, so if your DAG uses runtime configuration, yet it's not clear how these values are passed through to the DAG itself, it's generally better to test the DAG in GitHub Codespaces.
 
 Logs can be inspected with docker compose:
 
@@ -241,8 +247,148 @@ docker compose down
 docker compose up --build --detach
 # OR
 # do not use cached images
-# docker compose up --no-cache --build --detach 
+# docker compose up --no-cache --build --detach
 ```
+
+#### Testing DAGs Locally
+
+There are two distinct ways to test a DAG's task logic without deploying to Airflow:
+
+- **Unit tests** — mock external dependencies (hooks like `NextflowTowerHook`/`SynapseHook`, `WebClient`, `Variable`, etc.) and call each task's `python_callable` directly. These are fast, require no credentials or network access, and run automatically in CI on every push. They validate your Python logic (parameter wiring, branching, string formatting), not whether the real external services behave as you assume. See `tests/` for examples.
+
+- **Local integration runs** via `dag.test()` — hit real external services using real credentials. Credentials can come from AWS Secrets Manager (matching production) or from a local `connections.yaml/AIRFLOW_VAR_*` configuration via `LocalFilesystemBackend`. These validate the real integration (e.g., actually launching a Nextflow Tower workflow or posting to Slack), but are slower, require AWS SSO access, and can have real side effects. Use this as a manual sanity check before/after changing integration behavior, not as an automated substitute for unit tests.
+
+##### Skip AWS Secrets Manager for Local Development
+
+If you'd rather not authenticate to AWS just to test a DAG (e.g., to talk to the real Nextflow Tower), use Airflow's `LocalFilesystemBackend` instead, backed by a local `connections.yaml` file:
+
+```console
+export AIRFLOW__SECRETS__BACKEND=airflow.secrets.local_filesystem.LocalFilesystemBackend
+export AIRFLOW__SECRETS__BACKEND_KWARGS='{"connections_file_path": "connections.yaml"}'
+```
+
+Create `connections.yaml` from the template:
+
+```console
+cp connections.yaml.example connections.yaml
+```
+
+Fill in the real credentials for whichever connections your DAG needs, keyed by your DAG's `tower_conn_id` param value:
+
+```yaml
+# Replace this key with your actual connection ID (e.g. AGORA_PROJECT_TOWER_CONN)
+AGORA_PROJECT_TOWER_CONN:
+  conn_type: tower
+  host: tower.sagebionetworks.org
+  schema: api
+  password: "<your-tower-personal-access-token>"
+  extra:
+    workspace: sage-bionetworks/<your-workspace>
+```
+
+`host`/`schema` become the Tower API endpoint (`https://<host>/<schema>`), `password` is your Tower personal access token, and `extra.workspace` is the fully-qualified `<org>/<workspace>` name.
+
+##### Handling Airflow Variables Locally
+
+`LocalFilesystemBackend`'s `connections_file_path` config above only covers Connections, not Airflow **Variables**. Some DAGs also call `Variable.get("SOME_NAME")` — for example, `SLACK_DPE_TEAM_BOT_TOKEN`, a Slack bot token normally pulled from AWS Secrets Manager. Once you switch away from `SecretsManagerBackend`, there's no source for Variables at all — a plain env var like `SLACK_DPE_TEAM_BOT_TOKEN` in your shell or `.env` is **not** visible to `Variable.get()`. There are two ways to fill that gap without AWS access:
+
+**Option A: `AIRFLOW_VAR_` environment variable**
+
+Prefix the Variable's name with `AIRFLOW_VAR_` and export it as a regular environment variable, e.g. `AIRFLOW_VAR_SLACK_DPE_TEAM_BOT_TOKEN`. Airflow checks for this automatically, regardless of which secrets backend is configured — so it works even with `LocalFilesystemBackend`, which has no Variables source of its own.
+
+```console
+export AIRFLOW_VAR_SLACK_DPE_TEAM_BOT_TOKEN="<the-secret-value>"
+```
+
+**Option B: `variables_file_path` via `LocalFilesystemBackend`**
+
+Alternatively, point `LocalFilesystemBackend` at a local `variables.json` file the same way you did for `connections.yaml`, by adding `variables_file_path` to the backend kwargs:
+
+```console
+export AIRFLOW__SECRETS__BACKEND=airflow.secrets.local_filesystem.LocalFilesystemBackend
+export AIRFLOW__SECRETS__BACKEND_KWARGS='{"variables_file_path": "variables.json", "connections_file_path": "connections.yaml"}'
+```
+
+Then create `variables.json` with the Variables your DAG needs:
+
+```json
+{
+  "SLACK_DPE_TEAM_BOT_TOKEN": "<the-secret-value>"
+}
+```
+
+This keeps all your local secrets (Connections and Variables) sourced the same way, which is handy if a DAG needs several Variables.
+
+##### Passing Custom Config with `dag.test()`
+
+When calling `dag.test()` directly (e.g., from a DAG file's `if __name__ == "__main__":` block), you can override the DAG's default `Param` values for that run via the `run_conf` argument, the same way `-c`/`--conf` works with `airflow dags test <dag_id>` on the CLI:
+
+```python
+if __name__ == "__main__":
+    dag.test(run_conf={
+        "tower_run_name": "my-test-run",
+        "profile": "model_ad_preprod",
+        "dataset": "model_details",
+    })
+```
+
+Only keys that match one of the DAG's declared `Param` names actually take effect — anything else in `run_conf` is ignored by your params.
+
+### Linting
+
+We lint the DAGs with [Ruff](https://docs.astral.sh/ruff/) as part of the same
+GitHub Actions workflow that runs the tests
+([validate.yml](./.github/workflows/validate.yml)). The check uses Ruff's
+**`AIR3`** ruleset, which flags Airflow 3.x deprecations and removals (e.g.
+`schedule_interval` -> `schedule`, `execution_date`, moved import paths) so DAGs
+don't silently break when the Airflow runtime is upgraded.
+
+`ruff` is included in [requirements-dev.txt](./requirements-dev.txt), so once
+your dev environment is set up via:
+
+```console
+pip install -r requirements-dev.txt
+```
+
+you can then run the same check locally before pushing with no separate install needed:
+
+```console
+ruff check dags/<your_dag_name> --select AIR3
+```
+
+#### Pre-commit hooks
+
+So the same checks run automatically on every commit, the repo ships a
+[.pre-commit-config.yaml](./.pre-commit-config.yaml) that wires up Ruff (via
+[ruff-pre-commit](https://github.com/astral-sh/ruff-pre-commit), pinned to the
+same version and ruleset as Github Actions CI) plus a few standard hygiene hooks
+(`check-yaml`, `end-of-file-fixer`, `trailing-whitespace`, etc.).
+
+`pre-commit` is included in [requirements-dev.txt](./requirements-dev.txt). Set
+it up once in your dev environment:
+
+```console
+pip install pre-commit        # or: pip install -r requirements-dev.txt
+pre-commit install            # installs the git hook; runs on every `git commit`
+```
+
+The hooks then run on staged files at commit time. To run them across the whole
+repo on demand (useful the first time, or in CI):
+
+```console
+pre-commit run --all-files
+```
+
+> [!NOTE]
+> The Airflow `AIR3` findings are **advisory, not enforced**. The Ruff hook runs
+> with `--exit-zero` (and the CI lint job uses `continue-on-error`), so it
+> *reports* Airflow 3.x deprecation warnings but never blocks your commit or the
+> build. They flag Airflow-3 migration items — e.g. `airflow.decorators` /
+> `airflow.models.Param` moving to `airflow.sdk` — that can't be fixed while the
+> repo runs Airflow 2.10, so treat them as a heads-up for the eventual upgrade
+> rather than something to resolve now.
+
+See [Airflow's documentation on linting for best practices and how to contribute your own](https://airflow.apache.org/docs/apache-airflow/stable/best-practices.html#code-quality-and-linting)
 
 ## Deployment Infrastructure
 
@@ -366,7 +512,7 @@ your DAG names them differently. See it wired up in
 Airflow secrets (_e.g._ connections and variables) are stored in Secrets Manager within the `dpe-prod` AWS account. This includes some of the following connection IDs that are already in-place ready to use:
 
 1. `synapse_conn_id`: `"SYNAPSE_ORCA_SERVICE_ACCOUNT_CONN"`
-   - The Airflow connection ID used to connect to the Synapse service. Use  to run Synapse commands. This connection was created under the Synapse orca service account. 
+   - The Airflow connection ID used to connect to the Synapse service. Use  to run Synapse commands. This connection was created under the Synapse orca service account.
 1. `aws_conn_id`: `"AWS_TOWER_PROD_S3_CONN"`
    - The Airflow connection ID used to connect to AWS service.
 1. `snowflake_conn_id`: `"SNOWFLAKE_DEVELOPER_SERVICE_RAW_CONN"`
@@ -517,21 +663,21 @@ See below for a list of parameters and their descriptions:
 
 #### Parameters
 
-1. `synapse_conn_id`: The Airflow connection ID used to connect to the Synapse service. This connection is utilized when fetching submission data and updating statuses. **Use `SYNAPSE_ORCA_SERVICE_ACCOUNT_CONN`**.  
-1. `aws_conn_id`: The connection ID for AWS. This enables the DAG to upload CSV files (manifests) to an S3 bucket via the S3 hook. **Use `AWS_TOWER_PROD_S3_CONN`**.  
-1. `revision`: Specifies the version or Git commit revision of the `main` branch in the `nf-synapse-challenge` repository (which houses your workflow). This ensures that the correct version of your workflow is deployed when the DAG triggers a run. **Use `main` or a specific commit SHA which points to the desired version**.  
-1. `challenge_profile`: Identifies the Nextflow Tower challenge profile you contributed in `nextflow.config` of the `nf-synapse-challenge` repository. This parameter customizes the execution environment for the workflow. See example of a previous profile contribution [here](https://github.com/Sage-Bionetworks-Workflows/nf-synapse-challenge/pull/47). 
+1. `synapse_conn_id`: The Airflow connection ID used to connect to the Synapse service. This connection is utilized when fetching submission data and updating statuses. **Use `SYNAPSE_ORCA_SERVICE_ACCOUNT_CONN`**.
+1. `aws_conn_id`: The connection ID for AWS. This enables the DAG to upload CSV files (manifests) to an S3 bucket via the S3 hook. **Use `AWS_TOWER_PROD_S3_CONN`**.
+1. `revision`: Specifies the version or Git commit revision of the `main` branch in the `nf-synapse-challenge` repository (which houses your workflow). This ensures that the correct version of your workflow is deployed when the DAG triggers a run. **Use `main` or a specific commit SHA which points to the desired version**.
+1. `challenge_profile`: Identifies the Nextflow Tower challenge profile you contributed in `nextflow.config` of the `nf-synapse-challenge` repository. This parameter customizes the execution environment for the workflow. See example of a previous profile contribution [here](https://github.com/Sage-Bionetworks-Workflows/nf-synapse-challenge/pull/47).
 1. `tower_conn_id`: The Airflow connection ID to connection URI of the Seqera tower workspace for your challenge. This is needed so your challenge DAG can execute the workflow runs in your desired Seqera workspace.
-1. `tower_view_id`: The identifier used to query the submission view on Synapse. It tells the DAG, to _tell the workflow_, where to look for submissions to fetch and process.  
-1. `tower_compute_env_type`: Indicates the compute environment (for example, `"spot"`) to be used when launching the workflow. **Use `spot` for challenges that will take less computational time to evaluate the submissions. Use `on-demand` otherwise**.  
+1. `tower_view_id`: The identifier used to query the submission view on Synapse. It tells the DAG, to _tell the workflow_, where to look for submissions to fetch and process.
+1. `tower_compute_env_type`: Indicates the compute environment (for example, `"spot"`) to be used when launching the workflow. **Use `spot` for challenges that will take less computational time to evaluate the submissions. Use `on-demand` otherwise**.
 1. `bucket_name`: The S3 bucket where the challenge-related files (such as CSV manifests) will be stored. Note that the Seqera Platform workspaces can only access the S3 buckets assigned to them.
-1. `key`: The S3 key prefix (or folder path) under which the submissions manifest file is uploaded for a challenge DAG run. At runtime, a unique run-specific UUID is appended to this key to ensure that files are uniquely identified and organized. Since this folder path lives in a scratch bucket, you can leverage one of the folders that are configured to delete stale objects based on a certain number of days ([see here](https://sagebionetworks.jira.com/wiki/spaces/WF/pages/2191556616/Getting+Started+with+Nextflow+and+Seqera+Platform#Tower-Project-Breakdown) for more details). This will affect what value you put here. For example, **if you would like for your manifest file to live for 10 days, use `10days/my_project_folder`**.  
-1. `dag_config`: A nested dictionary containing additional DAG scheduling and runtime parameters:  
-   * `schedule_interval`: A cron expression that determines how frequently the DAG is triggered.  
+1. `key`: The S3 key prefix (or folder path) under which the submissions manifest file is uploaded for a challenge DAG run. At runtime, a unique run-specific UUID is appended to this key to ensure that files are uniquely identified and organized. Since this folder path lives in a scratch bucket, you can leverage one of the folders that are configured to delete stale objects based on a certain number of days ([see here](https://sagebionetworks.jira.com/wiki/spaces/WF/pages/2191556616/Getting+Started+with+Nextflow+and+Seqera+Platform#Tower-Project-Breakdown) for more details). This will affect what value you put here. For example, **if you would like for your manifest file to live for 10 days, use `10days/my_project_folder`**.
+1. `dag_config`: A nested dictionary containing additional DAG scheduling and runtime parameters:
+   * `schedule_interval`: A cron expression that determines how frequently the DAG is triggered.
    * `start_date`: An ISO 8601–formatted date-time string (e.g. `2025-07-16T08:00:00+02:00`) that tells the DAG factory when to begin scheduling runs. The trailing ±HH:MM UTC-offset makes the datetime timezone-aware, and the factory converts it into a Python datetime object in UTC.
    * `end_date`: An ISO 8601–formatted date-time string (e.g. `2025-07-20T00:00:00-05:00`) that indicates when the DAG should stop scheduling new runs. Like start_date, it may include a ±HH:MM UTC-offset and is parsed by the factory into a timezone-aware Python datetime object in UTC.
-   * `catchup`: A Boolean flag that indicates whether Airflow should run missed DAG runs (catch up) if the scheduler falls behind.  
-   * `default_args`: Standard Airflow arguments for the DAG. For example, you can set the number of retries for tasks.  
+   * `catchup`: A Boolean flag that indicates whether Airflow should run missed DAG runs (catch up) if the scheduler falls behind.
+   * `default_args`: Standard Airflow arguments for the DAG. For example, you can set the number of retries for tasks.
    * `tags`: A list of tags for categorizing the DAG in the Airflow UI.
 
 
@@ -553,7 +699,7 @@ By following these guidelines, you will successfully contribute a deployable cha
 
 This section is a living reference for potential issues you may encounter when testing your DAG. If you run into a problem not covered here, consider documenting it for future contributors.
 
-#### Airflow provider hooks failing to connect — outdated Codespace secrets
+#### Airflow Provider Hooks Failing to Connect — Outdated Codespace Secrets
 
 If you are testing your DAG in a Codespaces environment (see [Dev Container setup in the README](./README.md#codespaces)) and your Airflow provider hooks (e.g., `SynapseHook`, `SnowflakeHook`, `S3Hook`) are failing to connect, it may be caused by expired AWS credentials in the repository's Codespace secrets.
 

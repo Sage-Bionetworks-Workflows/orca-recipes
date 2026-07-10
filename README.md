@@ -34,7 +34,7 @@ This repository contains Airflow recipes (DAGs) for data processing and engineer
 
 For instructions on how to set up the development environment and interface with Airflow, see below. For a detailed guide on how to add or update DAGs and make changes to the Airflow infrastructure or environment, see [CONTRIBUTING.md](./CONTRIBUTING.md).
 
-### Setting up the Dev Environment 
+### Setting up the Dev Environment
 
 A complete Airflow deployment is made up of multiple services running in parallel, so the steps involved in setting up a dev environment are more complex than you may be used to. There are two steps involved in setting up Airflow for development:
 
@@ -43,7 +43,7 @@ A complete Airflow deployment is made up of multiple services running in paralle
 
 #### Dev Container
 
-There are multiple ways to set up and interface with a dev container, depending on whether you want an IDE-agnostic approach, a VS Code workflow with the Dev Containers extension, or a cloud option like GitHub Codespaces. The cloud option is the most straightforward, and saves us the hassle of configuring Airflow secrets, although because the infrastructure is running in the cloud, there is a limit on how much time we can develop before we need to pay for the service. 
+There are multiple ways to set up and interface with a dev container, depending on whether you want an IDE-agnostic approach, a VS Code workflow with the Dev Containers extension, or a cloud option like GitHub Codespaces. The cloud option is the most straightforward, and saves us the hassle of configuring Airflow secrets, although because the infrastructure is running in the cloud, there is a limit on how much time we can develop before we need to pay for the service.
 
 * Note: The environment setup for the Dev Container is defined in [Dockerfile](./Dockerfile). _How_ we deploy the container locally is defined in [devcontainer.json](.devcontainer/devcontainer.json).
 
@@ -135,7 +135,6 @@ Airflow’s webserver listens on port 8080 by default via the localhost url: htt
 The username and password will be "airflow".
 
 If you encounter the `nginx bad gateway` errors when navigating to the forwarded port, just wait and refresh a couple of times. Airflow takes a few minutes to become available.
-
 
 ### Local Development (without Dev Container)
 
