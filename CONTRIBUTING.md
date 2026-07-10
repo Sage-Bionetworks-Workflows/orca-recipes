@@ -1,5 +1,41 @@
 # Contribution Guidelines
 
+## Table of Contents
+
+- [Development](#development)
+  - [Environment](#environment)
+    - [Infrastructure](#infrastructure)
+      - [Core Infrastructure Files](#core-infrastructure-files)
+      - [Development Environment Files](#development-environment-files)
+    - [Code](#code)
+  - [Structure](#structure)
+  - [Testing](#testing)
+    - [Unit Testing](#unit-testing)
+    - [Integration Testing](#integration-testing)
+      - [DAG Set Up](#dag-set-up)
+      - [DAG Testing](#dag-testing)
+    - [Testing DAGs Locally](#testing-dags-locally)
+      - [Skip AWS Secrets Manager for Local Development](#skip-aws-secrets-manager-for-local-development)
+      - [Handling Airflow Variables Locally](#handling-airflow-variables-locally)
+      - [Passing Custom Config with `dag.test()`](#passing-custom-config-with-dagtest)
+- [Deployment Infrastructure](#deployment-infrastructure)
+- [DAG Development Best Practices](#dag-development-best-practices)
+  - [Communication Between Tasks](#communication-between-tasks)
+  - [Code Quality](#code-quality)
+  - [Testing and Validation](#testing-and-validation)
+- [Secrets](#secrets)
+  - [Creating a new secret](#creating-a-new-secret)
+  - [Configuring a SynapseHook connection secret](#configuring-a-synapsehook-connection-secret)
+  - [Configuring a SnowflakeHook connection secret](#configuring-a-snowflakehook-connection-secret)
+- [Contributing a Challenge DAG](#contributing-a-challenge-dag)
+  - [TL;DR](#tldr)
+  - [Overview](#overview)
+  - [Creating Your Challenge DAG Config](#creating-your-challenge-dag-config)
+    - [Parameters](#parameters)
+  - [Contributing a New Challenge DAG](#contributing-a-new-challenge-dag)
+  - [Troubleshooting](#troubleshooting)
+    - [Airflow provider hooks failing to connect — outdated Codespace secrets](#airflow-provider-hooks-failing-to-connect--outdated-codespace-secrets)
+
 ## Development
 
 The following section is divided into three parts:
@@ -135,6 +171,90 @@ docker compose up --build --detach
 # do not use cached images
 # docker compose up --no-cache --build --detach 
 ```
+
+#### Testing DAGs Locally
+
+There are two distinct ways to test a DAG's task logic without deploying to Airflow:
+
+- **Unit tests** — mock external dependencies (hooks like `NextflowTowerHook`/`SynapseHook`, `WebClient`, `Variable`, etc.) and call each task's `python_callable` directly. These are fast, require no credentials or network access, and run automatically in CI on every push. They validate your Python logic (parameter wiring, branching, string formatting), not whether the real external services behave as you assume. See `tests/` for examples.
+
+- **Local integration runs** via `dag.test()` — hit real external services using real credentials. Credentials can come from AWS Secrets Manager (matching production) or from a local `connections.yaml/AIRFLOW_VAR_*` configuration via `LocalFilesystemBackend`. These validate the real integration (e.g., actually launching a Nextflow Tower workflow or posting to Slack), but are slower, require AWS SSO access, and can have real side effects. Use this as a manual sanity check before/after changing integration behavior, not as an automated substitute for unit tests.
+
+##### Skip AWS Secrets Manager for Local Development
+
+If you'd rather not authenticate to AWS just to test a DAG (e.g., to talk to the real Nextflow Tower), use Airflow's `LocalFilesystemBackend` instead, backed by a local `connections.yaml` file:
+
+```console
+export AIRFLOW__SECRETS__BACKEND=airflow.secrets.local_filesystem.LocalFilesystemBackend
+export AIRFLOW__SECRETS__BACKEND_KWARGS='{"connections_file_path": "connections.yaml"}'
+```
+
+Create `connections.yaml` from the template:
+
+```console
+cp connections.yaml.example connections.yaml
+```
+
+Fill in the real credentials for whichever connections your DAG needs, keyed by your DAG's `tower_conn_id` param value: 
+
+```yaml
+# Replace this key with your actual connection ID (e.g. AGORA_PROJECT_TOWER_CONN)
+AGORA_PROJECT_TOWER_CONN:
+  conn_type: tower
+  host: tower.sagebionetworks.org
+  schema: api
+  password: "<your-tower-personal-access-token>"
+  extra:
+    workspace: sage-bionetworks/<your-workspace>
+```
+
+`host`/`schema` become the Tower API endpoint (`https://<host>/<schema>`), `password` is your Tower personal access token, and `extra.workspace` is the fully-qualified `<org>/<workspace>` name.
+
+##### Handling Airflow Variables Locally
+
+`LocalFilesystemBackend`'s `connections_file_path` config above only covers Connections, not Airflow **Variables**. Some DAGs also call `Variable.get("SOME_NAME")` — for example, `SLACK_DPE_TEAM_BOT_TOKEN`, a Slack bot token normally pulled from AWS Secrets Manager. Once you switch away from `SecretsManagerBackend`, there's no source for Variables at all — a plain env var like `SLACK_DPE_TEAM_BOT_TOKEN` in your shell or `.env` is **not** visible to `Variable.get()`. There are two ways to fill that gap without AWS access:
+
+**Option A: `AIRFLOW_VAR_` environment variable**
+
+Prefix the Variable's name with `AIRFLOW_VAR_` and export it as a regular environment variable, e.g. `AIRFLOW_VAR_SLACK_DPE_TEAM_BOT_TOKEN`. Airflow checks for this automatically, regardless of which secrets backend is configured — so it works even with `LocalFilesystemBackend`, which has no Variables source of its own.
+
+```console
+export AIRFLOW_VAR_SLACK_DPE_TEAM_BOT_TOKEN="<the-secret-value>"
+```
+
+**Option B: `variables_file_path` via `LocalFilesystemBackend`**
+
+Alternatively, point `LocalFilesystemBackend` at a local `variables.json` file the same way you did for `connections.yaml`, by adding `variables_file_path` to the backend kwargs:
+
+```console
+export AIRFLOW__SECRETS__BACKEND=airflow.secrets.local_filesystem.LocalFilesystemBackend
+export AIRFLOW__SECRETS__BACKEND_KWARGS='{"variables_file_path": "variables.json", "connections_file_path": "connections.yaml"}'
+```
+
+Then create `variables.json` with the Variables your DAG needs:
+
+```json
+{
+  "SLACK_DPE_TEAM_BOT_TOKEN": "<the-secret-value>"
+}
+```
+
+This keeps all your local secrets (Connections and Variables) sourced the same way, which is handy if a DAG needs several Variables.
+
+##### Passing Custom Config with `dag.test()`
+
+When calling `dag.test()` directly (e.g., from a DAG file's `if __name__ == "__main__":` block), you can override the DAG's default `Param` values for that run via the `run_conf` argument, the same way `-c`/`--conf` works with `airflow dags test <dag_id>` on the CLI:
+
+```python
+if __name__ == "__main__":
+    dag.test(run_conf={
+        "tower_run_name": "my-test-run",
+        "profile": "model_ad_preprod",
+        "dataset": "model_details",
+    })
+```
+
+Only keys that match one of the DAG's declared `Param` names actually take effect — anything else in `run_conf` is ignored by your params.
 
 ## Deployment Infrastructure
 

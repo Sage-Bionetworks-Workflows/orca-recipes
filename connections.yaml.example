@@ -1,0 +1,12 @@
+# Replace this key with your actual connection ID (e.g. AGORA_PROJECT_TOWER_CONN)
+AGORA_PROJECT_TOWER_CONN:
+  conn_type: tower
+  host: tower.sagebionetworks.org
+  schema: api
+  password: "<your-tower-personal-access-token>"
+  extra:
+    workspace: sage-bionetworks/<Your workspace>
+
+SYNAPSE_ORCA_SERVICE_ACCOUNT_CONN:
+  conn_type: syn
+  password: <Your personal access token>
