@@ -1,3 +1,5 @@
+"""Shared helpers for validating Airflow secrets ahead of DAG runs."""
+
 from airflow.exceptions import AirflowNotFoundException
 from airflow.hooks.base import BaseHook
 from airflow.models import Variable
