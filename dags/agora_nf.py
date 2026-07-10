@@ -35,6 +35,7 @@ import os
 from datetime import datetime
 from typing import Any
 from airflow.decorators import dag, task
+from airflow.models.dag import DAG
 from airflow.models.param import Param
 from airflow.models import Variable
 from orca.services.nextflowtower import NextflowTowerHook
@@ -48,7 +49,7 @@ TOWER_HOST = "https://tower.sagebionetworks.org"
 TOWER_ORG_NAME = "Sage-Bionetworks"
 TOWER_WORKSPACE_NAME = "agora-project"
 SLACK_CHANNEL = os.environ.get("SLACK_CHANNEL", "nf-agora-notifications") # Slack channel for ADT Airflow Notifications
-SYNAPSE_TEAM_ID = os.environ.get("SYNAPSE_TEAM_ID", "3600443") # Synapse ID for ADT Airflow Notifications
+SYNAPSE_TEAM_ID = os.environ.get("SYNAPSE_TEAM_ID", "3600443") # ADT Airflow Notifications team ID
 
 dag_params = {
     "synapse_conn_id": Param("SYNAPSE_ORCA_SERVICE_ACCOUNT_CONN", type="string"),
@@ -83,7 +84,7 @@ dag_config = {
 
 
 @dag(**dag_config)
-def agora_nf_run_dag() -> None:
+def agora_nf_run_dag() -> DAG:
     @task()
     def launch_agora_on_tower(**context: Any) -> str:
         """
