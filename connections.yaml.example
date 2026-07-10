@@ -1,4 +1,5 @@
-<your_tower_conn_id, i.e. AGORA_PROJECT_TOWER_CONN>:
+# Replace this key with your actual connection ID (e.g. AGORA_PROJECT_TOWER_CONN)
+AGORA_PROJECT_TOWER_CONN:
   conn_type: tower
   host: tower.sagebionetworks.org
   schema: api
