@@ -486,8 +486,4 @@ def zenodo_tep_metrics_dag() -> AirflowDAG:
 dag = zenodo_tep_metrics_dag()
 
 if __name__ == "__main__":
-    dag.test(
-        {
-            "synapse_export_folder": "syn75951837",
-        }
-    )
+    dag.test()

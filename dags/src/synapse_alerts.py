@@ -104,21 +104,31 @@ def synapse_failure_callback(
         body = (
             f"The DAG '{dag_id}' failed on task '{task_id}'.\n\n"
             f"Run ID: {run_id}\n"
-            f"Execution date: {execution_date}\n\n"
-            f"Exception: {exception}\n\n"
+            f"Execution date: {execution_date}\n"
+            f"Exception: {exception}\n"
         )
         if log_url and is_shareable_url(log_url):
-            body += f"\n\nLogs: {log_url}"
+            body += f"Logs: {log_url}"
         else:
             body += (
-                "\n\nLogs: not available as a shareable URL in this environment.\n\n"
-                "If you're running Airflow locally or in GitHub Codespaces, configure "
-                "Airflow's webserver base URL to match the URL where the Airflow UI is "
-                "accessible before starting the Airflow server. For example, in Codespaces:\n\n"
-                'export AIRFLOW__WEBSERVER__BASE_URL="https://<codespace-name>-8080.app.github.dev"\n'
-        )
+                "Logs: Not available as a shareable URL in this environment.\n"
+                "If you're running Airflow locally or in GitHub Codespaces, view the task "
+                "logs directly in the Airflow UI or inspect the Airflow container logs.\n\n"
+                "Github Codespaces (Optional) \n"
+                "-----------------------------------\n"
+                "To generate shareable log URLs in failure notifications, configure Airflow's "
+                "webserver base URL before starting Airflow:\n\n"
+                'export AIRFLOW__WEBSERVER__BASE_URL="https://YOUR_CODESPACE_NAME-8080.app.github.dev"\n\n'
+                "Replace YOUR_CODESPACE_NAME with the name of your Codespace, then restart "
+                "the Airflow webserver.\n"
+            )
         if message:
-            body += f"\n\n{message}"
+            if message:
+                body += (
+                    "\nAdditional Context\n"
+                    "------------------------\n"
+                    f"{message}\n"
+                )
 
         try:
             send_synapse_message(

@@ -153,6 +153,6 @@ def test_failure_callback_replaces_localhost_log_url_with_guidance(monkeypatch):
     )
 
     assert "http://localhost:8080" not in sent["body"]
-    assert "Logs: not available as a shareable URL" in sent["body"]
+    assert "Not available as a shareable URL in this environment." in sent["body"]
     assert "AIRFLOW__WEBSERVER__BASE_URL" in sent["body"]
-    assert "https://<codespace-name>-8080.app.github.dev" in sent["body"]
+    assert "https://YOUR_CODESPACE_NAME-8080.app.github.dev" in sent["body"]
