@@ -11,7 +11,7 @@ boto3 >=1.7.0,<2.0
 requests ~=2.31
 PyYAML ~=6.0.3
 
-# py-orca depends on opentelemetry-instrumentation,
-# which still imports the deprecated pkg_resources module. setuptools 82+ removed pkg_resources,
-# so pin below that until opentelemetry-instrumentation drops the pkg_resources import.
+# synapseclient (via opentelemetry-instrumentation) depends on the deprecated
+# pkg_resources module, which setuptools 82+ removed. Pin below that until
+# opentelemetry-instrumentation drops the pkg_resources import.
 setuptools <82

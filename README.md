@@ -2,6 +2,22 @@
 
 This repository contains Airflow recipes (DAGs) for data processing and engineering at Sage Bionetworks. If you want to develop a workflow to process data, you've come to the right place.
 
+## Table of Contents
+
+- [Example Workflows](#example-workflows)
+- [Airflow Development](#airflow-development)
+  - [Setting up the Dev Environment](#setting-up-the-dev-environment)
+    - [Dev Container](#dev-container)
+      - [Codespaces](#codespaces)
+      - [VS Code](#vs-code)
+    - [Docker Compose](#docker-compose)
+  - [Interfacing with Airflow](#interfacing-with-airflow)
+    - [CLI](#cli)
+    - [Browser](#browser)
+  - [Local DAGs](#local-dags)
+- [Contributing](#contributing)
+- [Releases](#releases)
+
 ## Example Workflows
 
 - **Challenge Automation** - Automatically evaluate challenge submissions by fetching entries from Synapse and orchestrating Nextflow workflows via Seqera Platform.
@@ -116,7 +132,6 @@ Airflow’s webserver listens on port 8080 by default via the localhost url: htt
 The username and password will be "airflow".
 
 If you encounter the `nginx bad gateway` errors when navigating to the forwarded port, just wait and refresh a couple of times. Airflow takes a few minutes to become available.
-
 
 ### Local DAGs
 
