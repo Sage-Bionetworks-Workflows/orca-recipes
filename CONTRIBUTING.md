@@ -26,6 +26,9 @@
 - [DAG Development Best Practices](#dag-development-best-practices)
   - [Communication Between Tasks](#communication-between-tasks)
   - [Code Quality](#code-quality)
+  - [Shared Utilities](#shared-utilities)
+    - [Logging](#logging)
+    - [Validating Required Secrets](#validating-required-secrets)
   - [Testing and Validation](#testing-and-validation)
   - [DAG Failure Alerts](#dag-failure-alerts)
 - [Secrets](#secrets)
@@ -417,6 +420,56 @@ Follow these best practices when developing DAGs to ensure reliability and maint
 
 * **Avoid top-level code** - Minimize code outside of operators and DAG definitions to improve scheduler performance and scalability
 * **Use local imports** - Import heavy libraries inside task functions rather than at the top level to reduce DAG parsing time
+
+### Shared Utilities
+
+The repository provides shared helper functions in `src.utils` for common DAG development tasks. Prefer using these helpers rather than duplicating the logic in individual DAGs.
+
+#### Logging
+
+Use the shared `get_logger()` helper instead of creating loggers directly. It integrates with Airflow's logging configuration and prefixes logger names with `sage_airflow` to avoid conflicts with other loggers.
+
+```python
+from src.utils import get_logger
+
+logger = get_logger(__name__)
+
+logger.info("Starting monthly metrics export")
+logger.warning("Skipping optional step")
+logger.exception("Failed to upload report")
+```
+
+Passing `__name__` is recommended so log messages are associated with the module that emitted them.
+
+#### Validating Required Secrets
+
+DAGs that depend on Airflow Connections or Variables should validate that those secrets exist before attempting to use them. This allows a DAG to fail fast with a clear error message instead of failing later with a less informative exception.
+
+Use `validate_required_secrets()` near the beginning of the DAG (or before secrets are first used):
+
+```python
+from src.utils import validate_required_secrets
+
+validate_required_secrets(
+    connection_ids=[
+        "SYNAPSE_ORCA_SERVICE_ACCOUNT_CONN",
+        "SNOWFLAKE_DEVELOPER_SERVICE_RAW_CONN",
+    ],
+    variable_names=[
+        "ZENODO_API_TOKEN",
+    ],
+)
+```
+
+If any required Connection or Variable cannot be resolved, the helper raises a `ValueError` listing every missing secret, for example:
+
+```text
+Missing required secrets before running locally:
+  connection: SYNAPSE_ORCA_SERVICE_ACCOUNT_CONN
+  variable: ZENODO_API_TOKEN
+```
+
+This is particularly useful when developing locally with `LocalFilesystemBackend`, where missing connections or variables are a common source of configuration errors.
 
 ### Testing and Validation
 
