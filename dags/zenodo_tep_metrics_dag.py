@@ -102,7 +102,7 @@ dag_config = {
     "start_date": datetime(2025, 1, 1),
     "catchup": False,
     "default_args": {
-        "retries": 0,
+        "retries": 3,
     },
     "tags": ["zenodo", "treat-ad"],
     "params": dag_params,
@@ -293,8 +293,11 @@ def get_report_outputs(
 ) -> List[CsvReport]:
     """Generate CSV report outputs for TEP metrics.
 
-        The two CSV paths are derived from filepath by stripping its extension and
-        appending _TEP_Reports.csv / _TEP_Components.csv.
+    The records are pulled from Zenodo and categorized into main TEP reports
+    and supporting components.
+
+    The two CSV paths are derived from filepath by stripping its extension and
+    appending _TEP_Reports.csv / _TEP_Components.csv.
 
     Args:
         records (List[Dict[str, Any]]): The list of TEP metric records to be included in the reports.
@@ -327,7 +330,6 @@ def get_report_outputs(
 
 
 def build_reports(outputs: List[CsvReport]) -> Dict[str, Any]:
-
     """Build CSV reports of TEP metrics and save them locally.
 
     Writes two CSV files split by record category ("TEP Reports" and
@@ -408,6 +410,9 @@ def export_reports_to_synapse(
         run_date (str): YYYYMMDD date string used in the report filenames
         synapse_conn_id (str): Synapse connection id
         folder_id (str): Synapse ID of the Synapse folder/project to upload the reports to
+
+    Raises:
+        OSError: If a local CSV file cannot be removed after upload
 
     Returns:
         List[Dict[str, str]]: Uploaded file info ("id" and "name") for each CSV

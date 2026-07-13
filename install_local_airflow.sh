@@ -2,7 +2,7 @@
 set -euo pipefail
 
 echo "Installing dependencies..."
-pip install -r requirements-local-airflow.txt
+python -m pip install -r requirements-local-airflow.txt
 
 echo "Installing synapseclient (kept separate to avoid a urllib3 conflict) and setuptools..."
 python -m pip install \
