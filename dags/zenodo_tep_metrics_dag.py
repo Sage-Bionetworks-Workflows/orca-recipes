@@ -32,7 +32,6 @@ backend as the ZENODO_API_TOKEN Variable.
 """
 
 import csv
-import logging
 import os
 from datetime import datetime
 from typing import Any, Dict, List, NamedTuple
@@ -44,8 +43,9 @@ from synapseclient.models import File
 
 from src.synapse_hook import SynapseHook
 from src.synapse_alerts import send_synapse_message, synapse_failure_callback
+from src.utils import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 # Zenodo communities API endpoint. Records are pulled from the community's
 # records collection: {ZENODO_COMMUNITIES_URL}/{community_id}/records
@@ -102,7 +102,7 @@ dag_config = {
     "start_date": datetime(2025, 1, 1),
     "catchup": False,
     "default_args": {
-        "retries": 3,
+        "retries": 0,
     },
     "tags": ["zenodo", "treat-ad"],
     "params": dag_params,
@@ -287,36 +287,63 @@ class CsvReport(NamedTuple):
     records: List[Dict[str, Any]]
 
 
-def build_reports(records: List[Dict[str, Any]], filepath: str) -> Dict[str, Any]:
+def get_report_outputs(
+    records: List[Dict[str, Any]],
+    filepath: str,
+) -> List[CsvReport]:
+    """Generate CSV report outputs for TEP metrics.
+
+        The two CSV paths are derived from filepath by stripping its extension and
+        appending _TEP_Reports.csv / _TEP_Components.csv.
+
+    Args:
+        records (List[Dict[str, Any]]): The list of TEP metric records to be included in the reports.
+        filepath (str): The base file path for the generated CSV reports.
+
+    Returns:
+        List[CsvReport]: A list of CsvReport objects containing the paths and records for each report.
+    """
+    main_teps = [
+        record for record in records
+        if record["category"] == "report"
+    ]
+    supporting = [
+        record for record in records
+        if record["category"] == "component"
+    ]
+
+    base = os.path.splitext(filepath)[0]
+
+    return [
+        CsvReport(
+            path=f"{base}_TEP_Reports.csv",
+            records=main_teps,
+        ),
+        CsvReport(
+            path=f"{base}_TEP_Components.csv",
+            records=supporting,
+        ),
+    ]
+
+
+def build_reports(outputs: List[CsvReport]) -> Dict[str, Any]:
+
     """Build CSV reports of TEP metrics and save them locally.
 
     Writes two CSV files split by record category ("TEP Reports" and
     "TEP Components"), each with a header row, rows of data, a spacer row, and a
     totals row.
 
-    The two CSV paths are derived from filepath by stripping its extension and
-    appending _TEP_Reports.csv / _TEP_Components.csv.
-
     Arguments:
-        records (List[Dict[str, Any]]): Validated TEP records
-        filepath (str): Base path used to derive the two CSV file paths
+        outputs (List[CsvReport]): CSV report definitions containing an output path and records.
 
     Returns:
         Dict[str, Any]: Counts of report/component records and the list of
             written CSV file paths (under the "paths" key)
     """
-    main_teps = [r for r in records if r["category"] == "report"]
-    supporting = [r for r in records if r["category"] == "component"]
-
-    base = os.path.splitext(filepath)[0]
-    outputs = [
-        CsvReport(path=f"{base}_TEP_Reports.csv", records=main_teps),
-        CsvReport(path=f"{base}_TEP_Components.csv", records=supporting),
-    ]
-
     for output in outputs:
-        with open(output.path, "w", newline="") as f:
-            writer = csv.writer(f)
+        with open(output.path, "w", newline="") as file:
+            writer = csv.writer(file)
 
             writer.writerow(CSV_HEADERS)
 
@@ -338,22 +365,31 @@ def build_reports(records: List[Dict[str, Any]], filepath: str) -> Dict[str, Any
                 [
                     "TOTALS",
                     "",
-                    sum(r["views"] for r in output.records),
-                    sum(r["unique_views"] for r in output.records),
-                    sum(r["downloads"] for r in output.records),
-                    sum(r["unique_downloads"] for r in output.records),
+                    sum(record["views"] for record in output.records),
+                    sum(
+                        record["unique_views"]
+                        for record in output.records
+                    ),
+                    sum(record["downloads"] for record in output.records),
+                    sum(
+                        record["unique_downloads"]
+                        for record in output.records
+                    ),
                     "",
                 ]
             )
 
+    paths = [output.path for output in outputs]
+
     logger.info(
-        f"Wrote CSV reports to {outputs[0].path} and {outputs[1].path} "
-        f"({len(main_teps)} reports, {len(supporting)} components)"
+        "Wrote CSV reports to %s",
+        ", ".join(paths),
     )
+
     return {
-        "report_records": len(main_teps),
-        "component_records": len(supporting),
-        "paths": [output.path for output in outputs],
+        "report_records": len(outputs[0].records),
+        "component_records": len(outputs[1].records),
+        "paths": paths,
     }
 
 
@@ -377,26 +413,48 @@ def export_reports_to_synapse(
         List[Dict[str, str]]: Uploaded file info ("id" and "name") for each CSV
     """
     base_filepath = os.path.join(
-        os.getcwd(), f"TREATAD_Target_Enabling_Metrics_{run_date}"
+        os.getcwd(),
+        f"TREATAD_Target_Enabling_Metrics_{run_date}",
     )
-
-    csv_paths = build_reports(records, base_filepath)["paths"]
+    outputs = get_report_outputs(records, base_filepath)
     uploaded_files: List[Dict[str, str]] = []
-    try:
-        client = SynapseHook(synapse_conn_id).client
-        for csv_path in csv_paths:
-            filename = os.path.basename(csv_path)
-            uploaded = File(path=csv_path, parent_id=folder_id).store(
-                synapse_client=client
-            )
-            logger.info(f"Uploaded {filename} to Synapse as {uploaded.id}")
-            uploaded_files.append({"id": uploaded.id, "name": filename})
-    finally:
-        for csv_path in csv_paths:
-            if os.path.exists(csv_path):
-                os.remove(csv_path)
 
-    return uploaded_files
+    try:
+        build_reports(outputs)
+
+        client = SynapseHook(synapse_conn_id).client
+
+        for output in outputs:
+            filename = os.path.basename(output.path)
+            uploaded = File(
+                path=output.path,
+                parent_id=folder_id,
+            ).store(synapse_client=client)
+
+            logger.info(
+                "Uploaded %s to Synapse as %s",
+                filename,
+                uploaded.id,
+            )
+
+            uploaded_files.append(
+                {
+                    "id": uploaded.id,
+                    "name": filename,
+                }
+            )
+
+        return uploaded_files
+    finally:
+        for output in outputs:
+            try:
+                os.remove(output.path)
+            except FileNotFoundError:
+                pass
+            except OSError:
+                logger.exception(
+                    f"Failed to remove local CSV file {output.path}",
+                )
 
 
 @dag(

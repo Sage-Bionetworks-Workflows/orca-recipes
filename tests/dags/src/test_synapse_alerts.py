@@ -1,8 +1,10 @@
 """Unit tests for the shared Synapse alert helpers (dags/src/synapse_alerts.py)."""
+import logging
+
 from src import synapse_alerts
 
 
-def test_send_synapse_message(monkeypatch):
+def test_send_synapse_message(monkeypatch, caplog):
     sent = {}
 
     class MockClient:
@@ -14,6 +16,12 @@ def test_send_synapse_message(monkeypatch):
             sent["subject"] = subject
             sent["body"] = body
 
+            return {
+                "id": "message-123",
+                "recipients": owner_ids,
+                "subject": subject,
+            }
+
     class MockSynapseHook:
         def __init__(self, conn_id):
             self.conn_id = conn_id
@@ -21,12 +29,13 @@ def test_send_synapse_message(monkeypatch):
 
     monkeypatch.setattr(synapse_alerts, "SynapseHook", MockSynapseHook)
 
-    synapse_alerts.send_synapse_message(
-        conn_id="synapse_conn",
-        usernames=["alice", " bob ", ""],  # whitespace/blank entries are dropped
-        subject="Test subject",
-        body="Test body",
-    )
+    with caplog.at_level(logging.INFO):
+        synapse_alerts.send_synapse_message(
+            conn_id="synapse_conn",
+            usernames=["alice", " bob ", ""],
+            subject="Test subject",
+            body="Test body",
+        )
 
     assert sent == {
         "owner_ids": ["owner-alice", "owner-bob"],
@@ -34,8 +43,13 @@ def test_send_synapse_message(monkeypatch):
         "body": "Test body",
     }
 
+    assert (
+        "Sent Synapse message id=message-123 "
+        "subject='Test subject' to 2 recipient(s)"
+    ) in caplog.text
 
-def test_send_synapse_message_skips_when_no_users(monkeypatch):
+
+def test_send_synapse_message_skips_when_no_users(monkeypatch, caplog):
     called = []
 
     class MockSynapseHook:
@@ -44,9 +58,51 @@ def test_send_synapse_message_skips_when_no_users(monkeypatch):
 
     monkeypatch.setattr(synapse_alerts, "SynapseHook", MockSynapseHook)
 
-    # All entries blank -> no recipients -> no hook/login attempted.
-    synapse_alerts.send_synapse_message("conn", ["", "  "], "subj", "body")
+    with caplog.at_level(logging.WARNING):
+        synapse_alerts.send_synapse_message(
+            conn_id="conn",
+            usernames=["", "  "],
+            subject="subj",
+            body="body",
+        )
+
     assert called == []
+    assert "No Synapse users provided; skipping message: subj" in caplog.text
+
+
+def test_send_synapse_message_accepts_numeric_owner_ids(monkeypatch):
+    requested_profiles = []
+    sent = {}
+
+    class MockClient:
+        def getUserProfile(self, username):
+            requested_profiles.append(username)
+            return {"ownerId": username}
+
+        def sendMessage(self, owner_ids, subject, body):
+            sent["owner_ids"] = owner_ids
+
+            return {
+                "id": "message-456",
+                "recipients": owner_ids,
+                "subject": subject,
+            }
+
+    class MockSynapseHook:
+        def __init__(self, conn_id):
+            self.client = MockClient()
+
+    monkeypatch.setattr(synapse_alerts, "SynapseHook", MockSynapseHook)
+
+    synapse_alerts.send_synapse_message(
+        conn_id="conn",
+        usernames=["12345", "67890"],
+        subject="Test subject",
+        body="Test body",
+    )
+
+    assert requested_profiles == ["12345", "67890"]
+    assert sent["owner_ids"] == ["12345", "67890"]
 
 
 class MockTaskInstance:

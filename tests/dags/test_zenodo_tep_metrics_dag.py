@@ -106,6 +106,33 @@ def _read_csv(path):
         return list(csv.reader(f))
 
 
+def test_get_report_outputs_splits_records_and_builds_paths(tmp_path):
+    records = [
+        VALID_RECORD,
+        {
+            **VALID_RECORD,
+            "title": "Supporting Component",
+            "category": "component",
+        },
+    ]
+
+    outputs = dag_module.get_report_outputs(
+        records,
+        str(tmp_path / "metrics.xlsx"),
+    )
+
+    assert outputs == [
+        dag_module.CsvReport(
+            path=str(tmp_path / "metrics_TEP_Reports.csv"),
+            records=[records[0]],
+        ),
+        dag_module.CsvReport(
+            path=str(tmp_path / "metrics_TEP_Components.csv"),
+            records=[records[1]],
+        ),
+    ]
+
+
 def test_build_reports_creates_expected_csvs_and_totals(tmp_path):
     records = [
         VALID_RECORD,
@@ -120,26 +147,75 @@ def test_build_reports_creates_expected_csvs_and_totals(tmp_path):
         },
     ]
 
-    output = tmp_path / "metrics.xlsx"
+    outputs = dag_module.get_report_outputs(
+        records,
+        str(tmp_path / "metrics.xlsx"),
+    )
 
-    result = dag_module.build_reports(records, str(output))
+    result = dag_module.build_reports(outputs)
 
     reports_path = str(tmp_path / "metrics_TEP_Reports.csv")
     components_path = str(tmp_path / "metrics_TEP_Components.csv")
 
-    assert result["report_records"] == 1
-    assert result["component_records"] == 1
-    assert result["paths"] == [reports_path, components_path]
+    assert result == {
+        "report_records": 1,
+        "component_records": 1,
+        "paths": [reports_path, components_path],
+    }
 
     # CSV cells are read back as strings.
     reports = _read_csv(reports_path)
-    assert reports[0] == dag_module.CSV_HEADERS  # header row
-    assert reports[1][0] == "Target Enabling Package Report"  # data row
-    assert reports[-1] == ["TOTALS", "", "10", "7", "4", "3", ""]  # totals row
+    assert reports[0] == dag_module.CSV_HEADERS
+    assert reports[1][0] == "Target Enabling Package Report"
+    assert reports[-1] == ["TOTALS", "", "10", "7", "4", "3", ""]
 
     components = _read_csv(components_path)
+    assert components[0] == dag_module.CSV_HEADERS
     assert components[1][0] == "Supporting Component"
     assert components[-1] == ["TOTALS", "", "5", "4", "2", "1", ""]
+
+
+def test_export_reports_to_synapse_cleans_up_when_second_upload_fails(
+    monkeypatch,
+    tmp_path,
+):
+    monkeypatch.setattr(dag_module.os, "getcwd", lambda: str(tmp_path))
+
+    uploaded_paths = []
+
+    class MockUploaded:
+        id = "syn-first-upload"
+
+    class MockFile:
+        def __init__(self, path, parent_id):
+            self.path = path
+            self.parent_id = parent_id
+
+        def store(self, synapse_client=None):
+            uploaded_paths.append(self.path)
+
+            if len(uploaded_paths) == 2:
+                raise RuntimeError("Second Synapse upload failed")
+
+            return MockUploaded()
+
+    class MockSynapseHook:
+        def __init__(self, conn_id):
+            self.client = object()
+
+    monkeypatch.setattr(dag_module, "File", MockFile)
+    monkeypatch.setattr(dag_module, "SynapseHook", MockSynapseHook)
+
+    with pytest.raises(RuntimeError, match="Second Synapse upload failed"):
+        dag_module.export_reports_to_synapse(
+            [VALID_RECORD],
+            run_date="20250101",
+            synapse_conn_id="conn",
+            folder_id="syn123",
+        )
+
+    assert len(uploaded_paths) == 2
+    assert not list(tmp_path.glob("*.csv"))
 
 
 class MockZenodoResponse:

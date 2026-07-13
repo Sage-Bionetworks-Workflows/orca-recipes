@@ -10,14 +10,13 @@ alert people (no SMTP setup required). The main entry points are:
 
 See CONTRIBUTION.md section DAG Failure Alerts for more info and usage examples.
 """
-import logging
 from typing import Any, Callable, Dict, List, Optional
 from urllib.parse import urlparse
 
 from src.synapse_hook import SynapseHook
+from src.utils import get_logger
 
-logger = logging.getLogger(__name__)
-
+logger = get_logger(__name__)
 
 def is_shareable_url(url: str) -> bool:
     """Check if a URL is shareable (not localhost or private IP).
@@ -49,8 +48,12 @@ def send_synapse_message(
         return
     client = SynapseHook(conn_id).client
     owner_ids = [client.getUserProfile(u).get("ownerId") for u in usernames]
-    client.sendMessage(owner_ids, subject, body)
-    logger.info(f"Sent Synapse message '{subject}' to {usernames}")
+    response = client.sendMessage(owner_ids, subject, body)
+    logger.info(
+        f"Sent Synapse message id={response['id']} "
+        f"subject={response['subject']!r} "
+        f"to {len(response['recipients'])} recipient(s)"
+    )
 
 
 def synapse_failure_callback(
@@ -67,10 +70,10 @@ def synapse_failure_callback(
 
     The send is wrapped in a try/except so a notification failure can never mask
     the original task error.
-    
-    If the task logs are not available as a shareable URL (e.g. when running Airflow 
-    locally or in GitHub Codespaces), the alert will include a note about how to
-    configure Airflow's webserver base URL to make the logs shareable.
+
+    If the task logs are not available as a shareable URL (e.g. when running Airflow
+    locally or in GitHub Codespaces), the alert will include guidance to view the
+    logs directly in the Airflow UI or inspect the Airflow container logs.
 
     Arguments:
         message (Optional[str]): DAG-specific note appended to the alert body
@@ -84,6 +87,15 @@ def synapse_failure_callback(
     """
 
     def _callback(context: Dict[str, Any]) -> None:
+        """Send a Synapse failure alert for a failed task.
+
+        Args:
+            context (Dict[str, Any]): The context dictionary
+                provided by Airflow to the callback,
+                containing task instance, exception,
+                and other relevant information.
+
+        """
         params = context.get("params", {})
         task_instance = context.get("task_instance")
         exception = context.get("exception")
@@ -116,12 +128,11 @@ def synapse_failure_callback(
                 "logs directly in the Airflow UI or inspect the Airflow container logs.\n"
             )
         if message:
-            if message:
-                body += (
-                    "\nAdditional Context\n"
-                    "------------------------\n"
-                    f"{message}\n"
-                )
+            body += (
+                "\nAdditional Context\n"
+                "------------------------\n"
+                f"{message}\n"
+            )
 
         try:
             send_synapse_message(
