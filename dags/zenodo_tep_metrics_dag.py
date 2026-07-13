@@ -90,15 +90,15 @@ dag_params = {
     "synapse_export_folder_id": Param("syn75951837", type="string"),
     # Comma-separated Synapse usernames of collaborator(s) to notify when the
     # monthly report is available. (No support for python lists in Params.)
-    "collaborator_user_list": Param("3460442", type="string"),
+    "collaborator_user_list": Param("3409149", type="string"), # Model-AD collaborators
     # Comma-separated Synapse usernames or IDs of DPE/developers to
     # alert on failure.
-    "dev_user_list": Param("3460442", type="string"),
+    "dev_user_list": Param("3485485", type="string"), # DPE service team
 }
 
 dag_config = {
-    # Run on the first day of the month at midnight
-    "schedule": "0 0 1 * *",
+    # Run on the 3rd Monday of each month at 8:00 AM
+    "schedule": "0 8 * * MON#3",
     "start_date": datetime(2025, 1, 1),
     "catchup": False,
     "default_args": {
