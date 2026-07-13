@@ -10,7 +10,6 @@ jsonata-python ~=0.5.3
 boto3 >=1.7.0,<2.0
 requests ~=2.31
 PyYAML ~=6.0.3
-
 # synapseclient (via opentelemetry-instrumentation) depends on the deprecated
 # pkg_resources module, which setuptools 82+ removed. Pin below that until
 # opentelemetry-instrumentation drops the pkg_resources import.

@@ -11,6 +11,8 @@
   - [Structure](#structure)
   - [Testing](#testing)
     - [Unit Testing](#unit-testing)
+      - [Writing tests for a DAG](#writing-tests-for-a-dag)
+      - [Validating DAG structure](#validating-dag-structure)
     - [Integration Testing](#integration-testing)
       - [DAG Set Up](#dag-set-up)
       - [DAG Testing](#dag-testing)
@@ -24,7 +26,11 @@
 - [DAG Development Best Practices](#dag-development-best-practices)
   - [Communication Between Tasks](#communication-between-tasks)
   - [Code Quality](#code-quality)
+  - [Shared Utilities](#shared-utilities)
+    - [Logging](#logging)
+    - [Validating Required Secrets](#validating-required-secrets)
   - [Testing and Validation](#testing-and-validation)
+  - [DAG Failure Alerts](#dag-failure-alerts)
 - [Secrets](#secrets)
   - [Creating a New Secret](#creating-a-new-secret)
   - [Configuring a SynapseHook Connection Secret](#configuring-a-synapsehook-connection-secret)
@@ -135,6 +141,78 @@ tests/
 │   └── test_mydag.py         # Test suite
 ```
 
+##### Writing tests for a DAG
+
+The repo's [pytest.ini](./pytest.ini) puts both `src/` and `dags/` on the import
+path (`pythonpath = src dags`), so a test can import a DAG module directly along
+with any shared hooks or utilities it depends on:
+
+```python
+from dags import zenodo_tep_metrics_dag as dag_module   # the DAG under test
+```
+
+A few requirements make this import work:
+
+- **The DAG filename must be a valid Python module name** — use underscores, not
+  hyphens so it can be imported with `from dags import <dag_module>` (e.g.
+  `dags/zenodo_tep_metrics_dag.py`, not `dags/zenodo-tep-metrics-dag.py`)
+- **Keep `dags/`, and the top-level `src/` as namespace packages**,
+  do not add an `__init__.py` to any of them. Because neither `src/` nor
+  `dags/src/` has an `__init__.py`, `import src` resolves to a single namespace
+  package spanning both, so a DAG's `from src.synapse_hook import SynapseHook` and
+  a test's `from src.datacite... import ...` both resolve. Adding an `__init__.py`
+  to `dags/src/` turns it into a regular package that shadows the top-level `src/`
+  and breaks the other test suites.
+
+Prefer testing a DAG's **task-logic functions** (the module-level helper
+functions) directly rather than the `@dag`/`@task` wiring, and mock any external
+calls (HTTP, Synapse, Snowflake) so tests are self-contained and need no credentials.
+See [tests/dags/test_zenodo_tep_metrics_dag.py](./tests/dags/test_zenodo_tep_metrics_dag.py)
+for a worked example that mocks `requests` for the Zenodo API pull and stubs
+`SynapseHook` for the notification logic:
+
+```python
+def test_categorize_title():
+    assert dag_module.categorize_title("A Useful Component") == "component"
+
+def test_fetch_tep_records(monkeypatch):
+    monkeypatch.setattr(dag_module.requests, "get", mock_get)
+    records = dag_module.fetch_tep_records(api_token="fake-token")
+    assert records == [...]
+```
+
+#### Validating DAG structure
+
+As a best practice, add a
+`test_dag_structure` test in your DAG's own test module that asserts the exact
+task set and the dependency edges you expect. This catches a miswired pipeline
+(e.g: a dropped `>>`, a task pointed at the wrong upstream). Load just your DAG file so unrelated DAGs can't interfere:
+
+```python
+from airflow.models import DagBag
+
+def test_dag_structure():
+    dagbag = DagBag(
+        dag_folder="dags/zenodo_tep_metrics_dag.py", include_examples=False
+    )
+    dag = dagbag.get_dag("zenodo_tep_metrics_dag")
+
+    assert dag is not None, "zenodo_tep_metrics_dag failed to load"
+    # Exact task set
+    assert {task.task_id for task in dag.tasks} == {
+        "fetch_metrics",
+        "validate_metrics",
+        "export_to_synapse",
+        "notify_collaborators",
+    }
+    # Dependency chain: fetch -> validate -> export -> notify
+    assert dag.get_task("fetch_metrics").downstream_task_ids == {"validate_metrics"}
+    assert dag.get_task("validate_metrics").downstream_task_ids == {"export_to_synapse"}
+    assert dag.get_task("export_to_synapse").downstream_task_ids == {"notify_collaborators"}
+```
+
+See [Airflow's Testing a DAG](https://airflow.apache.org/docs/apache-airflow/stable/best-practices.html#testing-a-dag) for detailed information on DAG tests and best practices.
+
 #### Integration Testing
 
 Presently, integration testing means triggering your DAG in Airflow and manually inspecting the results. See the [README.md](README.md) on how to deploy and connect to Airflow.
@@ -155,6 +233,7 @@ Integration testing can be performed by triggering a DAG via the Airflow command
 > Some DAGs use runtime configuration in the form of Params or Connections and Secrets. It's not always well-documented in the DAG itself how the runtime configuration is set up, so if your DAG uses runtime configuration, yet it's not clear how these values are passed through to the DAG itself, it's generally better to test the DAG in GitHub Codespaces.
 
 Logs can be inspected with docker compose:
+
 ```console
 # All logs
 docker compose logs -f
@@ -331,19 +410,155 @@ There is a helper script in this repository for accessing this Airflow server.
 Follow these best practices when developing DAGs to ensure reliability and maintainability. For comprehensive guidance, refer to the [Airflow Best Practices documentation](https://airflow.apache.org/docs/apache-airflow/stable/best-practices.html).
 
 ### Communication Between Tasks
+
 * **Treat tasks as transactions** - Tasks should produce the same outcome on every re-run and never produce incomplete results
 * **Use XCom for small messages** - For passing small data between tasks in distributed environments
 * **Choose appropriate storage for data files** - Use temporary files for small data that can be quickly transferred, and S3 for larger datasets. Pass file paths via XCom rather than storing files locally on workers
 * **Store authentication securely** - Use [Airflow Connections](https://airflow.apache.org/docs/apache-airflow/stable/authoring-and-scheduling/connections.html) instead of hardcoding passwords or tokens in tasks
 
 ### Code Quality
+
 * **Avoid top-level code** - Minimize code outside of operators and DAG definitions to improve scheduler performance and scalability
 * **Use local imports** - Import heavy libraries inside task functions rather than at the top level to reduce DAG parsing time
 
+### Shared Utilities
+
+The repository provides shared helper functions in `src.utils` for common DAG development tasks. Prefer using these helpers rather than duplicating the logic in individual DAGs.
+
+#### Logging
+
+Use the shared `get_logger()` helper instead of creating loggers directly. It integrates with Airflow's logging configuration and prefixes logger names with `sage_airflow` to avoid conflicts with other loggers.
+
+```python
+from src.utils import get_logger
+
+logger = get_logger(__name__)
+
+logger.info("Starting monthly metrics export")
+logger.warning("Skipping optional step")
+logger.exception("Failed to upload report")
+```
+
+Passing `__name__` is recommended so log messages are associated with the module that emitted them.
+
+#### Validating Required Secrets
+
+DAGs that depend on Airflow Connections or Variables should validate that those secrets exist before attempting to use them. This allows a DAG to fail fast with a clear error message instead of failing later with a less informative exception.
+
+Use `validate_required_secrets()` near the beginning of the DAG (or before secrets are first used):
+
+```python
+from src.utils import validate_required_secrets
+
+validate_required_secrets(
+    connection_ids=[
+        "SYNAPSE_ORCA_SERVICE_ACCOUNT_CONN",
+        "SNOWFLAKE_DEVELOPER_SERVICE_RAW_CONN",
+    ],
+    variable_names=[
+        "ZENODO_API_TOKEN",
+    ],
+)
+```
+
+If any required Connection or Variable cannot be resolved, the helper raises a `ValueError` listing every missing secret, for example:
+
+```text
+Missing required secrets before running locally:
+  connection: SYNAPSE_ORCA_SERVICE_ACCOUNT_CONN
+  variable: ZENODO_API_TOKEN
+```
+
+This is particularly useful when developing locally with `LocalFilesystemBackend`, where missing connections or variables are a common source of configuration errors.
+
 ### Testing and Validation
+
 * **Test DAGs in Codespaces first** - Always test new DAGs thoroughly in your GitHub Codespaces development environment before deploying to production
 * **Verify task functionality** - Ensure all tasks execute successfully and produce expected outputs in the development environment
 * **Validate production deployment** - After deploying to production, monitor initial DAG runs to confirm they function as expected with production data and resources
+
+### DAG Failure Alerts
+
+Production DAGs should surface failures rather than relying on
+someone watching the Airflow UI. There are two pieces to this:
+
+**Send alerts via Synapse messages (delivered as email).** Since our DAGs
+already use a `SynapseHook`, the simplest, dependency-free way to notify people
+is [`synapse_client.sendMessage`](https://python-docs.synapse.org/en/stable/reference/client/?h=sendmessage#synapseclient.Synapse.sendMessage), which Synapse delivers as an
+email. Rather than calling it directly, use the shared helper
+`send_synapse_message(conn_id, usernames, subject, body)` in
+[dags/src/synapse_alerts.py](./dags/src/synapse_alerts.py) — it resolves Synapse
+usernames/numeric ids to owner ids and sends the message for you. This avoids
+configuring SMTP on the Airflow deployment and works for **any** alert (task
+failures, "report is ready" notices, data-quality warnings, etc.).
+
+**Link failure alerts to the DAG's `on_failure_callback`.** For the common case,
+email a failure alert to the DAG's own dev list, use the shared
+`synapse_failure_callback(...)` function (also in
+[dags/src/synapse_alerts.py](./dags/src/synapse_alerts.py)). It returns a
+DAG-level `on_failure_callback` that, when a task fails (after retries are
+exhausted) and the DagRun ends as failed, reads the Synapse connection id and
+recipient list from your DAG params, builds a standard failure message (DAG id,
+task id, run id, execution date, exception, and a link to the task logs), and
+appends your optional DAG-specific note. The send is wrapped in a `try/except` so
+a notification failure can never mask the original task error.
+[See Airflow's callback docs for more info.](https://airflow.apache.org/docs/apache-airflow/stable/administration-and-deployment/logging-monitoring/callbacks.html#callbacks)
+
+```python
+from airflow.decorators import dag
+from airflow.models import Param
+
+from src.synapse_alerts import synapse_failure_callback
+
+
+@dag(
+    on_failure_callback=synapse_failure_callback(
+        message="This may indicate a Zenodo API schema change.",  # optional note
+    ),
+    params={
+        "synapse_conn_id": Param("SYNAPSE_ORCA_SERVICE_ACCOUNT_CONN", type="string"),
+        # who to alert on failure (comma-separated usernames or numeric ids)
+        "dev_user_list": Param("3460442", type="string"),
+    },
+    ...
+)
+def my_dag():
+    ...
+```
+
+By default the callback reads the `synapse_conn_id` and `dev_user_list` params;
+pass `conn_id_param` / `user_list_param` to `synapse_failure_callback(...)` if
+your DAG names them differently. See it wired up in
+[dags/zenodo_tep_metrics_dag.py](./dags/zenodo_tep_metrics_dag.py).
+
+**Testing the alert:**
+
+- **A DAG level `on_failure_callback` is run by the scheduler**, *not* by
+  `dag.test()` / `airflow dags test`. It fires in **any environment with a
+  running scheduler**, including the local docker-compose Airflow (webserver +
+  scheduler + workers), so this is *not* production-only. To exercise it
+  end-to-end, bring the stack up and trigger a run with a task forced to fail
+  (e.g. temporarily raise inside a task):
+
+  ```console
+  docker compose up --build --detach
+  ./airflow.sh dags trigger <dag_id>          # unpause first if needed
+  docker compose logs -f airflow-scheduler    # watch the callback fire
+  ```
+
+  Note the callback firing is separate from the email arriving: `sendMessage`
+  only emails if the `SynapseHook` connection/token resolves (configured in
+  Codespaces; a pure-local docker run needs AWS creds or `SYNAPSE_AUTH_TOKEN`).
+- For a quick local check via `python dags/<dag>.py` (which calls `dag.test()`),
+  attach the same callback at the **task** level
+  (`@task(on_failure_callback=synapse_failure_callback(...))`), since task-level
+  callbacks *do* run under `dag.test()`.
+- Set `retries` to `0` while testing so the failure (and the callback) fire
+  immediately instead of after the retry delay (Airflow's default is ~5 min per
+  retry).
+- The Synapse send email only succeeds if the connection/token resolves; otherwise the
+  guarded `try/except` logs "Failed to send failure alert", which still confirms
+  the callback ran.
 
 ## Secrets
 
@@ -537,7 +752,7 @@ By following these guidelines, you will successfully contribute a deployable cha
 
 This section is a living reference for potential issues you may encounter when testing your DAG. If you run into a problem not covered here, consider documenting it for future contributors.
 
-#### Airflow provider hooks failing to connect — outdated Codespace secrets
+#### Airflow Provider Hooks Failing to Connect — Outdated Codespace Secrets
 
 If you are testing your DAG in a Codespaces environment (see [Dev Container setup in the README](./README.md#codespaces)) and your Airflow provider hooks (e.g., `SynapseHook`, `SnowflakeHook`, `S3Hook`) are failing to connect, it may be caused by expired AWS credentials in the repository's Codespace secrets.
 

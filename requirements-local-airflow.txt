@@ -1,0 +1,2 @@
+-c https://raw.githubusercontent.com/apache/airflow/constraints-2.10.5/constraints-3.10.txt
+apache-airflow-providers-amazon ~=9.2.0
