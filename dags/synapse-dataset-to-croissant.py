@@ -1335,7 +1335,7 @@ def dataset_to_croissant() -> None:
                     }
                 ),
                 "version": dataset_version,
-                "dct:conformsTo": "https://mlcommons.org/croissant/1.1",
+                "dct:conformsTo": "http://mlcommons.org/croissant/1.1",
                 # https://github.com/nf-osi/nf-metadata-dictionary/blob/main/registered-json-schemas/PortalDataset.json
                 # These fields are derived from: https://raw.githubusercontent.com/nf-osi/nf-metadata-dictionary/refs/heads/main/registered-json-schemas/PortalDataset.json
                 # If a more specific schema is needed, then we can add a mapping for the dataset to point to the schema and pull these in dynamically.
