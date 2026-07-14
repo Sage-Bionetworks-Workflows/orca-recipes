@@ -81,12 +81,12 @@ from synapseclient.core.utils import delete_none_keys
 dag_params = {
     "snowflake_developer_service_conn": Param("SNOWFLAKE_DEVELOPER_SERVICE_RAW_CONN", type="string"),
     "synapse_conn_id": Param("SYNAPSE_ORCA_SERVICE_ACCOUNT_CONN", type="string"),
-    "dataset_collections": Param(["syn50913342", "syn68939725"], type="array"),
+    "dataset_collections": Param(["syn50913342", "syn68939725", "syn71493541", "syn74529385"], type="array"),
     "push_results_to_s3": Param(True, type="boolean"),
     "push_links_to_synapse": Param(True, type="boolean"),
     "delete_out_of_date_from_s3": Param(True, type="boolean"),
     "delete_out_of_date_from_synapse": Param(True, type="boolean"),
-    "dataset_collections_for_cleanup": Param(["syn50913342", "syn68939725"], type="array"),
+    "dataset_collections_for_cleanup": Param(["syn50913342", "syn68939725", "syn71493541", "syn74529385"], type="array"),
     "aws_conn_id": Param("AWS_SYNAPSE_CROISSANT_METADATA_S3_CONN", type="string"),
 }
 
@@ -122,6 +122,39 @@ DATASET_ID_VERSION_PATTERN = r"_syn\d+\.\d+_"
 
 # Regular expression to match `_datasetCollection_{dataset_collection}_`
 DATASET_COLLECTION_PATTERN = r"_datasetCollection_syn\d+_"
+
+# Static mapping of Data Use Ontology (DUO) term codes to their human-readable
+# labels. Sourced from the EBI Ontology Lookup Service:
+# https://www.ebi.ac.uk/ols4/ontologies/duo . Obsolete and purely structural
+# terms are intentionally omitted. Update this map if a new DUO term appears in
+# the `dataUseModifiers` field of a Synapse dataset; unmapped codes fall back to
+# the raw code as the name.
+DUO_CODE_TO_NAME = {
+    "DUO:0000004": "no restriction",
+    "DUO:0000006": "health or medical or biomedical research",
+    "DUO:0000007": "disease specific research",
+    "DUO:0000011": "population origins or ancestry research only",
+    "DUO:0000012": "research specific restrictions",
+    "DUO:0000015": "no general methods research",
+    "DUO:0000016": "genetic studies only",
+    "DUO:0000018": "not for profit, non commercial use only",
+    "DUO:0000019": "publication required",
+    "DUO:0000020": "collaboration required",
+    "DUO:0000021": "ethics approval required",
+    "DUO:0000022": "geographical restriction",
+    "DUO:0000024": "publication moratorium",
+    "DUO:0000025": "time limit on use",
+    "DUO:0000026": "user specific restriction",
+    "DUO:0000027": "project specific restriction",
+    "DUO:0000028": "institution specific restriction",
+    "DUO:0000029": "return to database or resource",
+    "DUO:0000031": "method development",
+    "DUO:0000042": "general research use",
+    "DUO:0000043": "clinical care use",
+    "DUO:0000044": "population origins or ancestry research prohibited",
+    "DUO:0000045": "not for profit organisation use only",
+    "DUO:0000046": "non-commercial use only",
+}
 
 
 def set_up_tracing() -> Tracer:
@@ -397,18 +430,20 @@ def construct_distribution_section_for_files(files_attached_to_dataset: List[Fil
                 # Source: https://developer.mozilla.org/en-US/docs/Web/HTTP/Guides/MIME_types
                 file_content_type = "application/octet-stream"
 
-        distribution_files.append(
-            {
-                "@type": "cr:FileObject",
-                "@id": f"{file.id}.{file.version_number}",
-                "name": f"{file.name}",
-                "description": file.description if file.description else f"Data file associated with {file.name}",
-                "contentUrl": f"https://www.synapse.org/Synapse:{file.id}.{file.version_number}",
-                "encodingFormat": file_content_type,
-                "md5": file_md5,
-                "sha256": "unknown",
-            }
-        )
+        file_object = {
+            "@type": "cr:FileObject",
+            "@id": f"{file.id}.{file.version_number}",
+            "name": f"{file.name}",
+            "description": file.description if file.description else f"Data file associated with {file.name}",
+            "contentUrl": f"https://www.synapse.org/Synapse:{file.id}.{file.version_number}",
+            "encodingFormat": file_content_type,
+        }
+        # Only include the md5 checksum when it is actually known. Emitting a
+        # placeholder value would trip checksum validation in consuming tools.
+        # sha256 is not available from Synapse, so it is omitted entirely.
+        if isinstance(file_md5, str) and file_md5 and file_md5 != "unknown_md5":
+            file_object["md5"] = file_md5
+        distribution_files.append(file_object)
     return distribution_files
 
 
@@ -458,6 +493,143 @@ def construct_record_set_section_for_files(files_attached_to_dataset: List[File]
         "description": "Metadata for the dataset",
         "field": metadata_fields
     }
+
+
+def construct_bibtex_citation(dataset: Entity, dataset_id: str, dataset_version: str) -> str:
+    """
+    Construct a BibTeX-formatted citation string for the dataset. The Croissant
+    specification expects the `citeAs` property to be a BibTeX-formatted string, so
+    this is used to populate that property.
+
+    The entry is built from the metadata that is reliably available on the Synapse
+    dataset entity. Fields that are not present are simply omitted from the entry.
+
+    Arguments:
+        dataset: The dataset entity from Synapse.
+        dataset_id: The ID of the dataset.
+        dataset_version: The version of the dataset.
+
+    Returns:
+        A BibTeX-formatted citation string, e.g.
+
+        @misc{syn12345.1,
+          title = {My Dataset},
+          year = {2025},
+          publisher = {Synapse - Sage Bionetworks},
+          howpublished = {\\url{https://www.synapse.org/Synapse:syn12345.1}},
+          url = {https://www.synapse.org/Synapse:syn12345.1}
+        }
+    """
+    url = f"https://www.synapse.org/Synapse:{dataset_id}.{dataset_version}"
+
+    title = (
+        dataset.title[0]
+        if hasattr(dataset, "title") and dataset.title
+        else dataset.name
+    )
+
+    # `createdOn` is an ISO-8601 timestamp, e.g. "2025-02-01T12:00:00.000Z".
+    # The first four characters are the publication year.
+    year = str(dataset.createdOn)[:4] if getattr(
+        dataset, "createdOn", None) else None
+
+    # `creator` is not part of the PortalDataset schema, but include it as the
+    # BibTeX author when the entity happens to expose it.
+    author = None
+    if getattr(dataset, "creator", None):
+        author = dataset.creator[0] if isinstance(
+            dataset.creator, list) else dataset.creator
+
+    # Ordered so the most important fields appear first in the entry. Only
+    # fields with a value are emitted.
+    fields = {
+        "title": title,
+        "author": author,
+        "year": year,
+        "publisher": "Synapse - Sage Bionetworks",
+        "howpublished": f"\\url{{{url}}}",
+        "url": url,
+    }
+
+    body = ",\n".join(
+        f"  {key} = {{{value}}}" for key, value in fields.items() if value
+    )
+    return f"@misc{{{dataset_id}.{dataset_version},\n{body}\n}}"
+
+
+def construct_usage_info(data_use_modifiers: Any) -> List[Dict[str, str]]:
+    """
+    Convert the Data Use Ontology (DUO) codes from the Synapse `dataUseModifiers`
+    field into a list of schema.org `DefinedTerm` objects for the Croissant
+    `usageInfo` property.
+
+    Each DUO CURIE (e.g. `DUO:0000042`) is expanded into:
+    - `name`: the human-readable label from `DUO_CODE_TO_NAME`, falling back to the
+        raw code when it is not in the map.
+    - `termCode`: the DUO code with the separator normalized to `_` (e.g.
+        `DUO_0000042`).
+    - `url`: the compact CURIE with a lower-cased prefix (e.g. `duo:0000042`).
+
+    Arguments:
+        data_use_modifiers: The value of the dataset's `dataUseModifiers` annotation.
+            Expected to be a list of DUO CURIEs, but a single string is also handled.
+
+    Returns:
+        A list of `DefinedTerm` dictionaries, or `None` when there are no modifiers
+        (so that `delete_none_keys` drops the property).
+    """
+    if not data_use_modifiers:
+        return None
+
+    if isinstance(data_use_modifiers, str):
+        data_use_modifiers = [data_use_modifiers]
+
+    usage_info = []
+    for modifier in data_use_modifiers:
+        # Accept either `DUO:0000042` or `DUO_0000042` and normalize to the
+        # colon form used as the key in `DUO_CODE_TO_NAME`.
+        curie = modifier.replace("_", ":")
+        prefix, _, local_id = curie.partition(":")
+        usage_info.append(
+            {
+                "@type": "DefinedTerm",
+                "name": DUO_CODE_TO_NAME.get(curie, modifier),
+                "termCode": f"{prefix}_{local_id}",
+                "url": f"{prefix.lower()}:{local_id}",
+            }
+        )
+    return usage_info
+
+
+def construct_creators(dataset: Entity) -> List[Dict[str, str]]:
+    """
+    Convert the Synapse `creator` annotation into a list of schema.org `Person`
+    objects for the Croissant `creator` property. `creator` is a required Croissant
+    property that expects values of type `Organization` or `Person`.
+
+    The PortalDataset schema defines `creator` as an ordered list of the main
+    researchers involved in producing the data, so each entry is represented as a
+    `sc:Person`.
+
+    Arguments:
+        dataset: The dataset entity from Synapse.
+
+    Returns:
+        A list of `Person` dictionaries, or `None` when no creator is present (so
+        that `delete_none_keys` drops the property).
+    """
+    creators = getattr(dataset, "creator", None)
+    if not creators:
+        return None
+
+    if isinstance(creators, str):
+        creators = [creators]
+
+    return [
+        {"@type": "sc:Person", "name": creator}
+        for creator in creators
+        if creator
+    ] or None
 
 
 def extract_s3_objects_to_delete(bucket_objects: List[str], dataset_collections_to_consider_for_deletion: List[str], combined_dataset_collection_and_datasets: List[Dict[str, str]]) -> List[str]:
@@ -1086,8 +1258,6 @@ def dataset_to_croissant() -> None:
                 "name": "metadata",
                 "description": f"Metadata associated with {dataset.name}",
                 "encodingFormat": "text/csv",
-                "md5": "unknown",
-                "sha256": "unknown"
             }] + construct_distribution_section_for_files(files_attached_to_dataset, **context)
 
             record_set = construct_record_set_section_for_files(
@@ -1101,6 +1271,7 @@ def dataset_to_croissant() -> None:
                     "cr": "http://mlcommons.org/croissant/",
                     "rai": "http://mlcommons.org/croissant/RAI/",
                     "dct": "http://purl.org/dc/terms/",
+                    "duo": "http://purl.obolibrary.org/obo/DUO_",
                     "annotation": "cr:annotation",
                     "arrayShape": "cr:arrayShape",
                     "citeAs": "cr:citeAs",
@@ -1153,6 +1324,7 @@ def dataset_to_croissant() -> None:
                 "url": f"https://www.synapse.org/Synapse:{dataset_id}.{dataset_version}",
                 "datePublished": dataset.createdOn,
                 "dateModified": dataset.modifiedOn,
+                "creator": construct_creators(dataset),
                 "license": (
                     dataset.license[0]
                     if hasattr(dataset, "license") and dataset.license
@@ -1167,15 +1339,15 @@ def dataset_to_croissant() -> None:
                 # https://github.com/nf-osi/nf-metadata-dictionary/blob/main/registered-json-schemas/PortalDataset.json
                 # These fields are derived from: https://raw.githubusercontent.com/nf-osi/nf-metadata-dictionary/refs/heads/main/registered-json-schemas/PortalDataset.json
                 # If a more specific schema is needed, then we can add a mapping for the dataset to point to the schema and pull these in dynamically.
-                "accessType": dataset.accessType[0] if hasattr(dataset, "accessType") else None,
                 "alternateName": dataset.alternateName[0] if hasattr(dataset, "alternateName") else None,
-                "citation": dataset.citation[0] if hasattr(dataset, "citation") else None,
+                "citeAs": construct_bibtex_citation(dataset, dataset_id, dataset_version),
                 "countryOfOrigin": dataset.countryOfOrigin if hasattr(dataset, "countryOfOrigin") else None,
                 "diseaseFocus": dataset.diseaseFocus if hasattr(dataset, "diseaseFocus") else None,
                 "keywords": dataset.keywords if hasattr(dataset, "keywords") else None,
                 "measurementTechnique": dataset.measurementTechnique if hasattr(dataset, "measurementTechnique") else None,
                 "subject": dataset.subject if hasattr(dataset, "subject") else None,
                 "title": dataset.title[0] if hasattr(dataset, "title") else None,
+                "usageInfo": construct_usage_info(dataset.dataUseModifiers if hasattr(dataset, "dataUseModifiers") else None),
                 "distribution": distribution_files,
                 "recordSet": record_set,
             }
