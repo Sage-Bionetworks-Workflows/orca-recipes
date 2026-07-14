@@ -1,5 +1,26 @@
 # ORCA Recipes
 
+## Table of Contents
+
+- [Example Workflows](#example-workflows)
+- [Airflow Development](#airflow-development)
+  - [Setting up the Dev Environment](#setting-up-the-dev-environment)
+    - [Dev Container](#dev-container)
+      - [Codespaces](#codespaces)
+      - [VS Code](#vs-code)
+    - [Docker Compose](#docker-compose)
+  - [Interfacing with Airflow](#interfacing-with-airflow)
+    - [CLI](#cli)
+    - [Browser](#browser)
+  - [Local Development (without Dev Container)](#local-development-without-dev-container)
+    - [1. Install dependencies](#1-install-dependencies)
+    - [2. Initialize the Airflow database](#2-initialize-the-airflow-database)
+    - [3. Configure environment variables](#3-configure-environment-variables)
+    - [4. Run a DAG locally](#4-run-a-dag-locally)
+- [Local DAGs](#local-dags)
+- [Contributing](#contributing)
+- [Releases](#releases)
+
 This repository contains Airflow recipes (DAGs) for data processing and engineering at Sage Bionetworks. If you want to develop a workflow to process data, you've come to the right place.
 
 ## Example Workflows
@@ -13,7 +34,7 @@ This repository contains Airflow recipes (DAGs) for data processing and engineer
 
 For instructions on how to set up the development environment and interface with Airflow, see below. For a detailed guide on how to add or update DAGs and make changes to the Airflow infrastructure or environment, see [CONTRIBUTING.md](./CONTRIBUTING.md).
 
-### Setting up the Dev Environment 
+### Setting up the Dev Environment
 
 A complete Airflow deployment is made up of multiple services running in parallel, so the steps involved in setting up a dev environment are more complex than you may be used to. There are two steps involved in setting up Airflow for development:
 
@@ -22,7 +43,7 @@ A complete Airflow deployment is made up of multiple services running in paralle
 
 #### Dev Container
 
-There are multiple ways to set up and interface with a dev container, depending on whether you want an IDE-agnostic approach, a VS Code workflow with the Dev Containers extension, or a cloud option like GitHub Codespaces. The cloud option is the most straightforward, and saves us the hassle of configuring Airflow secrets, although because the infrastructure is running in the cloud, there is a limit on how much time we can develop before we need to pay for the service. 
+There are multiple ways to set up and interface with a dev container, depending on whether you want an IDE-agnostic approach, a VS Code workflow with the Dev Containers extension, or a cloud option like GitHub Codespaces. The cloud option is the most straightforward, and saves us the hassle of configuring Airflow secrets, although because the infrastructure is running in the cloud, there is a limit on how much time we can develop before we need to pay for the service.
 
 * Note: The environment setup for the Dev Container is defined in [Dockerfile](./Dockerfile). _How_ we deploy the container locally is defined in [devcontainer.json](.devcontainer/devcontainer.json).
 
@@ -62,8 +83,6 @@ Congrats! You have completed set up of the dev environment.
 ### Interfacing with Airflow
 
 Airflow is made up of multiple components or services working together. The webserver exposes a browser-accessible port, but in a development environment we often want to interface with Airflow through its CLI.
-
-NOTE: If secrets are not accessible or hooks are failing to connect when testing a DAG, see the [Troubleshooting](./CONTRIBUTING.md#troubleshooting) section in CONTRIBUTING.md for common causes and fixes — including how to diagnose and resolve expired Codespace secrets.
 
 #### CLI
 
@@ -117,6 +136,51 @@ The username and password will be "airflow".
 
 If you encounter the `nginx bad gateway` errors when navigating to the forwarded port, just wait and refresh a couple of times. Airflow takes a few minutes to become available.
 
+### Local Development (without Dev Container)
+
+If you want to test a DAG locally without Docker or Codespaces, you can run it directly against a local Airflow SQLite database.
+
+#### 1. Install dependencies
+
+There is a shell script that you can run to install the local Airflow requirements.
+
+```console
+bash install_local_airflow.sh
+```
+
+This separate shell script is needed because to avoid a `urllib3` version conflict introduced by the Airflow constraints file. There is also a known issue with `setuptools >82` as `synapseclient` (via `opentelemetry-instrumentation`) depends on the deprecated `pkg_resources` module, which `setuptools` 82+ removed. We pin that until `opentelemetry-instrumentation` drops the pkg_resources import.
+
+#### 2. Initialize the Airflow database
+
+```console
+airflow db migrate
+```
+
+This creates the local SQLite metadata database (including the `task_instance` table) that Airflow needs to run `dag.test()`.
+
+#### 3. Configure environment variables
+
+Prior to configuring environment variables, you'll need to configure (use `aws configure sso`) and be authenticated to AWS with a profile (use `aws sso login --profile <your-aws-profile>`) that has read access to the Secrets Manager secrets under `airflow/connections/` and `airflow/variables/`. You can use the `dpe-prod` AWS account. [See configuration docs for more info.](https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-sso.html#sso-configure-profile-token-auto-sso).
+
+Set the following exports (e.g., in your shell profile) so Airflow can resolve connections and variables from AWS Secrets Manager and deserialize custom dataclasses passed between tasks:
+
+```console
+export AIRFLOW__SECRETS__BACKEND=airflow.providers.amazon.aws.secrets.secrets_manager.SecretsManagerBackend
+
+export AIRFLOW__SECRETS__BACKEND_KWARGS='{"connections_prefix": "airflow/connections", "variables_prefix": "airflow/variables", "profile_name": "<your-aws-profile>"}'
+
+export AIRFLOW__CORE__ALLOWED_DESERIALIZATION_CLASSES="airflow.* astro.* __main__.*"
+```
+
+#### 4. Run a DAG locally
+
+```console
+python dags/<your-dag-file>.py
+```
+
+DAG files with an `if __name__ == "__main__":` block that calls `dag.test()` can be run directly this way.
+
+See section [Testing](./CONTRIBUTING.md#testing) in the CONTRIBUTING.md for more info on testing a dag and how you can bypass configuring with AWS.
 
 ### Local DAGs
 

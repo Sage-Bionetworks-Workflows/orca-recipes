@@ -468,7 +468,7 @@ def save_minimal_jsonld_to_s3() -> None:
             otel_logger.handlers[0].flush()
             return None
         
-    def extract_synapse_rows_to_delete(synapse_rows: DataFrame, combined_dataset_name_and_id: List[Dict[str, str]]) -> List[str]:
+    def extract_synapse_rows_to_delete(synapse_rows: DataFrame, combined_dataset_name_and_id: List[Dict[str, str]]) -> DataFrame:
         """
         Extract the Synapse table rows to delete. This is done by comparing
         the list of dataset IDs in the Synapse table to the list of current datasets.
@@ -478,22 +478,30 @@ def save_minimal_jsonld_to_s3() -> None:
         Arguments:
             synapse_rows: The DataFrame containing the rows from the Synapse table.
             combined_dataset_name_and_id: A list of dictionaries containing dataset_id and dataset_name for all current datasets.
+
+        Returns:
+            A DataFrame with columns `ROW_ID` and `ROW_VERSION` for rows that should be deleted.
         """
         rows_to_delete = []
 
         if synapse_rows.empty:
             otel_logger.info("No rows found in Synapse table.")
-            return rows_to_delete
+            return pd.DataFrame(columns=["ROW_ID", "ROW_VERSION"])
 
         # Create a set of current dataset IDs for fast lookup
         current_dataset_ids = set(d["dataset_id"] for d in combined_dataset_name_and_id)
 
-        for index, row in synapse_rows.iterrows():
+        for _, row in synapse_rows.iterrows():
             dataset_id_in_row = str(row["dataset"])
             if dataset_id_in_row not in current_dataset_ids:
-                rows_to_delete.append(str(row["ROW_ID"]))
+                rows_to_delete.append(
+                    {
+                        "ROW_ID": int(row["ROW_ID"]),
+                        "ROW_VERSION": int(row["ROW_VERSION"]),
+                    }
+                )
 
-        return rows_to_delete
+        return pd.DataFrame(rows_to_delete, columns=["ROW_ID", "ROW_VERSION"])
         
     @task
     def delete_non_current_croissant_file_in_synapse(
@@ -525,22 +533,23 @@ def save_minimal_jsonld_to_s3() -> None:
             query_string = f"SELECT * FROM {SYNAPSE_TABLE_FOR_CROISSANT_LINKS}"
             table_dataframe= query(query=query_string, synapse_client=authenticated_syn_client)
 
-            rows_to_delete = extract_synapse_rows_to_delete(
+            row_version_to_delete = extract_synapse_rows_to_delete(
                 synapse_rows=table_dataframe,
                 combined_dataset_name_and_id=combined_dataset_name_and_id,
             )
 
-            if rows_to_delete:
+            if not row_version_to_delete.empty:
                 delete_out_of_date_from_synapse = context["params"]["delete_out_of_date_from_synapse"]
+                rows_to_delete_records = row_version_to_delete[["ROW_ID", "ROW_VERSION"]].to_dict(orient="records")
                 if delete_out_of_date_from_synapse:
                     otel_logger.info(
-                        f"Deleting the following rows from Synapse: {rows_to_delete}")
+                        f"Deleting the following rows from Synapse: {rows_to_delete_records}")
                     # Delete rows from the Synapse table
                     table_to_delete_from = Table(id=SYNAPSE_TABLE_FOR_CROISSANT_LINKS)
-                    table_to_delete_from.delete_rows(row_ids=[int(row_id) for row_id in rows_to_delete])
+                    table_to_delete_from.delete_rows(df=row_version_to_delete)
                 else:
                     otel_logger.info(
-                        f"Found rows to delete from Synapse, but not deleting due to `delete_out_of_date_from_synapse` param: {rows_to_delete}")
+                        f"Found rows to delete from Synapse, but not deleting due to `delete_out_of_date_from_synapse` param: {rows_to_delete_records}")
             else:
                 otel_logger.info(
                     "No rows to delete from Synapse. All rows are current.")
