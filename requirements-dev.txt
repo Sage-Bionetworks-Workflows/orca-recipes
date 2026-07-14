@@ -4,3 +4,7 @@ metaflow ~=2.9
 pytest ~=8.0
 pytest-mock ~=3.0
 requests ~=2.31
+pre-commit ~=4.0
+# locked down to match the airflow version used in the GitHub Actions workflow
+# and Airflow repo's version
+ruff ==0.15.20
