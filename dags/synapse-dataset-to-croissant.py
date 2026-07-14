@@ -1266,8 +1266,8 @@ def dataset_to_croissant() -> None:
             croissant_file = {
             "@context": {
                     "@language": "en",
-                    "@vocab": "http://schema.org/",
-                    "sc": "http://schema.org/",
+                    "@vocab": "https://schema.org/",
+                    "sc": "https://schema.org/",
                     "cr": "http://mlcommons.org/croissant/",
                     "rai": "http://mlcommons.org/croissant/RAI/",
                     "dct": "http://purl.org/dc/terms/",
