@@ -219,4 +219,4 @@ if __name__ == "__main__":
         ],
         variable_names=["SLACK_DPE_TEAM_BOT_TOKEN"],
     )
-    # dag.test(run_conf={"dataset": "model_details"})
+    dag.test(run_conf={"dataset": "model_details"})
