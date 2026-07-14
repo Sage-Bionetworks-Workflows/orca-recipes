@@ -34,14 +34,16 @@ DAG Parameters:
 import os
 from datetime import datetime
 from typing import Any
+
 from airflow.decorators import dag, task
+from airflow.models import Variable
 from airflow.models.dag import DAG
 from airflow.models.param import Param
-from airflow.models import Variable
 from orca.services.nextflowtower import NextflowTowerHook
 from orca.services.nextflowtower.models import LaunchInfo
-from slack_sdk import WebClient
 from orca.services.synapse import SynapseHook
+from slack_sdk import WebClient
+
 from src.utils import validate_required_secrets
 
 
@@ -217,4 +219,4 @@ if __name__ == "__main__":
         ],
         variable_names=["SLACK_DPE_TEAM_BOT_TOKEN"],
     )
-    dag.test(run_conf={"dataset": "model_details"})
+    # dag.test(run_conf={"dataset": "model_details"})
