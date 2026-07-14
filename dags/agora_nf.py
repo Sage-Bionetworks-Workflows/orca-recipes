@@ -34,15 +34,17 @@ DAG Parameters:
 import os
 from datetime import datetime
 from typing import Any
+
 from airflow.decorators import dag, task
+from airflow.models import Variable
 from airflow.models.dag import DAG
 from airflow.models.param import Param
-from airflow.models import Variable
 from orca.services.nextflowtower import NextflowTowerHook
 from orca.services.nextflowtower.models import LaunchInfo
-from slack_sdk import WebClient
 from orca.services.synapse import SynapseHook
-from dags.src.utils import validate_required_secrets
+from slack_sdk import WebClient
+
+from src.utils import validate_required_secrets
 
 
 TOWER_HOST = "https://tower.sagebionetworks.org"
