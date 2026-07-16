@@ -187,9 +187,10 @@ def test_export_reports_to_synapse_cleans_up_when_second_upload_fails(
         id = "syn-first-upload"
 
     class MockFile:
-        def __init__(self, path, parent_id):
+        def __init__(self, path, parent_id, version_comment=None):
             self.path = path
             self.parent_id = parent_id
+            self.version_comment = version_comment
 
         def store(self, synapse_client=None):
             uploaded_paths.append(self.path)
@@ -209,7 +210,6 @@ def test_export_reports_to_synapse_cleans_up_when_second_upload_fails(
     with pytest.raises(RuntimeError, match="Second Synapse upload failed"):
         dag_module.export_reports_to_synapse(
             [VALID_RECORD],
-            run_date="20250101",
             synapse_conn_id="conn",
             folder_id="syn123",
         )
@@ -341,16 +341,20 @@ def test_export_reports_to_synapse(monkeypatch, tmp_path):
     # Write the CSVs into tmp_path instead of the real working directory.
     monkeypatch.setattr(dag_module.os, "getcwd", lambda: str(tmp_path))
 
+    version_comments = []
+
     class MockUploaded:
         def __init__(self, id):
             self.id = id
 
     class MockFile:
-        def __init__(self, path, parent_id):
+        def __init__(self, path, parent_id, version_comment=None):
             self.path = path
             self.parent_id = parent_id
+            self.version_comment = version_comment
 
         def store(self, synapse_client=None):
+            version_comments.append(self.version_comment)
             return MockUploaded(id="syn_" + os.path.basename(self.path))
 
     class MockSynapseHook:
@@ -362,22 +366,23 @@ def test_export_reports_to_synapse(monkeypatch, tmp_path):
 
     result = dag_module.export_reports_to_synapse(
         [VALID_RECORD],
-        run_date="20250101",
         synapse_conn_id="conn",
         folder_id="syn123",
     )
 
-    # One entry per uploaded CSV, with the derived filename and returned id.
+    # One entry per uploaded CSV, with the derived (date-free) filename and id.
     assert result == [
         {
-            "id": "syn_TREATAD_Target_Enabling_Metrics_20250101_TEP_Reports.csv",
-            "name": "TREATAD_Target_Enabling_Metrics_20250101_TEP_Reports.csv",
+            "id": "syn_TREATAD_Target_Enabling_Metrics_TEP_Reports.csv",
+            "name": "TREATAD_Target_Enabling_Metrics_TEP_Reports.csv",
         },
         {
-            "id": "syn_TREATAD_Target_Enabling_Metrics_20250101_TEP_Components.csv",
-            "name": "TREATAD_Target_Enabling_Metrics_20250101_TEP_Components.csv",
+            "id": "syn_TREATAD_Target_Enabling_Metrics_TEP_Components.csv",
+            "name": "TREATAD_Target_Enabling_Metrics_TEP_Components.csv",
         },
     ]
+    # Every upload carries the provenance version comment.
+    assert version_comments == [dag_module.SYNAPSE_VERSION_COMMENT] * 2
     # Local CSV files are cleaned up after upload.
     assert not list(tmp_path.glob("*.csv"))
 
@@ -386,7 +391,7 @@ def test_export_reports_to_synapse_cleans_up_on_upload_failure(monkeypatch, tmp_
     monkeypatch.setattr(dag_module.os, "getcwd", lambda: str(tmp_path))
 
     class MockFailingFile:
-        def __init__(self, path, parent_id):
+        def __init__(self, path, parent_id, version_comment=None):
             """The constructor accepts the same arguments as the real File class but
             intentionally ignores them because relevant test is only verifying that
             export_reports_to_synapse() cleans up temporary CSVs when store()
@@ -407,7 +412,6 @@ def test_export_reports_to_synapse_cleans_up_on_upload_failure(monkeypatch, tmp_
     with pytest.raises(RuntimeError, match="Synapse upload failed"):
         dag_module.export_reports_to_synapse(
             [VALID_RECORD],
-            run_date="20250101",
             synapse_conn_id="conn",
             folder_id="syn123",
         )
