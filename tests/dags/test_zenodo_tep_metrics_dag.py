@@ -187,7 +187,7 @@ def test_export_reports_to_synapse_cleans_up_when_second_upload_fails(
         id = "syn-first-upload"
 
     class MockFile:
-        def __init__(self, path, parent_id, version_comment=None):
+        def __init__(self, path : str, parent_id : str, version_comment : str=None):
             self.path = path
             self.parent_id = parent_id
             self.version_comment = version_comment
@@ -344,11 +344,11 @@ def test_export_reports_to_synapse(monkeypatch, tmp_path):
     version_comments = []
 
     class MockUploaded:
-        def __init__(self, id):
+        def __init__(self, id : str):
             self.id = id
 
     class MockFile:
-        def __init__(self, path, parent_id, version_comment=None):
+        def __init__(self, path, parent_id, version_comment : str=None):
             self.path = path
             self.parent_id = parent_id
             self.version_comment = version_comment
@@ -358,7 +358,7 @@ def test_export_reports_to_synapse(monkeypatch, tmp_path):
             return MockUploaded(id="syn_" + os.path.basename(self.path))
 
     class MockSynapseHook:
-        def __init__(self, conn_id):
+        def __init__(self, conn_id : str):
             self.client = object()
 
     monkeypatch.setattr(dag_module, "File", MockFile)
@@ -391,7 +391,7 @@ def test_export_reports_to_synapse_cleans_up_on_upload_failure(monkeypatch, tmp_
     monkeypatch.setattr(dag_module.os, "getcwd", lambda: str(tmp_path))
 
     class MockFailingFile:
-        def __init__(self, path, parent_id, version_comment=None):
+        def __init__(self, path : str, parent_id : str, version_comment :str =None):
             """The constructor accepts the same arguments as the real File class but
             intentionally ignores them because relevant test is only verifying that
             export_reports_to_synapse() cleans up temporary CSVs when store()
