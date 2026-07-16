@@ -1,8 +1,10 @@
 import csv
 import os
+from typing import Any, Dict
 
 import pytest
 from airflow.models import DagBag
+import synapseclient
 
 from dags import zenodo_tep_metrics_dag as dag_module
 
@@ -187,12 +189,12 @@ def test_export_reports_to_synapse_cleans_up_when_second_upload_fails(
         id = "syn-first-upload"
 
     class MockFile:
-        def __init__(self, path : str, parent_id : str, version_comment : str=None):
+        def __init__(self, path: str, parent_id: str, version_comment: str=None):
             self.path = path
             self.parent_id = parent_id
             self.version_comment = version_comment
 
-        def store(self, synapse_client=None):
+        def store(self, synapse_client: "synapseclient.Synapse"=None):
             uploaded_paths.append(self.path)
 
             if len(uploaded_paths) == 2:
@@ -201,7 +203,7 @@ def test_export_reports_to_synapse_cleans_up_when_second_upload_fails(
             return MockUploaded()
 
     class MockSynapseHook:
-        def __init__(self, conn_id):
+        def __init__(self, conn_id: str) -> None:
             self.client = object()
 
     monkeypatch.setattr(dag_module, "File", MockFile)
@@ -219,15 +221,15 @@ def test_export_reports_to_synapse_cleans_up_when_second_upload_fails(
 
 
 class MockZenodoResponse:
-    def __init__(self, payload):
+    def __init__(self, payload: Dict[str, Any]) -> None:
         self.payload = payload
 
-    def raise_for_status(self):
+    def raise_for_status(self) -> None:
         """Empty to simulate a successful HTTP response
         """
         pass
 
-    def json(self):
+    def json(self) -> Dict[str, Any]:
         return self.payload
 
 
@@ -348,17 +350,17 @@ def test_export_reports_to_synapse(monkeypatch, tmp_path):
             self.id = id
 
     class MockFile:
-        def __init__(self, path, parent_id, version_comment : str=None):
+        def __init__(self, path, parent_id, version_comment : str=None) -> None:
             self.path = path
             self.parent_id = parent_id
             self.version_comment = version_comment
 
-        def store(self, synapse_client=None):
+        def store(self, synapse_client=None) -> MockUploaded:
             version_comments.append(self.version_comment)
             return MockUploaded(id="syn_" + os.path.basename(self.path))
 
     class MockSynapseHook:
-        def __init__(self, conn_id : str):
+        def __init__(self, conn_id : str) -> None:
             self.client = object()
 
     monkeypatch.setattr(dag_module, "File", MockFile)
@@ -391,7 +393,7 @@ def test_export_reports_to_synapse_cleans_up_on_upload_failure(monkeypatch, tmp_
     monkeypatch.setattr(dag_module.os, "getcwd", lambda: str(tmp_path))
 
     class MockFailingFile:
-        def __init__(self, path : str, parent_id : str, version_comment :str =None):
+        def __init__(self, path:str, parent_id:str, version_comment:str =None) -> None:
             """The constructor accepts the same arguments as the real File class but
             intentionally ignores them because relevant test is only verifying that
             export_reports_to_synapse() cleans up temporary CSVs when store()
@@ -399,11 +401,11 @@ def test_export_reports_to_synapse_cleans_up_on_upload_failure(monkeypatch, tmp_
             """
             pass
 
-        def store(self, synapse_client=None):
+        def store(self, synapse_client:"synapseclient.Synapse"=None) -> None:
             raise RuntimeError("Synapse upload failed")
 
     class MockSynapseHook:
-        def __init__(self, conn_id):
+        def __init__(self, conn_id: str) -> None:
             self.client = object()
 
     monkeypatch.setattr(dag_module, "File", MockFailingFile)
