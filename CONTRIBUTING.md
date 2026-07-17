@@ -573,13 +573,13 @@ Airflow secrets (_e.g._ connections and variables) are stored in Secrets Manager
 
 These are all located in AWS Secrets Manager in the `dpe-prod` account.
 
-This repository uses an IAM User `airflow-secrets-backend` to access the secrets. Access keys for the IAM account are stored in this repository as codespace secrets, enabling Airflow deployments in our configured codespaces environment to retrieve connection URIs and secret variables from `dpe-prod`. The credentials used in the repository's codespace secrets must be rotated manually within the AWS console, and updated every 90 days.
+Developers access these secrets with their own AWS Identity Center (SSO) credentials — there is no shared IAM user or long-lived access key to manage or rotate. Set up an SSO profile once and log in per the [AWS credentials](./README.md#aws-credentials-required-for-all-options) section of the README (the source of truth for the `aws configure sso` / `aws sso login` steps). In deployed Airflow, the pods assume an IRSA role (`airflow-croissant`) and no credentials are stored in the connection secrets.
 
 ### Creating a new secret
 
 New secrets must be created in AWS Secrets Manager in the `dpe-prod` account.
 
-1. You will need at least **Developer** access to the account.
+1. You will need at least **Developer** (or **Administrator**) access to the account.
 1. Make sure your region is set to **us-east-1**.
 1. For connection URIs, the secret name should have the prefix `airflow/connections/`
 (i.e. `airflow/connections/MY_SECRET_CONNECTION_STRING`). Variables should have the prefix `airflow/variables/` (i.e. `airflow/variables/MY_SECRET_VARIABLE`).
@@ -752,31 +752,17 @@ By following these guidelines, you will successfully contribute a deployable cha
 
 This section is a living reference for potential issues you may encounter when testing your DAG. If you run into a problem not covered here, consider documenting it for future contributors.
 
-#### Airflow Provider Hooks Failing to Connect — Outdated Codespace Secrets
+#### Airflow Provider Hooks Failing to Connect — Expired SSO Credentials
 
-If you are testing your DAG in a Codespaces environment (see [Dev Container setup in the README](./README.md#codespaces)) and your Airflow provider hooks (e.g., `SynapseHook`, `SnowflakeHook`, `S3Hook`) are failing to connect, it may be caused by expired AWS credentials in the repository's Codespace secrets.
-
-As noted in the [Secrets](#secrets) section, this repository uses an IAM user (`airflow-secrets-backend`) whose access keys are stored as Codespace secrets so that Airflow can reach AWS Secrets Manager in `dpe-prod`. These credentials must be rotated every 90 days. If they have expired, Airflow will be unable to resolve any connections or variables backed by Secrets Manager, which can surface as `KeyError` import errors, hook connection failures, or `botocore` token errors such as:
+If your Airflow provider hooks (e.g., `SynapseHook`, `SnowflakeHook`, `S3Hook`) are failing to connect, it is most likely because your AWS Identity Center (SSO) session has expired. Airflow resolves connections and variables from AWS Secrets Manager in `dpe-prod` using your own SSO credentials (see the [Secrets](#secrets) section). When the session expires, Airflow can no longer resolve any Secrets-Manager-backed connection or variable, which can surface as `KeyError` import errors, hook connection failures, or `botocore` token errors such as:
 ```
 botocore.exceptions.ClientError: An error occurred (UnrecognizedClientException) when calling the GetSecretValue operation: The security token included in the request is invalid.
 ```
 — even when the connection ID strings themselves look correct.
 
-**To verify this is the cause:**
+**To fix it, refresh your SSO session** by re-running the credential steps for your path in the README's [AWS credentials](./README.md#aws-credentials-required-for-all-options) section (`aws sso login`, plus `scripts/aws-sso-to-env.sh` + a stack restart in Codespaces).
 
-1. Open a terminal in your Codespace and run:
-   ```console
-   env | grep AWS
-   ```
-2. Locate the value of `AWS_ACCESS_KEY_ID` in the output.
-3. Compare it against the active access key for the `airflow-secrets-backend` IAM user in the AWS Console (`org-sagebase-dpe-prod` account).
-   Alternatively, you can list active keys with the AWS CLI:
-   ```console
-   aws iam list-access-keys --user-name airflow-secrets-backend --profile <your-profile-name>
-   ```
-
-If the access key ID does not match, the secret access key (`AWS_SECRET_ACCESS_KEY`) is almost certainly stale as well.
-
-**To fix it:**
-
-Follow the [Rotating `airflow-secrets-backend` IAM User Credentials](https://sagebionetworks.jira.com/wiki/spaces/DPE/pages/4530602005/Rotating+airflow-secrets-backend+IAM+User+Credentials#Phase-3:-Update-Use-Case-1-(GitHub-Codespaces)) runbook on Confluence, which covers how to rotate the keys, update the Codespace secrets, and validate the update.
+If it still fails, confirm your profile is configured and you are assigned the `Developer` (or `Administrator`) role in `dpe-prod` (`766808016710`):
+```console
+aws sts get-caller-identity --profile <your-sso-profile>
+```
