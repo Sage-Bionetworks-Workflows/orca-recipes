@@ -573,13 +573,13 @@ Airflow secrets (_e.g._ connections and variables) are stored in Secrets Manager
 
 These are all located in AWS Secrets Manager in the `dpe-prod` account.
 
-Developers access these secrets with their own AWS Identity Center (SSO) credentials — there is no shared IAM user or long-lived access key to manage or rotate. Configure an SSO profile once (`aws configure sso`, start URL `https://d-906769aa66.awsapps.com/start`, region `us-east-1`, account `766808016710`, `Developer` role) and provide it to the containers per the [AWS credentials](./README.md#aws-credentials-required-for-all-dev-container-options) section of the README. In deployed Airflow, the pods assume an IRSA role (`airflow-croissant`) and no credentials are stored in the connection secrets.
+Developers access these secrets with their own AWS Identity Center (SSO) credentials — there is no shared IAM user or long-lived access key to manage or rotate. Set up an SSO profile once and log in per the [AWS credentials](./README.md#aws-credentials-required-for-all-options) section of the README (the source of truth for the `aws configure sso` / `aws sso login` steps). In deployed Airflow, the pods assume an IRSA role (`airflow-croissant`) and no credentials are stored in the connection secrets.
 
 ### Creating a new secret
 
 New secrets must be created in AWS Secrets Manager in the `dpe-prod` account.
 
-1. You will need at least **Developer** access to the account.
+1. You will need at least **Developer** (or **Administrator**) access to the account.
 1. Make sure your region is set to **us-east-1**.
 1. For connection URIs, the secret name should have the prefix `airflow/connections/`
 (i.e. `airflow/connections/MY_SECRET_CONNECTION_STRING`). Variables should have the prefix `airflow/variables/` (i.e. `airflow/variables/MY_SECRET_VARIABLE`).
@@ -760,22 +760,9 @@ botocore.exceptions.ClientError: An error occurred (UnrecognizedClientException)
 ```
 — even when the connection ID strings themselves look correct.
 
-**To fix it, refresh your SSO session:**
+**To fix it, refresh your SSO session** by re-running the credential steps for your path in the README's [AWS credentials](./README.md#aws-credentials-required-for-all-options) section (`aws sso login`, plus `scripts/aws-sso-to-env.sh` + a stack restart in Codespaces).
 
-* **Local Dev Container / VS Code** (using `AWS_PROFILE` + a mounted `~/.aws`):
-  ```console
-  aws sso login --profile <your-sso-profile>
-  ```
-  The refreshed token is picked up automatically; no container restart is needed.
-
-* **Codespaces** (using exported credentials in `.env`): re-run the helper to write fresh short-lived credentials, then restart the stack so the containers pick them up:
-  ```console
-  aws sso login --profile <your-sso-profile>
-  bash scripts/aws-sso-to-env.sh <your-sso-profile>
-  docker compose up --build --detach
-  ```
-
-If it still fails, confirm your profile is configured and you are assigned the `Developer` role in `dpe-prod` (`766808016710`):
+If it still fails, confirm your profile is configured and you are assigned the `Developer` (or `Administrator`) role in `dpe-prod` (`766808016710`):
 ```console
 aws sts get-caller-identity --profile <your-sso-profile>
 ```

@@ -5,8 +5,8 @@
 - [Example Workflows](#example-workflows)
 - [Airflow Development](#airflow-development)
   - [Setting up the Dev Environment](#setting-up-the-dev-environment)
+    - [AWS credentials](#aws-credentials-required-for-all-options)
     - [Dev Container](#dev-container)
-      - [AWS credentials](#aws-credentials-required-for-all-dev-container-options)
       - [Codespaces](#codespaces)
       - [VS Code](#vs-code)
     - [Docker Compose](#docker-compose)
@@ -42,26 +42,31 @@ A complete Airflow deployment is made up of multiple services running in paralle
 1. (Highly recommended) Develop within the provided dev container. A dev container is a virtual machine (e.g., Docker container) that standardizes tools, libraries, and configs for consistent development across machines. This provides us with a consistent environment for the next step.
 2. Run docker compose to deploy the full suite of containerized services.
 
-#### Dev Container
+Regardless of which path you take — Codespaces, a local dev container, or [local development without a dev container](#local-development-without-dev-container) — you first need AWS credentials, since every path resolves Airflow's secrets from AWS Secrets Manager.
 
-There are multiple ways to set up and interface with a dev container, depending on whether you want an IDE-agnostic approach, a VS Code workflow with the Dev Containers extension, or a cloud option like GitHub Codespaces. The cloud option is the most straightforward, although because the infrastructure is running in the cloud, there is a limit on how much time we can develop before we need to pay for the service.
-
-* Note: The environment setup for the Dev Container is defined in [Dockerfile](./Dockerfile). _How_ we deploy the container locally is defined in [devcontainer.json](.devcontainer/devcontainer.json).
-
-##### AWS credentials (required for all dev container options)
+#### AWS credentials (required for all options)
 
 The Airflow Secrets backend reads connections and variables from AWS Secrets Manager in the `dpe-prod` account. Authenticate with your **own** AWS Identity Center (SSO) credentials — there is no shared IAM user.
 
-One-time setup: configure an SSO profile with `aws configure sso` using start URL `https://d-906769aa66.awsapps.com/start`, region `us-east-1`, account `766808016710`, and the `Developer` role. Then log in:
+**One-time setup:** configure an SSO profile with `aws configure sso` using start URL `https://d-906769aa66.awsapps.com/start`, region `us-east-1`, account `766808016710`, and the `Developer` (or `Administrator`) role.
+
+**Every session:** log in to refresh your SSO token (this is the common first step for all paths below):
 
 ```console
 aws sso login --profile <your-sso-profile>
 ```
 
-You supply these credentials to the containers differently depending on where you run:
+Then supply the credentials to Airflow, which differs by path:
 
 * **Local Dev Container / VS Code** — set `AWS_PROFILE` (and, if your AWS config is not at `$HOME/.aws`, `HOST_AWS_DIR`) in `.env`. Your `~/.aws` is mounted read-only into the containers and SSO tokens refresh automatically.
-* **Codespaces** — run `aws sso login` inside the Codespace, then `bash scripts/aws-sso-to-env.sh <your-sso-profile>` to write short-lived credentials into `.env`. They expire; re-run the script to refresh.
+* **Codespaces** — run `bash scripts/aws-sso-to-env.sh <your-sso-profile>` to write short-lived credentials into `.env` (there is no host `~/.aws` to mount). They expire; re-run the script to refresh.
+* **Local without a dev container** — point the secrets backend at your profile via `AIRFLOW__SECRETS__BACKEND_KWARGS`; see [that section](#3-configure-environment-variables).
+
+#### Dev Container
+
+There are multiple ways to set up and interface with a dev container, depending on whether you want an IDE-agnostic approach, a VS Code workflow with the Dev Containers extension, or a cloud option like GitHub Codespaces. The cloud option is the most straightforward, although because the infrastructure is running in the cloud, there is a limit on how much time we can develop before we need to pay for the service.
+
+* Note: The environment setup for the Dev Container is defined in [Dockerfile](./Dockerfile). _How_ we deploy the container locally is defined in [devcontainer.json](.devcontainer/devcontainer.json).
 
 ##### Codespaces
 
@@ -74,13 +79,13 @@ You supply these credentials to the containers differently depending on where yo
 
 Visual Studio Code provides an extension so that your IDE terminal and other development tools are run within a dev container. Follow the instructions [here](https://code.visualstudio.com/docs/devcontainers/tutorial) to set up the Dev Containers extension. Do not create a new dev container, but rather use the existing configuration by opening the Command Palette (CMD+Shift+p by default on Mac) → "Dev Containers: Reopen in Container."
 
-Set `AWS_PROFILE` in `.env` (see [AWS credentials](#aws-credentials-required-for-all-dev-container-options) above) so the container can reach the Airflow Secrets backend. Alternatively, you can [connect to Codespaces as a remote environment from within VS Code](https://docs.github.com/en/codespaces/developing-in-a-codespace/using-github-codespaces-in-visual-studio-code).
+Set `AWS_PROFILE` in `.env` (see [AWS credentials](#aws-credentials-required-for-all-options) above) so the container can reach the Airflow Secrets backend. Alternatively, you can [connect to Codespaces as a remote environment from within VS Code](https://docs.github.com/en/codespaces/developing-in-a-codespace/using-github-codespaces-in-visual-studio-code).
 
 #### Docker Compose
 
 Ensure that your Docker installation is up to date (we use [Docker Compose V2](https://docs.docker.com/compose/compose-v2/)). It's recommended that you deploy from within the included dev container (previous section).
 
-We pass environment variables to our build via the `.env` file. Configure your AWS credentials there following the [AWS credentials](#aws-credentials-required-for-all-dev-container-options) section above (set `AWS_PROFILE` locally, or run `scripts/aws-sso-to-env.sh` in Codespaces).
+We pass environment variables to our build via the `.env` file. Configure your AWS credentials there following the [AWS credentials](#aws-credentials-required-for-all-options) section above (set `AWS_PROFILE` locally, or run `scripts/aws-sso-to-env.sh` in Codespaces).
 
 ```console
 # Duplicate example `.env` file, then set your AWS credentials in it.
@@ -175,7 +180,7 @@ This creates the local SQLite metadata database (including the `task_instance` t
 
 #### 3. Configure environment variables
 
-Prior to configuring environment variables, you'll need to configure (use `aws configure sso`) and be authenticated to AWS with a profile (use `aws sso login --profile <your-aws-profile>`) that has read access to the Secrets Manager secrets under `airflow/connections/` and `airflow/variables/`. You can use the `dpe-prod` AWS account. [See configuration docs for more info.](https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-sso.html#sso-configure-profile-token-auto-sso).
+Prior to configuring environment variables, configure and log in to an SSO profile with read access to the `dpe-prod` Secrets Manager secrets (`airflow/connections/`, `airflow/variables/`) — see [AWS credentials](#aws-credentials-required-for-all-options) for the one-time setup and `aws sso login` step. Unlike the container paths, here you point Airflow's secrets backend at the profile directly (below) rather than via `.env`.
 
 Set the following exports (e.g., in your shell profile) so Airflow can resolve connections and variables from AWS Secrets Manager and deserialize custom dataclasses passed between tasks:
 
