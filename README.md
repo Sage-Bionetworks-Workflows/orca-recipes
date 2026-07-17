@@ -165,7 +165,7 @@ If you want to test a DAG locally without Docker or Codespaces, you can run it d
 There is a shell script that you can run to install the local Airflow requirements.
 
 ```console
-bash install_local_airflow.sh
+bash scripts/install_local_airflow.sh
 ```
 
 This separate shell script is needed because to avoid a `urllib3` version conflict introduced by the Airflow constraints file. There is also a known issue with `setuptools >82` as `synapseclient` (via `opentelemetry-instrumentation`) depends on the deprecated `pkg_resources` module, which `setuptools` 82+ removed. We pin that until `opentelemetry-instrumentation` drops the pkg_resources import.
