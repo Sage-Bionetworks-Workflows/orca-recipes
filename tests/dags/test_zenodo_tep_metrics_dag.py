@@ -189,10 +189,11 @@ def test_export_reports_to_synapse_cleans_up_when_second_upload_fails(
         id = "syn-first-upload"
 
     class MockFile:
-        def __init__(self, path: str, parent_id: str, version_comment: str=None):
+        def __init__(self, path: str, parent_id: str, version_comment: str=None, activity=None):
             self.path = path
             self.parent_id = parent_id
             self.version_comment = version_comment
+            self.activity = activity
 
         def store(self, synapse_client: "synapseclient.Synapse"=None):
             uploaded_paths.append(self.path)
@@ -344,19 +345,22 @@ def test_export_reports_to_synapse(monkeypatch, tmp_path):
     monkeypatch.setattr(dag_module.os, "getcwd", lambda: str(tmp_path))
 
     version_comments = []
+    activities = []
 
     class MockUploaded:
         def __init__(self, id : str):
             self.id = id
 
     class MockFile:
-        def __init__(self, path, parent_id, version_comment : str=None) -> None:
+        def __init__(self, path, parent_id, version_comment : str=None, activity=None) -> None:
             self.path = path
             self.parent_id = parent_id
             self.version_comment = version_comment
+            self.activity = activity
 
         def store(self, synapse_client=None) -> MockUploaded:
             version_comments.append(self.version_comment)
+            activities.append(self.activity)
             return MockUploaded(id="syn_" + os.path.basename(self.path))
 
     class MockSynapseHook:
@@ -385,6 +389,19 @@ def test_export_reports_to_synapse(monkeypatch, tmp_path):
     ]
     # Every upload carries the provenance version comment.
     assert version_comments == [dag_module.SYNAPSE_VERSION_COMMENT] * 2
+    # Every upload carries a Synapse Activity (provenance) recording the Zenodo
+    # source endpoint and the DAG that produced it. A fresh Activity is built
+    # per file rather than sharing one mutable object.
+    assert len(activities) == 2
+    assert activities[0] is not activities[1]
+    for activity in activities:
+        used_urls = [used.url for used in activity.used]
+        executed_urls = [executed.url for executed in activity.executed]
+        assert used_urls == [
+            f"{dag_module.ZENODO_COMMUNITIES_URL}/"
+            f"{dag_module.TREATAD_COMMUNITY_ID}/records"
+        ]
+        assert executed_urls == [dag_module.DAG_SOURCE_URL]
     # Local CSV files are cleaned up after upload.
     assert not list(tmp_path.glob("*.csv"))
 
@@ -393,7 +410,7 @@ def test_export_reports_to_synapse_cleans_up_on_upload_failure(monkeypatch, tmp_
     monkeypatch.setattr(dag_module.os, "getcwd", lambda: str(tmp_path))
 
     class MockFailingFile:
-        def __init__(self, path:str, parent_id:str, version_comment:str =None) -> None:
+        def __init__(self, path:str, parent_id:str, version_comment:str =None, activity=None) -> None:
             """The constructor accepts the same arguments as the real File class but
             intentionally ignores them because relevant test is only verifying that
             export_reports_to_synapse() cleans up temporary CSVs when store()
@@ -419,6 +436,22 @@ def test_export_reports_to_synapse_cleans_up_on_upload_failure(monkeypatch, tmp_
         )
     # Even when the upload raises, the local CSVs are removed.
     assert not list(tmp_path.glob("*.csv"))
+
+
+def test_build_provenance_records_source_and_code():
+    activity = dag_module.build_provenance()
+
+    assert activity.name
+    assert activity.description
+    # The Zenodo community records endpoint is recorded as the data source.
+    assert [used.url for used in activity.used] == [
+        f"{dag_module.ZENODO_COMMUNITIES_URL}/"
+        f"{dag_module.TREATAD_COMMUNITY_ID}/records"
+    ]
+    # This DAG's source is recorded as the executing code.
+    assert [executed.url for executed in activity.executed] == [
+        dag_module.DAG_SOURCE_URL
+    ]
 
 
 # DAG specific tests
