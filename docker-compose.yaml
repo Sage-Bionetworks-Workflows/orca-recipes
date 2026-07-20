@@ -72,7 +72,11 @@ x-airflow-common:
     # The following line can be used to set a custom config file, stored in the local config folder
     # If you want to use it, outcomment it and replace airflow.cfg with the name of your config file
     # AIRFLOW_CONFIG: '/opt/airflow/config/airflow.cfg'
-      # Passing through AWS credentials
+      # AWS credentials. Two mutually-exclusive ways to authenticate (see .env.example):
+      #   1. AWS_PROFILE + a mounted ~/.aws (SSO profile, auto-refreshes tokens)
+      #   2. Exported short-lived AWS_ACCESS_KEY_ID/SECRET/SESSION_TOKEN
+    AWS_PROFILE: ${AWS_PROFILE:-}
+    AWS_REGION: ${AWS_REGION:-us-east-1}
     AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
     AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
     AWS_SESSION_TOKEN: ${AWS_SESSION_TOKEN:-}
@@ -84,6 +88,10 @@ x-airflow-common:
     - ${AIRFLOW_PROJ_DIR:-.}/plugins:/opt/airflow/plugins
     - ${AIRFLOW_PROJ_DIR:-.}/config/airflow.cfg:/opt/airflow/airflow.cfg #mounts airflow.cfg
     - ${AIRFLOW_PROJ_DIR:-.}/src:/opt/airflow/src #mounts src/ for custom modules
+    # Read-only mount of the host AWS config so an SSO profile (AWS_PROFILE) works
+    # inside the containers. Must be an absolute path (Compose does not expand '~').
+    # Points at a throwaway path when unused (e.g. Codespaces export path).
+    - ${HOST_AWS_DIR:-${HOME}/.aws}:/home/airflow/.aws:ro
   user: "${AIRFLOW_UID:-50000}:0"
   depends_on:
     &airflow-common-depends-on
