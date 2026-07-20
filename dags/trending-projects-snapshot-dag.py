@@ -23,6 +23,7 @@ from airflow.models.param import Param
 from airflow.providers.snowflake.hooks.snowflake import SnowflakeHook
 
 from src.synapse_hook import SynapseHook
+from src.synapse_alerts import synapse_failure_callback
 
 
 SYNAPSE_HOMEPAGE_PROJECT_ID = 23593546
@@ -30,6 +31,7 @@ SYNAPSE_HOMEPAGE_PROJECT_ID = 23593546
 dag_params = {
     "snowflake_developer_service_conn": Param("SNOWFLAKE_DEVELOPER_SERVICE_RAW_CONN", type="string"),
     "synapse_conn_id": Param("SYNAPSE_ORCA_SERVICE_ACCOUNT_CONN", type="string"),
+    "dev_user_list": Param("3485485", type="string"),  # DPE service team
     "current_date": Param(date.today().strftime("%Y-%m-%d"), type="string"),
     "month_to_run": Param((date.today() - relativedelta(months=1)).strftime("%Y-%m-%d"), type="string"),
     "synapse_results_table": Param("syn61597055", type="string"),
@@ -66,7 +68,17 @@ class SnapshotMetrics:
     estimated_project_size_in_gib: float
 
 
-@dag(**dag_config)
+@dag(
+    on_failure_callback=synapse_failure_callback(
+        message=(
+            "The trending projects snapshot DAG failed. This may indicate a "
+            "Snowflake query failure or warehouse schema change while computing "
+            "the monthly top-10 trending public projects, or an issue writing "
+            "the snapshot to the Synapse table. Please review the task logs."
+        )
+    ),
+    **dag_config,
+)
 def trending_projects_snapshot() -> None:
     """
     This DAG executes a query on Snowflake to retrieve information about trending public projects and 

@@ -27,6 +27,7 @@ from synapseclient.models import Dataset, DatasetCollection, File
 import pandas as pd
 from slack_sdk import WebClient
 
+from src.synapse_alerts import synapse_failure_callback
 from src.synapse_hook import SynapseHook
 
 dag_params = {
@@ -45,6 +46,7 @@ dag_params = {
     "ignore_cpath_datasets": Param("syn68737367", type="string"),
     "collection_id": Param("syn66496326", type="string"),
     "synapse_conn_id": Param("SYNAPSE_ORCA_SERVICE_ACCOUNT_CONN", type="string"),
+    "dev_user_list": Param("3485485", type="string"),  # DPE service team
 }
 
 dag_config = {
@@ -159,7 +161,15 @@ def transform_with_jsonata(
     return transformed_items, validation_errors
 
 
-@dag(**dag_config)
+@dag(
+    on_failure_callback=synapse_failure_callback(
+        message=(
+            "The ALS Knowledge Portal dataset collection may have failed to build "
+            "or update in Synapse. Please review the task logs."
+        )
+    ),
+    **dag_config,
+)
 def als_kp_dataset_dag():
     @task
     def fetch_cpath_data(**context) -> Dict[str, Any]:

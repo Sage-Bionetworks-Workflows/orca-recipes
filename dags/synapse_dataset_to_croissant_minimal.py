@@ -61,9 +61,11 @@ from airflow.providers.amazon.aws.hooks.s3 import S3Hook
 from synapseclient.core.retry import with_retry
 
 from src.synapse_hook import SynapseHook
+from src.synapse_alerts import synapse_failure_callback
 
 dag_params = {
     "synapse_conn_id": Param("SYNAPSE_ORCA_SERVICE_ACCOUNT_CONN", type="string"),
+    "dev_user_list": Param("3485485", type="string"),  # DPE service team
     "push_results_to_s3": Param(True, type="boolean"),
     "aws_conn_id": Param("AWS_SYNAPSE_CROISSANT_METADATA_S3_CONN", type="string"),
     "push_links_to_synapse": Param(True, type="boolean"),
@@ -273,7 +275,18 @@ def execute_push_to_s3(dataset: Entity, dataset_id: str, s3_key: str, croissant_
         raise ex
 
 
-@dag(**dag_config)
+@dag(
+    on_failure_callback=synapse_failure_callback(
+        message=(
+            "Generating minimal Croissant JSON-LD metadata for Synapse data "
+            "catalog datasets failed. This may indicate a Synapse data catalog "
+            "query error, an S3 upload failure, or a Synapse table update issue, "
+            "which can prevent datasets from being indexed by Google. Please "
+            "review the task logs."
+        )
+    ),
+    **dag_config,
+)
 def save_minimal_jsonld_to_s3() -> None:
     """Execute a query on Snowflake and report the results to a Synapse table."""
 

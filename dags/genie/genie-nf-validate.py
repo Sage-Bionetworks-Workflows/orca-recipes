@@ -9,7 +9,11 @@ from airflow.models.param import Param
 from orca.services.nextflowtower import NextflowTowerHook
 from orca.services.nextflowtower.models import LaunchInfo
 
+from src.synapse_alerts import synapse_failure_callback
+
 dag_params = {
+    "synapse_conn_id": Param("SYNAPSE_ORCA_SERVICE_ACCOUNT_CONN", type="string"),
+    "dev_user_list": Param("3485485", type="string"),  # DPE service team
     "tower_conn_id": Param("GENIE_BPC_PROJECT_TOWER_CONN", type="string"),
     "tower_compute_env_type": Param("ondemand", type="string"),
     "tower_run_name": Param("airflow-genie-validate", type="string"),
@@ -33,7 +37,15 @@ dag_config = {
 }
 
 
-@dag(**dag_config)
+@dag(
+    on_failure_callback=synapse_failure_callback(
+        message=(
+            "The nf-genie validation workflow failed to launch or complete on "
+            "Seqera Tower. Please review the task logs."
+        )
+    ),
+    **dag_config,
+)
 def genie_nf_validate_dag():
     @task()
     def launch_nf_genie_on_tower(**context):

@@ -78,10 +78,12 @@ from synapseclient.models import File
 from synapseclient.core.utils import delete_none_keys
 
 from src.synapse_hook import SynapseHook
+from src.synapse_alerts import synapse_failure_callback
 
 dag_params = {
     "snowflake_developer_service_conn": Param("SNOWFLAKE_DEVELOPER_SERVICE_RAW_CONN", type="string"),
     "synapse_conn_id": Param("SYNAPSE_ORCA_SERVICE_ACCOUNT_CONN", type="string"),
+    "dev_user_list": Param("3485485", type="string"),  # DPE service team
     "dataset_collections": Param(["syn50913342", "syn68939725", "syn71493541", "syn74529385"], type="array"),
     "push_results_to_s3": Param(True, type="boolean"),
     "push_links_to_synapse": Param(True, type="boolean"),
@@ -725,7 +727,17 @@ def execute_push_to_synapse(push_to_synapse: bool, dataset: Entity, dataset_id: 
         raise ex
 
 
-@dag(**dag_config)
+@dag(
+    on_failure_callback=synapse_failure_callback(
+        message=(
+            "Generating Croissant JSON-LD metadata for Synapse datasets failed. "
+            "This may indicate a Synapse or Snowflake query error, an S3 upload "
+            "failure, or a change in dataset collection structure. Please review "
+            "the task logs."
+        )
+    ),
+    **dag_config,
+)
 def dataset_to_croissant() -> None:
     """Execute api calls to Synapse, and queries on snowflake to convert datasets into croissant JSON-LD files.
 

@@ -27,10 +27,12 @@ from airflow.providers.snowflake.hooks.snowflake import SnowflakeHook
 from slack_sdk import WebClient
 
 from src.synapse_hook import SynapseHook
+from src.synapse_alerts import synapse_failure_callback
 
 dag_params = {
     "snowflake_developer_service_conn": Param("SNOWFLAKE_DEVELOPER_SERVICE_RAW_CONN", type="string"),
     "synapse_conn_id": Param("SYNAPSE_ORCA_SERVICE_ACCOUNT_CONN", type="string"),
+    "dev_user_list": Param("3485485", type="string"),  # DPE service team
     "current_date_time": Param(
         datetime.now(timezone.utc).strftime("%Y-%m-%d  %H:%M:%S"), type="string"
     ),
@@ -81,7 +83,16 @@ class EntityCreated:
     is_public: bool
 
 
-@dag(**dag_config)
+@dag(
+    on_failure_callback=synapse_failure_callback(
+        message=(
+            "Reporting Synapse datasets and projects created in the last 7 days "
+            "failed. This may indicate a Snowflake query error, a Synapse table "
+            "write failure, or a Slack posting issue. Please review the task logs."
+        )
+    ),
+    **dag_config,
+)
 def datasets_or_projects_created_7_days() -> None:
     """Execute a query on Snowflake and report the results to a Synapse table."""
 
