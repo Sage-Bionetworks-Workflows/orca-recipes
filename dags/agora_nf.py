@@ -41,9 +41,9 @@ from airflow.models.dag import DAG
 from airflow.models.param import Param
 from orca.services.nextflowtower import NextflowTowerHook
 from orca.services.nextflowtower.models import LaunchInfo
-from orca.services.synapse import SynapseHook
 from slack_sdk import WebClient
 
+from src.synapse_hook import SynapseHook
 from src.utils import validate_required_secrets
 
 

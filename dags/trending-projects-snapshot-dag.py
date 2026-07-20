@@ -21,6 +21,7 @@ import synapseclient
 from airflow.decorators import dag, task
 from airflow.models.param import Param
 from airflow.providers.snowflake.hooks.snowflake import SnowflakeHook
+
 from src.synapse_hook import SynapseHook
 
 
