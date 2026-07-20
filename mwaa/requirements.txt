@@ -1,0 +1,14 @@
+# -c https://raw.githubusercontent.com/apache/airflow/constraints-2.10.3/constraints-3.11.txt
+apache-airflow-providers-amazon ==9.0.0
+apache-airflow-providers-celery ==3.8.3
+apache-airflow-providers-snowflake ==5.8.0
+synapseclient[pandas]~=4.0
+slack-sdk >=3.27
+# snowflake-connector-python ==3.12.3
+# py-orca[all] == 1.5.2
+# pandas <3.0.0
+# pendulum~=3.0.0
+# jsonata-python ~=0.5.3
+# boto3 >=1.7.0,<2.0
+# requests ~=2.31
+# PyYAML ~=6.0.2
