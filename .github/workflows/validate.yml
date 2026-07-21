@@ -33,6 +33,9 @@ jobs:
           pip install -r requirements-airflow.txt
 
       - name: Run tests
+        env:
+         CONFIG_URL: >-
+           https://raw.githubusercontent.com/Sage-Bionetworks-Workflows/orca-recipes/${{ github.sha }}/dags/challenge_configs.yaml
         run: |
           python -m pytest tests/ -v --tb=short
 
