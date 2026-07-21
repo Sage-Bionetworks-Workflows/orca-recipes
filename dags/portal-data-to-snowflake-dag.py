@@ -5,8 +5,9 @@ import synapseclient
 from airflow.decorators import dag, task
 from airflow.models.param import Param
 from airflow.providers.snowflake.hooks.snowflake import SnowflakeHook
-from orca.services.synapse import SynapseHook
 from snowflake.connector.pandas_tools import write_pandas
+
+from src.synapse_hook import SynapseHook
 
 dag_params = {
     "snowflake_developer_service_conn": Param(
@@ -25,7 +26,7 @@ portal_dict = {
         }
 
 dag_config = {
-    "schedule_interval": "0 0 * * 1",
+    "schedule": "0 0 * * 1",
     "start_date": datetime(2024, 1, 10),
     "catchup": False,
     "default_args": {

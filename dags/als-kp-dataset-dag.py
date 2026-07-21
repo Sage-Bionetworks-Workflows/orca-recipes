@@ -16,20 +16,18 @@ The DAG runs monthly and uses Airflow Variables for configuration.
 
 from datetime import datetime
 import requests
-from typing import Dict, List, Tuple, Any, Optional
-
-import pandas as pd
 import json
-from jsonata import jsonata
-from jsonschema import validate, ValidationError
-
-from synapseclient.models import Dataset, DatasetCollection, File
-from orca.services.synapse import SynapseHook
+from typing import Dict, List, Tuple, Any, Optional
 
 from airflow.decorators import task, dag
 from airflow.models import Variable, Param
+from jsonata import jsonata
+from jsonschema import validate, ValidationError
+from synapseclient.models import Dataset, DatasetCollection, File
+import pandas as pd
 from slack_sdk import WebClient
 
+from src.synapse_hook import SynapseHook
 
 dag_params = {
     "project_id": Param("syn64892175", type="string"),
@@ -50,7 +48,7 @@ dag_params = {
 }
 
 dag_config = {
-    "schedule_interval": "0 0 1 * *",  # Run on the first day of the month at midnight
+    "schedule": "0 0 1 * *",  # Run on the first day of the month at midnight
     "start_date": datetime(2025, 5, 1),
     "catchup": False,
     "default_args": {

@@ -2,10 +2,10 @@ from datetime import datetime
 
 from airflow.decorators import dag, task
 from airflow.models import Param
-
 from orca.services.nextflowtower import NextflowTowerHook
 from orca.services.nextflowtower.models import LaunchInfo
-from orca.services.synapse import SynapseHook
+
+from src.synapse_hook import SynapseHook
 
 
 dag_params = {
@@ -19,7 +19,7 @@ dag_params = {
 }
 
 dag_config = {
-    "schedule_interval": None,
+    "schedule": None,
     "start_date": datetime(2023, 6, 1),
     "catchup": False,
     "default_args": {

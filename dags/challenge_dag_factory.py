@@ -11,10 +11,11 @@ from airflow.models import Param, DagRun
 from airflow.providers.amazon.aws.hooks.s3 import S3Hook
 from airflow.utils.session import create_session
 from airflow.utils.state import State
-
 from orca.services.nextflowtower import NextflowTowerHook
 from orca.services.nextflowtower.models import LaunchInfo
-from orca.services.synapse import SynapseHook
+
+from src.synapse_hook import SynapseHook
+
 
 # Define the path to your challenge configuration file.
 CONFIG_URL = "https://raw.githubusercontent.com/Sage-Bionetworks-Workflows/orca-recipes/main/dags/challenge_configs.yaml"
@@ -94,7 +95,7 @@ def resolve_dag_config(challenge_name: str, dag_params: dict, config: dict) -> d
     
     # Start with default configuration
     dag_config = {
-        "schedule_interval": "*/3 * * * *",
+        "schedule": "*/3 * * * *",
         "start_date": datetime(2024, 4, 9, tzinfo=timezone.utc),
         "catchup": False,
         "default_args": {"retries": 2},
@@ -212,7 +213,7 @@ def create_challenge_dag(challenge_name: str, config: dict):
         @task
         def get_new_submissions(**context):
             hook = SynapseHook(context["params"]["synapse_conn_id"])
-            submissions = hook.ops.get_submissions_with_status(
+            submissions = hook.get_submissions_with_status(
                 context["params"]["tower_view_id"], "RECEIVED"
             )
 
@@ -229,7 +230,7 @@ def create_challenge_dag(challenge_name: str, config: dict):
             if submissions:
                 hook = SynapseHook(context["params"]["synapse_conn_id"])
                 for submission in submissions:
-                    hook.ops.update_submission_status(
+                    hook.update_submission_status(
                         submission_id=submission, submission_status="EVALUATION_IN_PROGRESS"
                     )
                 return "stage_submissions_manifest"

@@ -19,9 +19,11 @@ from airflow.decorators import dag, task
 from airflow.models import Variable
 from airflow.models.param import Param
 from airflow.providers.snowflake.hooks.snowflake import SnowflakeHook
-from orca.services.synapse import SynapseHook
 from slack_sdk import WebClient
 import json
+
+from src.synapse_hook import SynapseHook
+
 
 dag_params = {
     "snowflake_developer_service_conn": Param(
@@ -42,7 +44,7 @@ dag_params = {
 }
 
 dag_config = {
-    "schedule_interval": "0 18 * * *",
+    "schedule": "0 18 * * *",
     "start_date": datetime(2024, 2, 20),
     "catchup": False,
     "default_args": {
