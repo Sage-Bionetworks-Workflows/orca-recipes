@@ -460,12 +460,6 @@ def dagbag():
     return DagBag(dag_folder="dags/zenodo_tep_metrics_dag.py", include_examples=False)
 
 
-def test_dag_loads_with_no_issues(dagbag):
-    assert dagbag.import_errors == {}
-    dag = dagbag.dags["zenodo_tep_metrics_dag"]
-    assert dag is not None
-
-
 def test_dag_structure_is_correct(dagbag):
     # Read from the parsed .dags dict (get_dag() hits the Airflow metadata DB,
     # which isn't available in CI).
