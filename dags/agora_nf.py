@@ -73,9 +73,9 @@ dag_params = {
 }
 
 dag_config = {
-    "schedule": "0 1 * * *",
-    # July 10, 2026 at 01:00 UTC
-    "start_date": datetime(2026, 7, 10, 1, 0),
+    "schedule": "0 3 * * *",
+    # 11:00 PM ET (EDT, UTC-4) on July 9, 2026 == 03:00 UTC on July 10, 2026
+    "start_date": datetime(2026, 7, 10, 3, 0),
     "catchup": False,
     "default_args": {
         "retries": 1,
