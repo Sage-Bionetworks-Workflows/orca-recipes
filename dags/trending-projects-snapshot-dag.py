@@ -21,7 +21,8 @@ import synapseclient
 from airflow.decorators import dag, task
 from airflow.models.param import Param
 from airflow.providers.snowflake.hooks.snowflake import SnowflakeHook
-from orca.services.synapse import SynapseHook
+
+from src.synapse_hook import SynapseHook
 
 
 SYNAPSE_RESULTS_TABLE = "syn61597055"

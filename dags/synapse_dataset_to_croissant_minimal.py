@@ -32,7 +32,6 @@ from synapseclient.models import query
 from synapseclient import Entity, Synapse
 from synapseclient.models import Table
 from airflow.models.param import Param
-from orca.services.synapse import SynapseHook
 import pandas as pd
 from pandas import DataFrame
 from urllib.parse import quote_plus
@@ -60,6 +59,8 @@ from opentelemetry.sdk.trace import Tracer, TracerProvider
 from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from airflow.providers.amazon.aws.hooks.s3 import S3Hook
 from synapseclient.core.retry import with_retry
+
+from src.synapse_hook import SynapseHook
 
 dag_params = {
     "synapse_conn_id": Param("SYNAPSE_ORCA_SERVICE_ACCOUNT_CONN", type="string"),

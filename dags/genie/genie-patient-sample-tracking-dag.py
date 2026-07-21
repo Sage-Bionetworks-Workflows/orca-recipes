@@ -7,9 +7,10 @@ import synapseclient
 from airflow.decorators import dag, task
 from airflow.models.param import Param
 from airflow.providers.snowflake.hooks.snowflake import SnowflakeHook
-from orca.services.synapse import SynapseHook
 from airflow.utils.db import provide_session
 from airflow.models import XCom
+
+from src.synapse_hook import SynapseHook
 
 logger = logging.getLogger(__name__)
 

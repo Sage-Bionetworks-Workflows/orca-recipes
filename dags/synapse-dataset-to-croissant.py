@@ -69,7 +69,6 @@ from opentelemetry.sdk.trace import Tracer, TracerProvider
 from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.trace.propagation.tracecontext import \
     TraceContextTextMapPropagator
-from orca.services.synapse import SynapseHook
 from pandas import DataFrame
 from synapseclient import Entity, Synapse, Table
 from synapseclient.core.exceptions import (SynapseAuthenticationError,
@@ -77,6 +76,8 @@ from synapseclient.core.exceptions import (SynapseAuthenticationError,
 from synapseclient.core.retry import with_retry
 from synapseclient.models import File
 from synapseclient.core.utils import delete_none_keys
+
+from src.synapse_hook import SynapseHook
 
 dag_params = {
     "snowflake_developer_service_conn": Param("SNOWFLAKE_DEVELOPER_SERVICE_RAW_CONN", type="string"),

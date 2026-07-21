@@ -2,10 +2,10 @@ from datetime import datetime
 
 from airflow.decorators import dag, task
 from airflow.models import Param
-
 from orca.services.nextflowtower import NextflowTowerHook
 from orca.services.nextflowtower.models import LaunchInfo
-from orca.services.synapse import SynapseHook
+
+from src.synapse_hook import SynapseHook
 
 
 dag_params = {
