@@ -16,17 +16,18 @@ from typing import List
 
 import synapseclient
 from airflow.decorators import dag, task
-from airflow.models import Variable
 from airflow.models.param import Param
 from airflow.providers.snowflake.hooks.snowflake import SnowflakeHook
+from airflow.providers.slack.hooks.slack import SlackHook
 from src.synapse_hook import SynapseHook
-from slack_sdk import WebClient
 import json
 
 dag_params = {
     "snowflake_developer_service_conn": Param(
         "SNOWFLAKE_DEVELOPER_SERVICE_RAW_CONN", type="string"),
     "synapse_conn_id": Param("SYNAPSE_ORCA_SERVICE_ACCOUNT_CONN", type="string"),
+    "slack_conn_id": Param("DPE_SLACK_BOT_CONN", type="string"),
+    "slack_channel": Param("topcharts", type="string"),
     # hours_time_delta is the number of hours to subtract from the current date to get
     # the date for the query
     "hours_time_delta": Param("24", type="string"),
@@ -550,18 +551,26 @@ def top_public_synapse_projects_from_snowflake() -> None:
         return message
 
     @task
-    def post_top_downloads_to_slack(message: str) -> bool:
+    def post_top_downloads_to_slack(message: str, **context) -> bool:
         """Post the top downloads to the Slack channel.
+
+        Uses the Slack provider's ``SlackHook``, which reads the bot token from an
+        Airflow Slack connection (conn type ``slack``) rather than a Variable.
+        See https://airflow.apache.org/docs/apache-airflow-providers-slack/stable/connections/slack.html
 
         Arguments:
             message: Formatted message containing top download information
+            context: Airflow context dictionary containing DAG parameters
+                - slack_conn_id: Connection ID for the Slack API connection
 
         Returns:
             bool: True if message was successfully posted, False otherwise
         """
 
-        client = WebClient(token=Variable.get("SLACK_DPE_TEAM_BOT_TOKEN"))
-        result = client.chat_postMessage(channel="topcharts", text=message)
+        hook = SlackHook(slack_conn_id=context["params"]["slack_conn_id"])
+        result = hook.client.chat_postMessage(
+            channel=context["params"]["slack_channel"], text=message
+        )
         print(f"Result of posting to slack: [{result}]")
         return result is not None
 
@@ -652,11 +661,13 @@ def top_public_synapse_projects_from_snowflake() -> None:
 dag = top_public_synapse_projects_from_snowflake()
 
 if __name__ == "__main__":
-    # backfill=True skips Slack posting; backfill_date set to today to avoid querying from 1900-01-01
-    # Replace synapse_results_table with a test table ID before running locally
+    # backfill=False so the Slack branch runs; slack_channel redirects the post
+    # to #dpe-prs for local testing (the DPE bot must be a member of that channel).
+    # Replace synapse_results_table with a test table ID before running locally.
     from datetime import date
     dag.test(run_conf={
-        "backfill": True,
+        "backfill": False,
         "backfill_date": date.today().strftime("%Y-%m-%d"),
+        "slack_channel": "dpe-prs",
         "synapse_results_table": "syn74496611",
     })
