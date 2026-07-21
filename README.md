@@ -202,7 +202,6 @@ DAG files with an `if __name__ == "__main__":` block that calls `dag.test()` can
 
 See section [Testing](./CONTRIBUTING.md#testing) in the CONTRIBUTING.md for more info on testing a dag and how you can bypass configuring with AWS.
 
-
 ### Local DAGs
 
 This repository also contains recipes for specific projects that either don't need to be deployed to Airflow or are not ready to be deployed to Airflow. These recipes can be run locally from the `local` directory. Each sub-directory contains recipes specific to a project and those project folders have their own documentation for running the recipes.
