@@ -93,7 +93,7 @@ dag_params = {
 
 dag_config = {
     # Every Monday
-    "schedule_interval": "0 0 * * 1",
+    "schedule": "0 0 * * 1",
     "start_date": datetime(2025, 2, 1),
     "catchup": False,
     "max_active_tasks": 4,

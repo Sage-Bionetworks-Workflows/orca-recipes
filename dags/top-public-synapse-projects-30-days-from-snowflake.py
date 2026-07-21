@@ -21,7 +21,7 @@ dag_params = {
 }
 
 dag_config = {
-    "schedule_interval": "0 0 * * *",
+    "schedule": "0 0 * * *",
     "start_date": datetime(2024, 4, 1),
     "catchup": False,
     "default_args": {

@@ -26,7 +26,7 @@ portal_dict = {
         }
 
 dag_config = {
-    "schedule_interval": "0 0 * * 1",
+    "schedule": "0 0 * * 1",
     "start_date": datetime(2024, 1, 10),
     "catchup": False,
     "default_args": {

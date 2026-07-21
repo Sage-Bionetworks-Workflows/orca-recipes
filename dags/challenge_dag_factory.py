@@ -95,7 +95,7 @@ def resolve_dag_config(challenge_name: str, dag_params: dict, config: dict) -> d
     
     # Start with default configuration
     dag_config = {
-        "schedule_interval": "*/3 * * * *",
+        "schedule": "*/3 * * * *",
         "start_date": datetime(2024, 4, 9, tzinfo=timezone.utc),
         "catchup": False,
         "default_args": {"retries": 2},
@@ -213,7 +213,7 @@ def create_challenge_dag(challenge_name: str, config: dict):
         @task
         def get_new_submissions(**context):
             hook = SynapseHook(context["params"]["synapse_conn_id"])
-            submissions = hook.ops.get_submissions_with_status(
+            submissions = hook.get_submissions_with_status(
                 context["params"]["tower_view_id"], "RECEIVED"
             )
 
@@ -230,7 +230,7 @@ def create_challenge_dag(challenge_name: str, config: dict):
             if submissions:
                 hook = SynapseHook(context["params"]["synapse_conn_id"])
                 for submission in submissions:
-                    hook.ops.update_submission_status(
+                    hook.update_submission_status(
                         submission_id=submission, submission_status="EVALUATION_IN_PROGRESS"
                     )
                 return "stage_submissions_manifest"
