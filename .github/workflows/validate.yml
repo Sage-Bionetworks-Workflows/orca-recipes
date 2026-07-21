@@ -34,8 +34,9 @@ jobs:
 
       - name: Run tests
         env:
-         CONFIG_URL: >-
-           https://raw.githubusercontent.com/Sage-Bionetworks-Workflows/orca-recipes/${{ github.sha }}/dags/challenge_configs.yaml
+          # Setting the configuration URL for the challenge configs
+          CONFIG_URL: >-
+            https://raw.githubusercontent.com/Sage-Bionetworks-Workflows/orca-recipes/${{ github.sha }}/dags/challenge_configs.yaml
         run: |
           python -m pytest tests/ -v --tb=short
 
