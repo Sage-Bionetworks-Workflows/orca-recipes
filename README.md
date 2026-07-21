@@ -202,49 +202,6 @@ DAG files with an `if __name__ == "__main__":` block that calls `dag.test()` can
 
 See section [Testing](./CONTRIBUTING.md#testing) in the CONTRIBUTING.md for more info on testing a dag and how you can bypass configuring with AWS.
 
-### Local Development (without Dev Container)
-
-If you want to test a DAG locally without Docker or Codespaces, you can run it directly against a local Airflow SQLite database.
-
-#### 1. Install dependencies
-
-```console
-pip install -r requirements-local-airflow.txt
-```
-
-Then install `synapseclient` separately. This must be done after the above to avoid a `urllib3` version conflict introduced by the Airflow constraints file:
-
-```console
-pip install "synapseclient[pandas]"
-```
-
-#### 2. Initialize the Airflow database
-
-```console
-airflow db migrate
-```
-
-This creates the local SQLite metadata database (including the `task_instance` table) that Airflow needs to run `dag.test()`.
-
-#### 3. Configure environment variables
-
-Set the following exports (e.g., in your shell profile) so Airflow can resolve connections and variables from AWS Secrets Manager and deserialize custom dataclasses passed between tasks:
-
-```console
-export AIRFLOW__SECRETS__BACKEND=airflow.providers.amazon.aws.secrets.secrets_manager.SecretsManagerBackend
-export AIRFLOW__SECRETS__BACKEND_KWARGS='{"connections_prefix": "airflow/connections", "variables_prefix": "airflow/variables", "profile_name": "<your-aws-profile>"}'
-export AIRFLOW__CORE__ALLOWED_DESERIALIZATION_CLASSES="airflow.* astro.* __main__.*"
-```
-
-You'll need to be authenticated to AWS with a profile (use `aws sso login --profile <<your-aws-profile>`) that has read access to the Secrets Manager secrets under `airflow/connections/` and `airflow/variables/`.
-
-#### 4. Run a DAG locally
-
-```console
-python dags/<your-dag-file>.py
-```
-
-DAG files with an `if __name__ == "__main__":` block that calls `dag.test()` can be run directly this way.
 
 ### Local DAGs
 
