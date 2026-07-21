@@ -41,9 +41,10 @@ from airflow.models.dag import DAG
 from airflow.models.param import Param
 from orca.services.nextflowtower import NextflowTowerHook
 from orca.services.nextflowtower.models import LaunchInfo
-from orca.services.synapse import SynapseHook
 from slack_sdk import WebClient
 
+from src.synapse_alerts import synapse_failure_callback
+from src.synapse_hook import SynapseHook
 from src.utils import validate_required_secrets
 
 
@@ -70,6 +71,7 @@ dag_params = {
         "rna_de_individual,rna_de_aggregate", type=["null", "string"]
     ),
     "dataset": Param(None, type=["null", "string"]),
+    "dev_user_list": Param("3485485", type="string"),  # DPE service team
 }
 
 dag_config = {
@@ -85,7 +87,15 @@ dag_config = {
 }
 
 
-@dag(**dag_config)
+@dag(
+    on_failure_callback=synapse_failure_callback(
+        message=(
+            "The Agora nf-agora workflow may have failed to launch or complete on "
+            "Nextflow Tower. Please review the task logs."
+        )
+    ),
+    **dag_config,
+)
 def agora_nf_run_dag() -> DAG:
     @task()
     def launch_agora_on_tower(**context: Any) -> str:

@@ -7,9 +7,11 @@ import synapseclient
 from airflow.decorators import dag, task
 from airflow.models.param import Param
 from airflow.providers.snowflake.hooks.snowflake import SnowflakeHook
-from orca.services.synapse import SynapseHook
 from airflow.utils.db import provide_session
 from airflow.models import XCom
+
+from src.synapse_hook import SynapseHook
+from src.synapse_alerts import synapse_failure_callback
 
 logger = logging.getLogger(__name__)
 
@@ -19,6 +21,7 @@ dag_params = {
     ),
     "synapse_conn_id": Param("SYNAPSE_GENIE_RUNNER_SERVICE_ACCOUNT_CONN", type="string"),
     "patient_sample_tracking_table_synid": Param("syn73623767", type="string"),
+    "dev_user_list": Param("3485485", type="string"),  # DPE service team
 }
 
 REQUIRED_COLS = [
@@ -125,6 +128,12 @@ def validate_patient_sample_results(
 
 
 @dag(
+    on_failure_callback=synapse_failure_callback(
+        message=(
+            "A Snowflake query or Synapse tracking table update for GENIE "
+            "patients/samples failed. Please review the task logs."
+        )
+    ),
     schedule_interval="0 1 28 * *", # run on the 28th of each month
     start_date=datetime(2025, 1, 1),
     catchup=False,

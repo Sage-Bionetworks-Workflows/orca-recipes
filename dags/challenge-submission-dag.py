@@ -2,14 +2,16 @@ from datetime import datetime
 
 from airflow.decorators import dag, task
 from airflow.models import Param
-
 from orca.services.nextflowtower import NextflowTowerHook
 from orca.services.nextflowtower.models import LaunchInfo
-from orca.services.synapse import SynapseHook
+
+from src.synapse_hook import SynapseHook
+from src.synapse_alerts import synapse_failure_callback
 
 
 dag_params = {
     "synapse_conn_id": Param("SYNAPSE_CHALLENGE_CONN", type="string"),
+    "dev_user_list": Param("3485485", type="string"),  # DPE service team
     "synapse_evaluation_id": Param("9615332", type="string"),
     "tower_conn_id": Param("EXAMPLE_PROJECT_TOWER_CONN", type="string"),
     "tower_run_name": Param("model_submission_evaluation", type="string"),
@@ -30,7 +32,16 @@ dag_config = {
 }
 
 
-@dag(**dag_config)
+@dag(
+    on_failure_callback=synapse_failure_callback(
+        message=(
+            "This may indicate an issue retrieving the model-to-data submission "
+            "from the Synapse evaluation queue or launching the nf-model2data "
+            "evaluation workflow on Nextflow Tower. Please review the task logs."
+        )
+    ),
+    **dag_config,
+)
 def challenge_submission_dag():
     @task.branch()
     def check_for_new_submissions(**context):

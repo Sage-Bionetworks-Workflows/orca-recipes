@@ -10,11 +10,14 @@ import synapseclient
 from airflow.decorators import dag, task
 from airflow.models.param import Param
 from airflow.providers.snowflake.hooks.snowflake import SnowflakeHook
+
 from src.synapse_hook import SynapseHook
+from src.synapse_alerts import synapse_failure_callback
 
 dag_params = {
     "snowflake_developer_service_conn": Param("SNOWFLAKE_DEVELOPER_SERVICE_RAW_CONN", type="string"),
     "synapse_conn_id": Param("SYNAPSE_ORCA_SERVICE_ACCOUNT_CONN", type="string"),
+    "dev_user_list": Param("3485485", type="string"),  # DPE service team
     "synapse_results_table": Param("syn55259224", type="string"),
 }
 
@@ -52,7 +55,17 @@ class DownloadMetric:
     data_download_size: float
 
 
-@dag(**dag_config)
+@dag(
+    on_failure_callback=synapse_failure_callback(
+        message=(
+            "The all-time public Synapse project download metrics DAG failed. "
+            "This may indicate a Snowflake query failure or warehouse schema "
+            "change, or an issue writing the cumulative all-time results to the "
+            "Synapse table. Please review the task logs."
+        )
+    ),
+    **dag_config,
+)
 def top_public_synapse_projects_all_time_from_snowflake() -> None:
     """Execute a query on Snowflake and report the results to a Synapse table."""
 

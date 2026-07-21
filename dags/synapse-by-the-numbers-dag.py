@@ -11,11 +11,14 @@ import synapseclient
 from airflow.decorators import dag, task
 from airflow.models.param import Param
 from airflow.providers.snowflake.hooks.snowflake import SnowflakeHook
+
 from src.synapse_hook import SynapseHook
+from src.synapse_alerts import synapse_failure_callback
 
 dag_params = {
     "snowflake_developer_service_conn": Param("SNOWFLAKE_DEVELOPER_SERVICE_RAW_CONN", type="string"),
     "synapse_conn_id": Param("SYNAPSE_ORCA_SERVICE_ACCOUNT_CONN", type="string"),
+    "dev_user_list": Param("3485485", type="string"),  # DPE service team
     # date string with the format: YYYY-MM-DD including the month that we want to run the queries for
     "month_to_run": Param((date.today() - relativedelta(months=1)).strftime("%Y-%m-%d"), type="string"),
     "synapse_results_table": Param("syn61588123", type="string"),
@@ -50,7 +53,18 @@ class DownloadMetric:
     total_downloads_last_month: int
 
 
-@dag(**dag_config)
+@dag(
+    on_failure_callback=synapse_failure_callback(
+        message=(
+            "The Synapse by the numbers DAG failed. This may indicate a "
+            "Snowflake query failure or warehouse schema change while computing "
+            "the monthly totals (hosted data size, active users, downloads), or "
+            "an issue writing the results to the Synapse table. Please review "
+            "the task logs."
+        )
+    ),
+    **dag_config,
+)
 def synapse_by_the_numbers_past_month() -> None:
     """Execute a query to gather the total amount of data hosted in Synapse,
     the number of active users in a month, and the number of downloads

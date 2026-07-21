@@ -5,14 +5,17 @@ import synapseclient
 from airflow.decorators import dag, task
 from airflow.models.param import Param
 from airflow.providers.snowflake.hooks.snowflake import SnowflakeHook
-from orca.services.synapse import SynapseHook
 from snowflake.connector.pandas_tools import write_pandas
+
+from src.synapse_alerts import synapse_failure_callback
+from src.synapse_hook import SynapseHook
 
 dag_params = {
     "snowflake_developer_service_conn": Param(
         "SNOWFLAKE_DEVELOPER_SERVICE_RAW_CONN", type="string"
     ),
     "synapse_conn_id": Param("SYNAPSE_ORCA_SERVICE_ACCOUNT_CONN", type="string"),
+    "dev_user_list": Param("3485485", type="string"),  # DPE service team
 }
 
 portal_dict = {
@@ -36,7 +39,15 @@ dag_config = {
 }
 
 
-@dag(**dag_config)
+@dag(
+    on_failure_callback=synapse_failure_callback(
+        message=(
+            "Loading portal data from Synapse into Snowflake may have failed. "
+            "Please review the task logs."
+        )
+    ),
+    **dag_config,
+)
 def portal_data_to_snowflake():
     @task
     def get_portal_data_from_synapse(**context):

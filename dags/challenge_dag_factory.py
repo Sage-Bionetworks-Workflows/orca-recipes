@@ -11,10 +11,12 @@ from airflow.models import Param, DagRun
 from airflow.providers.amazon.aws.hooks.s3 import S3Hook
 from airflow.utils.session import create_session
 from airflow.utils.state import State
-
 from orca.services.nextflowtower import NextflowTowerHook
 from orca.services.nextflowtower.models import LaunchInfo
-from orca.services.synapse import SynapseHook
+
+from src.synapse_hook import SynapseHook
+from src.synapse_alerts import synapse_failure_callback
+
 
 # Define the path to your challenge configuration file.
 CONFIG_URL = "https://raw.githubusercontent.com/Sage-Bionetworks-Workflows/orca-recipes/main/dags/challenge_configs.yaml"
@@ -175,6 +177,7 @@ def create_challenge_dag(challenge_name: str, config: dict):
     # Define parameters for the DAG, including new per-challenge settings.
     dag_params = {
         "synapse_conn_id": Param(config["synapse_conn_id"], type="string"),
+        "dev_user_list": Param("3485485", type="string"),  # DPE service team
         "aws_conn_id": Param(config["aws_conn_id"], type="string"),
         "revision": Param(config["revision"], type="string"),
         "challenge_profile": Param(config["challenge_profile"], type="string"),
@@ -191,7 +194,18 @@ def create_challenge_dag(challenge_name: str, config: dict):
     # Create a unique DAG ID for the challenge.
     dag_id = f"{challenge_name}_challenge_dag"
 
-    @dag(dag_id=dag_id, **dag_config)
+    @dag(
+        on_failure_callback=synapse_failure_callback(
+            message=(
+                "This may indicate an issue retrieving challenge submissions from "
+                "Synapse, staging the submissions manifest to S3, or launching or "
+                "monitoring the nf-synapse-challenge workflow on Nextflow Tower. "
+                "Please review the task logs."
+            )
+        ),
+        dag_id=dag_id,
+        **dag_config,
+    )
     def challenge_dag():
 
         @task
