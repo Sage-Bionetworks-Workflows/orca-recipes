@@ -1,4 +1,22 @@
-"""Unit/structural tests for all DAGs
+"""Unit/structural tests for all DAGs.
+
+These tests import DAGs in a separate subprocess to mimic Airflow's import
+environment as closely as possible. Running `DagBag` directly in the pytest
+process inherits pytest's `sys.path`, which includes the repository root and
+can mask import issues that would fail when Airflow parses DAGs.
+
+For example, this incorrect import succeeds under `python -m pytest` because
+the repository root is on `sys.path`:
+
+    from dags.src.utils ...
+
+However, Airflow imports DAGs relative to the configured DAG folder, so the
+correct import is:
+
+    from src.utils ...
+
+Using a fresh subprocess allows us to control PYTHONPATH and the working
+directory so DAG imports behave the same way they do when parsed by Airflow.
 """
 import json
 import os
