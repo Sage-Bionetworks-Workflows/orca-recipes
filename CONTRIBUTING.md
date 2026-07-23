@@ -707,6 +707,16 @@ By updating `challenge_configs.yaml` with your **challenge DAG config**, you can
 
 ----
 
+### Local development
+
+By default, `challenge_dag_factory.py` loads `challenge_configs.yaml` from the production (`main`) branch of this repository. To test changes to `challenge_configs.yaml` before they are merged, set the `CONFIG_URL` environment variable to either a local copy of the YAML file or the raw GitHub URL for your feature branch.
+
+For example, to test a feature branch:
+
+```console
+export CONFIG_URL="https://raw.githubusercontent.com/Sage-Bionetworks-Workflows/orca-recipes/<YOUR_BRANCH>/dags/challenge_configs.yaml"
+```
+
 ### Creating Your Challenge DAG Config
 
 Each challenge DAG config will have its own set of parameters depending on the customized workflow profile on [nf-synapse-challenge](https://github.com/Sage-Bionetworks-Workflows/nf-synapse-challenge/blob/main/nextflow.config) and what part of Synapse and AWS S3 the workflow will

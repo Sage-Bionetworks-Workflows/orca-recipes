@@ -18,8 +18,14 @@ from src.synapse_hook import SynapseHook
 
 
 # Define the path to your challenge configuration file.
-CONFIG_URL = "https://raw.githubusercontent.com/Sage-Bionetworks-Workflows/orca-recipes/main/dags/challenge_configs.yaml"
-
+CONFIG_URL = os.environ.get(
+    "CONFIG_URL",
+    (
+        "https://raw.githubusercontent.com/"
+        "Sage-Bionetworks-Workflows/orca-recipes/main/"
+        "dags/challenge_configs.yaml"
+    ),
+)
 
 def load_challenge_configs(url=CONFIG_URL):
     """Load challenge configurations from a raw GitHub URL."""
@@ -74,8 +80,8 @@ def enforce_utc_timezone(dag_config: dict):
 
             # Enforce UTC timezone
             dag_config[param] = dt.astimezone(timezone.utc)
-        
-    
+
+
 def resolve_dag_config(challenge_name: str, dag_params: dict, config: dict) -> dict:
     """
     Return the DAG configuration for a challenge.
@@ -92,7 +98,7 @@ def resolve_dag_config(challenge_name: str, dag_params: dict, config: dict) -> d
     Returns:
         dict: The resolved DAG configuration.
     """
-    
+
     # Start with default configuration
     dag_config = {
         "schedule": "*/3 * * * *",
@@ -106,10 +112,10 @@ def resolve_dag_config(challenge_name: str, dag_params: dict, config: dict) -> d
     # Update with any custom configuration if provided
     if config.get('dag_config'):
         dag_config.update(config['dag_config'])
-        
+
         # Ensure start_date/end_date is a datetime object in UTC
         enforce_utc_timezone(dag_config)
-            
+
         # Ensure challenge name is in tags
         if 'tags' in dag_config:
             if challenge_name not in dag_config['tags']:
@@ -264,7 +270,7 @@ def create_challenge_dag(challenge_name: str, config: dict):
 
             # Encode the data to bytes for the s3 upload
             submissions_bytes = submissions_content.encode("utf-8")
-            
+
             # Create a bytes bufferobject
             bytes_buffer = io.BytesIO(submissions_bytes)
 
