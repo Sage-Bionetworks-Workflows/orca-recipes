@@ -41,7 +41,6 @@ import json
 import os
 import re
 import tempfile
-import mimetypes
 from datetime import datetime
 from io import BytesIO
 from logging import NOTSET, Logger, getLogger
@@ -75,7 +74,7 @@ from synapseclient.core.exceptions import (SynapseAuthenticationError,
                                            SynapseHTTPError)
 from synapseclient.core.retry import with_retry
 from synapseclient.models import File
-from synapseclient.core.utils import delete_none_keys
+from src.croissant_utils import build_croissant_metadata
 
 from src.synapse_hook import SynapseHook
 
@@ -303,27 +302,20 @@ def get_file_instances(
     return file_metadata
 
 
-def construct_distribution_section_for_files(files_attached_to_dataset: List[File], **context) -> List[Dict[str, str]]:
+def query_snowflake_for_file_md5_and_types(files_attached_to_dataset: List[File], **context) -> DataFrame:
     """
-    Construct the distribution section for the files attached to the dataset. This is
-    used to extract various metadata from the files and create a FileObject for each
-    file.
-
-
-    When we do not have the content_md5 for a file, we need to query Snowflake to get
-    the content_md5 for the file. This is done by querying the synapse_data_warehouse
-    database in Snowflake.
+    Query the synapse_data_warehouse database in Snowflake for the content_md5 and
+    content type of each file attached to the dataset. The resulting DataFrame is
+    passed to `build_croissant_metadata` to construct the distribution section.
 
     Arguments:
         files_attached_to_dataset: The list of files attached to the dataset.
         context: The context of the DAG run.
 
     Returns:
-        The distribution section for the files attached to the dataset.
+        A DataFrame with columns `ID`, `CONTENTMD5`, and `CONTENT_TYPE` for the
+        files, or an empty DataFrame when there are no files to look up.
     """
-    distribution_files = []
-    files_to_find_md5_in_snowflake = {}
-
     ids_of_files = []
     id_and_version_pairs = []
     for file in files_attached_to_dataset:
@@ -332,133 +324,46 @@ def construct_distribution_section_for_files(files_attached_to_dataset: List[Fil
         ids_of_files.append(modified_file_id)
         id_and_version_pairs.append(modified_file_id)
         id_and_version_pairs.append(file.version_number)
-        files_to_find_md5_in_snowflake[int(file.id.replace(
-            "syn", ""))] = file.version_number
 
-    file_md5_and_types = None
-    if ids_of_files:
-        snow_hook = SnowflakeHook(
-            context["params"]["snowflake_developer_service_conn"])
-        ctx = snow_hook.get_conn()
-        cs = ctx.cursor()
+    if not ids_of_files:
+        return DataFrame()
 
-        query = f"""
-        WITH version_data AS (
-            SELECT
-                nl.id,
-                flattened.value:versionNumber::int AS versionNumber,
-                flattened.value:contentMd5::string AS contentMd5,
-                flattened.value:fileHandleId::int AS fileHandleId
-            FROM synapse_data_warehouse.synapse.node_latest AS nl,
-            LATERAL FLATTEN(input => nl.VERSION_HISTORY) AS flattened
-            WHERE nl.id IN ({', '.join(['%s'] * len(ids_of_files))})
-            AND nl.is_public = TRUE
-        )
+    snow_hook = SnowflakeHook(
+        context["params"]["snowflake_developer_service_conn"])
+    ctx = snow_hook.get_conn()
+    cs = ctx.cursor()
+
+    query = f"""
+    WITH version_data AS (
         SELECT
-            vd.id,
-            vd.versionNumber,
-            vd.contentMd5,
-            vd.fileHandleId,
-            COALESCE(fl.content_type, 'NOT_SET') as CONTENT_TYPE,
-        FROM version_data AS vd
-        LEFT JOIN synapse_data_warehouse.synapse.file_latest fl
-            ON fl.id = vd.fileHandleId
-        WHERE (vd.id, vd.versionNumber) IN ({', '.join(['(%s, %s)'] * (len(id_and_version_pairs)//2))});
-        """
-        try:
-            cs.execute(
-                query,
-                (ids_of_files + id_and_version_pairs),
-            )
-            file_md5_and_types = cs.fetch_pandas_all()
-        finally:
-            cs.close()
-
-    for file in files_attached_to_dataset:
-        file: File = file
-        if not file_md5_and_types.empty and int(file.id.replace("syn", "")) in file_md5_and_types["ID"].values:
-            file_md5 = file_md5_and_types.loc[file_md5_and_types["ID"] == int(
-                file.id.replace("syn", "")), "CONTENTMD5"].values[0]
-
-            file_content_type = file_md5_and_types.loc[file_md5_and_types["ID"] == int(
-                file.id.replace("syn", "")), "CONTENT_TYPE"].values[0]
-        else:
-            file_md5 = "unknown_md5"
-
-        if not file_content_type or file_content_type == "NOT_SET":
-            if file.file_handle and file.file_handle.file_name:
-                file_content_type = mimetypes.guess_type(
-                    file.file_handle.file_name, strict=False)[0]
-            else:
-                file_content_type = mimetypes.guess_type(
-                    file.name, strict=False)[0]
-
-            if not file_content_type:
-                # For binary documents without a specific or known subtype, application/octet-stream should be used.
-                # Source: https://developer.mozilla.org/en-US/docs/Web/HTTP/Guides/MIME_types
-                file_content_type = "application/octet-stream"
-
-        distribution_files.append(
-            {
-                "@type": "FileObject",
-                "@id": f"{file.id}.{file.version_number}",
-                "name": f"{file.name}",
-                "description": file.description if file.description else f"Data file associated with {file.name}",
-                "contentUrl": f"https://www.synapse.org/Synapse:{file.id}.{file.version_number}",
-                "encodingFormat": file_content_type,
-                "md5": file_md5,
-                "sha256": "unknown",
-            }
-        )
-    return distribution_files
-
-
-def construct_record_set_section_for_files(files_attached_to_dataset: List[File]) -> Dict[str, str]:
+            nl.id,
+            flattened.value:versionNumber::int AS versionNumber,
+            flattened.value:contentMd5::string AS contentMd5,
+            flattened.value:fileHandleId::int AS fileHandleId
+        FROM synapse_data_warehouse.synapse.node_latest AS nl,
+        LATERAL FLATTEN(input => nl.VERSION_HISTORY) AS flattened
+        WHERE nl.id IN ({', '.join(['%s'] * len(ids_of_files))})
+        AND nl.is_public = TRUE
+    )
+    SELECT
+        vd.id,
+        vd.versionNumber,
+        vd.contentMd5,
+        vd.fileHandleId,
+        COALESCE(fl.content_type, 'NOT_SET') as CONTENT_TYPE,
+    FROM version_data AS vd
+    LEFT JOIN synapse_data_warehouse.synapse.file_latest fl
+        ON fl.id = vd.fileHandleId
+    WHERE (vd.id, vd.versionNumber) IN ({', '.join(['(%s, %s)'] * (len(id_and_version_pairs)//2))});
     """
-    Construct the record set section for the files attached to the dataset. This is used
-    to extract the keys from the annotations of the files and create a Field for each
-    key.
-
-    Arguments:
-        files_attached_to_dataset: The list of files attached to the dataset.
-
-    Returns:
-        The record set section for the files attached to the dataset.
-    """
-    unique_annotation_keys = set()
-
-    for file in files_attached_to_dataset:
-        file: File = file
-        file_annotations = file.annotations.keys()
-        for key in file_annotations:
-            unique_annotation_keys.add(key)
-
-    metadata_fields = []
-    # Sort the set of unique_annotation_keys ignoring case, but keep the case in the result
-    unique_annotation_keys = sorted(unique_annotation_keys, key=str.casefold)
-
-    for key in unique_annotation_keys:
-        metadata_fields.append(
-            {
-                "@type": "Field",
-                "@id": f"metadata/{key}",
-                "name": key,
-                "description": "",
-                "dataType": "sc:Text",
-                "source": {
-                    "fileObject": {"@id": "metadata"},
-                    "extract": {"column": key}
-                }
-            }
+    try:
+        cs.execute(
+            query,
+            (ids_of_files + id_and_version_pairs),
         )
-
-    return {
-        "@type": "RecordSet",
-        "@id": "default",
-        "name": "default",
-        "description": "Metadata for the dataset",
-        "field": metadata_fields
-    }
+        return cs.fetch_pandas_all()
+    finally:
+        cs.close()
 
 
 def extract_s3_objects_to_delete(bucket_objects: List[str], dataset_collections_to_consider_for_deletion: List[str], combined_dataset_collection_and_datasets: List[Dict[str, str]]) -> List[str]:
@@ -1076,107 +981,16 @@ def dataset_to_croissant() -> None:
 
             span.set_attribute("airflow.croissant_result", True)
 
-            # The distribution section of the croissant file is used to describe the
-            # files that are attached to the dataset. The first `metadata` file is
-            # used to describe the metadata associated with the dataset and where to find
-            # it on the Synapse server (The Dataset view)
-            distribution_files = [{
-                "@type": "FileObject",
-                "@id": "metadata",
-                "contentUrl": f"https://www.synapse.org/Synapse:{dataset_id}.{dataset_version}",
-                "name": "metadata",
-                "description": f"Metadata associated with {dataset.name}",
-                "encodingFormat": "application/csv",
-                "md5": "unknown",
-                "sha256": "unknown"
-            }] + construct_distribution_section_for_files(files_attached_to_dataset, **context)
+            file_md5_and_types = query_snowflake_for_file_md5_and_types(
+                files_attached_to_dataset=files_attached_to_dataset, **context)
 
-            record_set = construct_record_set_section_for_files(
-                files_attached_to_dataset=files_attached_to_dataset)
-
-            croissant_file = {
-                "@context": {
-                    "@language": "en",
-                    "@vocab": "https://schema.org/",
-                    "citeAs": "cr:citeAs",
-                    "column": "cr:column",
-                    "conformsTo": "dct:conformsTo",
-                    "cr": "http://mlcommons.org/croissant/",
-                    "rai": "http://mlcommons.org/croissant/RAI/",
-                    "data": {
-                        "@id": "cr:data",
-                        "@type": "@json"
-                    },
-                    "dataType": {
-                        "@id": "cr:dataType",
-                        "@type": "@vocab"
-                    },
-                    "dct": "http://purl.org/dc/terms/",
-                    "examples": {
-                        "@id": "cr:examples",
-                        "@type": "@json"
-                    },
-                    "extract": "cr:extract",
-                    "field": "cr:field",
-                    "fileProperty": "cr:fileProperty",
-                    "fileObject": "cr:fileObject",
-                    "fileSet": "cr:fileSet",
-                    "format": "cr:format",
-                    "includes": "cr:includes",
-                    "isLiveDataset": "cr:isLiveDataset",
-                    "jsonPath": "cr:jsonPath",
-                    "key": "cr:key",
-                    "md5": "cr:md5",
-                    "parentField": "cr:parentField",
-                    "path": "cr:path",
-                    "recordSet": "cr:recordSet",
-                    "references": "cr:references",
-                    "regex": "cr:regex",
-                    "repeated": "cr:repeated",
-                    "replace": "cr:replace",
-                    "sc": "https://schema.org/",
-                    "separator": "cr:separator",
-                    "source": "cr:source",
-                    "subField": "cr:subField",
-                    "transform": "cr:transform"
-                },
-                "@type": "Dataset",
-                "@id": f"{dataset_id}.{dataset_version}",
-                "name": f"{dataset.name}",
-                "description": dataset.description if hasattr(dataset, "description") and dataset.description else f"Dataset for {dataset.name}",
-                "url": f"https://www.synapse.org/Synapse:{dataset_id}.{dataset_version}",
-                "datePublished": dataset.modifiedOn,
-                "license": dataset.license[0] if hasattr(dataset, "license") else "unknown_license",
-                "version": dataset_version,
-                "dct:conformsTo": "http://mlcommons.org/croissant/1.0",
-                # https://github.com/nf-osi/nf-metadata-dictionary/blob/main/registered-json-schemas/PortalDataset.json
-                # These fields are derived from: https://raw.githubusercontent.com/nf-osi/nf-metadata-dictionary/refs/heads/main/registered-json-schemas/PortalDataset.json
-                # If a more specific schema is needed, then we can add a mapping for the dataset to point to the schema and pull these in dynamically.
-                "accessType": dataset.accessType[0] if hasattr(dataset, "accessType") else None,
-                "alternateName": dataset.alternateName[0] if hasattr(dataset, "alternateName") else None,
-                "citation": dataset.citation[0] if hasattr(dataset, "citation") else None,
-                "conditionsOfAccess": dataset.conditionsOfAccess[0] if hasattr(dataset, "conditionsOfAccess") else None,
-                "countryOfOrigin": dataset.countryOfOrigin if hasattr(dataset, "countryOfOrigin") else None,
-                "dataType": dataset.dataType if hasattr(dataset, "dataType") else None,
-                "dataUseModifiers": dataset.dataUseModifiers if hasattr(dataset, "dataUseModifiers") else None,
-                "diseaseFocus": dataset.diseaseFocus if hasattr(dataset, "diseaseFocus") else None,
-                "funder": dataset.funder if hasattr(dataset, "funder") else None,
-                "individualCount": dataset.individualCount[0] if hasattr(dataset, "individualCount") else None,
-                "keywords": dataset.keywords if hasattr(dataset, "keywords") else None,
-                "manifestation": dataset.manifestation if hasattr(dataset, "manifestation") else None,
-                "measurementTechnique": dataset.measurementTechnique if hasattr(dataset, "measurementTechnique") else None,
-                "series": dataset.series[0] if hasattr(dataset, "series") else None,
-                "species": dataset.species if hasattr(dataset, "species") else None,
-                "specimenCount": dataset.specimenCount[0] if hasattr(dataset, "specimenCount") else None,
-                "studyId": dataset.studyId[0] if hasattr(dataset, "studyId") else None,
-                "subject": dataset.subject if hasattr(dataset, "subject") else None,
-                "title": dataset.title[0] if hasattr(dataset, "title") else None,
-                "visualizeDataOn": dataset.visualizeDataOn if hasattr(dataset, "visualizeDataOn") else None,
-                "yearProcessed": dataset.yearProcessed[0] if hasattr(dataset, "yearProcessed") else None,
-                "distribution": distribution_files,
-                "recordSet": record_set,
-            }
-            delete_none_keys(croissant_file)
+            croissant_file = build_croissant_metadata(
+                dataset=dataset,
+                dataset_id=dataset_id,
+                dataset_version=dataset_version,
+                files_attached_to_dataset=files_attached_to_dataset,
+                file_md5_and_types=file_md5_and_types,
+            )
 
             # The logic to push the file to S3 and push to Synapse is occurring within
             # the same DAG task is to prevent any issues with the large amount of
