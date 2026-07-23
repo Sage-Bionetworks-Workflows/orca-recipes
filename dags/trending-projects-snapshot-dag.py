@@ -21,7 +21,8 @@ import synapseclient
 from airflow.decorators import dag, task
 from airflow.models.param import Param
 from airflow.providers.snowflake.hooks.snowflake import SnowflakeHook
-from orca.services.synapse import SynapseHook
+
+from src.synapse_hook import SynapseHook
 
 
 SYNAPSE_RESULTS_TABLE = "syn61597055"
@@ -36,7 +37,7 @@ dag_params = {
 
 dag_config = {
     # run on the 2nd of every month at midnight
-    "schedule_interval": "0 0 2 * *",
+    "schedule": "0 0 2 * *",
     "start_date": datetime(2024, 1, 1),
     "catchup": False,
     "default_args": {

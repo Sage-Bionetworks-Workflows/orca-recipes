@@ -60,7 +60,7 @@ dag_params = {
 
 
 @dag(
-    schedule_interval="*/15 * * * *",  # Run every 15 minutes
+    schedule="*/15 * * * *",  # Run every 15 minutes
     start_date=datetime(2023, 1, 1),
     catchup=False,
     default_args={

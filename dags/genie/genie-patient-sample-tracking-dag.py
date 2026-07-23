@@ -7,9 +7,10 @@ import synapseclient
 from airflow.decorators import dag, task
 from airflow.models.param import Param
 from airflow.providers.snowflake.hooks.snowflake import SnowflakeHook
-from orca.services.synapse import SynapseHook
 from airflow.utils.db import provide_session
 from airflow.models import XCom
+
+from src.synapse_hook import SynapseHook
 
 logger = logging.getLogger(__name__)
 
@@ -125,7 +126,7 @@ def validate_patient_sample_results(
 
 
 @dag(
-    schedule_interval="0 1 28 * *", # run on the 28th of each month
+    schedule="0 1 28 * *", # run on the 28th of each month
     start_date=datetime(2025, 1, 1),
     catchup=False,
     default_args={"retries": 1},
