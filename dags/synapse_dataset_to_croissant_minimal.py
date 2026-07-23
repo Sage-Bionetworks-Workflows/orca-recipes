@@ -65,7 +65,6 @@ from src.synapse_hook import SynapseHook
 dag_params = {
     "synapse_conn_id": Param("SYNAPSE_ORCA_SERVICE_ACCOUNT_CONN", type="string"),
     "push_results_to_s3": Param(True, type="boolean"),
-    "aws_conn_id": Param("AWS_SYNAPSE_CROISSANT_METADATA_S3_CONN", type="string"),
     "push_links_to_synapse": Param(True, type="boolean"),
     "delete_out_of_date_from_s3": Param(True, type="boolean"),
     "delete_out_of_date_from_synapse": Param(True, type="boolean"),
@@ -253,7 +252,7 @@ def execute_push_to_s3(dataset: Entity, dataset_id: str, s3_key: str, croissant_
             'utf-8')
         metadata_file = BytesIO(croissant_metadata_bytes)
         s3_hook = S3Hook(
-            aws_conn_id=context["params"]["aws_conn_id"], region_name=REGION_NAME, extra_args={
+            aws_conn_id=None, region_name=REGION_NAME, extra_args={
                 "ContentType": "application/ld+json"
             }
         )
@@ -444,7 +443,7 @@ def save_minimal_jsonld_to_s3() -> None:
         """
         with otel_tracer.start_as_current_span("delete_non_current_files_from_s3", context=TraceContextTextMapPropagator().extract(root_carrier_context)) as span:
             s3_hook = S3Hook(
-                aws_conn_id=context["params"]["aws_conn_id"], region_name=REGION_NAME)
+                aws_conn_id=None, region_name=REGION_NAME)
             bucket_objects = s3_hook.list_keys(bucket_name=BUCKET_NAME)
 
             objects_to_delete = extract_s3_objects_to_delete(
