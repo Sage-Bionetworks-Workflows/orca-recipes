@@ -19,8 +19,10 @@ from airflow.decorators import dag, task
 from airflow.models.param import Param
 from airflow.providers.snowflake.hooks.snowflake import SnowflakeHook
 from airflow.providers.slack.hooks.slack import SlackHook
-from src.synapse_hook import SynapseHook
 import json
+
+from src.synapse_hook import SynapseHook
+
 
 dag_params = {
     "snowflake_developer_service_conn": Param(

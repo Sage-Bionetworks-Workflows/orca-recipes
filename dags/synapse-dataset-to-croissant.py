@@ -69,7 +69,6 @@ from opentelemetry.sdk.trace import Tracer, TracerProvider
 from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.trace.propagation.tracecontext import \
     TraceContextTextMapPropagator
-from orca.services.synapse import SynapseHook
 from pandas import DataFrame
 from synapseclient import Entity, Synapse, Table
 from synapseclient.core.exceptions import (SynapseAuthenticationError,
@@ -77,6 +76,8 @@ from synapseclient.core.exceptions import (SynapseAuthenticationError,
 from synapseclient.core.retry import with_retry
 from synapseclient.models import File
 from synapseclient.core.utils import delete_none_keys
+
+from src.synapse_hook import SynapseHook
 
 dag_params = {
     "snowflake_developer_service_conn": Param("SNOWFLAKE_DEVELOPER_SERVICE_RAW_CONN", type="string"),
@@ -87,12 +88,11 @@ dag_params = {
     "delete_out_of_date_from_s3": Param(True, type="boolean"),
     "delete_out_of_date_from_synapse": Param(True, type="boolean"),
     "dataset_collections_for_cleanup": Param(["syn50913342", "syn68939725", "syn71493541", "syn74529385"], type="array"),
-    "aws_conn_id": Param("AWS_SYNAPSE_CROISSANT_METADATA_S3_CONN", type="string"),
 }
 
 dag_config = {
     # Every Monday
-    "schedule_interval": "0 0 * * 1",
+    "schedule": "0 0 * * 1",
     "start_date": datetime(2025, 2, 1),
     "catchup": False,
     "max_active_tasks": 4,
@@ -619,7 +619,7 @@ def execute_push_to_s3(dataset: Entity, dataset_id: str, dataset_version: str, s
             'utf-8')
         metadata_file = BytesIO(croissant_metadata_bytes)
         s3_hook = S3Hook(
-            aws_conn_id=context["params"]["aws_conn_id"], region_name=REGION_NAME, extra_args={
+            aws_conn_id=None, region_name=REGION_NAME, extra_args={
                 "ContentType": "application/ld+json"
             }
         )
@@ -752,7 +752,6 @@ def dataset_to_croissant() -> None:
                             where links back to Synapse entities are connected with the S3
                             object. When this is filled this array is used to filter the
                             S3 objects which will be considered for deletion.
-    - `aws_conn_id`: The connection ID for the AWS connection. Used to authenticate with S3.
     """
 
     @task
@@ -907,7 +906,7 @@ def dataset_to_croissant() -> None:
         """
         with otel_tracer.start_as_current_span("delete_non_current_files_from_s3", context=TraceContextTextMapPropagator().extract(root_carrier_context)) as span:
             s3_hook = S3Hook(
-                aws_conn_id=context["params"]["aws_conn_id"], region_name=REGION_NAME)
+                aws_conn_id=None, region_name=REGION_NAME)
             bucket_objects = s3_hook.list_keys(bucket_name=BUCKET_NAME)
 
             objects_to_delete = extract_s3_objects_to_delete(
