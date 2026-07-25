@@ -11,6 +11,7 @@ from airflow.decorators import dag, task
 from airflow.models import Variable
 from airflow.models.param import Param
 from airflow.providers.snowflake.hooks.snowflake import SnowflakeHook
+
 from src.synapse_hook import SynapseHook
 
 dag_params = {
