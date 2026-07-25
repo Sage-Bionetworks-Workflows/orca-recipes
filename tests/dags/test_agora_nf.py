@@ -26,6 +26,7 @@ def fake_context() -> dict[str, dict[str, Any]]:
         "params": {
             "tower_conn_id": "nextflow_default",
             "synapse_conn_id": "synapse_default",
+            "dpe_slack_bot_conn": "slack_default",
             "tower_compute_env_type": "agora-project-ondemand-v13-test",
             "tower_run_name": RUN_NAME,
             "pipeline": "Sage-Bionetworks-Workflows/nf-agora",
@@ -126,19 +127,17 @@ def test_generate_message(
     assert f"Duration (submission to completion): {complete - submit}" in message
     assert f"Dataset: {expected_dataset}" in message
 
-def test_post_slack_messages() -> None:
+def test_post_slack_messages(fake_context: dict[str, dict[str, Any]]) -> None:
     """Tests that post_slack_messages returns True when the Slack API call succeeds."""
-    with (
-        patch("dags.agora_nf.WebClient") as mock_web_client,
-        patch("dags.agora_nf.Variable.get", return_value="fake-token"),
-    ):
-        mock_web_client.return_value.chat_postMessage.return_value = {"ok": True}
+    with patch("dags.agora_nf.SlackHook") as mock_slack_hook:
+        mock_client = mock_slack_hook.return_value.client
+        mock_client.chat_postMessage.return_value = {"ok": True}
 
         raw_python_function = dag.get_task("post_slack_messages").python_callable
-        result = raw_python_function(message="Test message")
+        result = raw_python_function(message="Test message", **fake_context)
 
         assert result is True
-        mock_web_client.return_value.chat_postMessage.assert_called_once()
+        mock_client.chat_postMessage.assert_called_once()
 
 
 def test_post_email_messages(fake_context: dict[str, dict[str, Any]]) -> None:
