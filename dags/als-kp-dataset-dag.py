@@ -25,7 +25,7 @@ from jsonata import jsonata
 from jsonschema import validate, ValidationError
 from synapseclient.models import Dataset, DatasetCollection, File
 import pandas as pd
-from slack_sdk import WebClient
+from airflow.providers.slack.hooks.slack import SlackHook
 
 from src.synapse_hook import SynapseHook
 
@@ -45,6 +45,7 @@ dag_params = {
     "ignore_cpath_datasets": Param("syn68737367", type="string"),
     "collection_id": Param("syn66496326", type="string"),
     "synapse_conn_id": Param("SYNAPSE_ORCA_SERVICE_ACCOUNT_CONN", type="string"),
+    "dpe_slack_bot_conn": Param("DPE_SLACK_BOT_CONN", type="string"),
 }
 
 dag_config = {
@@ -299,7 +300,7 @@ def als_kp_dataset_dag():
         return message
 
     @task
-    def post_slack_messages(message: str) -> None:
+    def post_slack_messages(message: str, **context) -> None:
         """
         Post a message to the designated Slack channel.
 
@@ -308,13 +309,14 @@ def als_kp_dataset_dag():
 
         Args:
             message (str): The message string to be posted.
+            context: Airflow task context; used to read the dpe_slack_bot_conn param.
 
         Returns:
             None
         """
         if not message:
             return
-        client = WebClient(token=Variable.get("SLACK_DPE_TEAM_BOT_TOKEN"))
+        client = SlackHook(slack_conn_id=context["params"]["dpe_slack_bot_conn"]).client
         client.chat_postMessage(channel="amp-als", text=message)
 
     @task

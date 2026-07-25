@@ -36,12 +36,11 @@ from datetime import datetime
 from typing import Any
 
 from airflow.decorators import dag, task
-from airflow.models import Variable
 from airflow.models.dag import DAG
 from airflow.models.param import Param
 from orca.services.nextflowtower import NextflowTowerHook
 from orca.services.nextflowtower.models import LaunchInfo
-from slack_sdk import WebClient
+from airflow.providers.slack.hooks.slack import SlackHook
 
 from src.synapse_hook import SynapseHook
 from src.utils import validate_required_secrets
@@ -55,6 +54,7 @@ SYNAPSE_TEAM_ID = os.environ.get("SYNAPSE_TEAM_ID", "3600443") # ADT Airflow Not
 
 dag_params = {
     "synapse_conn_id": Param("SYNAPSE_ORCA_SERVICE_ACCOUNT_CONN", type="string"),
+    "dpe_slack_bot_conn": Param("DPE_SLACK_BOT_CONN", type="string"),
     "tower_conn_id": Param(
         "AGORA_PROJECT_TOWER_CONN", type="string"
     ),  # personal access token belongs to Lingling Peng
@@ -170,16 +170,17 @@ def agora_nf_run_dag() -> DAG:
         return message
 
     @task
-    def post_slack_messages(message: str) -> bool:
+    def post_slack_messages(message: str, **context: Any) -> bool:
         """Post the workflow summary message to the configured Slack channel.
 
         Args:
             message: Summary message produced by generate_message.
+            context: Airflow task context; used to read the dpe_slack_bot_conn param.
 
         Returns:
             True if the Slack API call returned a result, False otherwise.
         """
-        client = WebClient(token=Variable.get("SLACK_DPE_TEAM_BOT_TOKEN"))
+        client = SlackHook(slack_conn_id=context["params"]["dpe_slack_bot_conn"]).client
         result = client.chat_postMessage(channel=SLACK_CHANNEL, text=message)
         print(f"Result of posting to slack: [{result}]")
         return result is not None
@@ -216,7 +217,8 @@ if __name__ == "__main__":
         connection_ids=[
             dag_params["tower_conn_id"].value,
             dag_params["synapse_conn_id"].value,
+            dag_params["dpe_slack_bot_conn"].value,
         ],
-        variable_names=["SLACK_DPE_TEAM_BOT_TOKEN"],
+        variable_names=[],
     )
     dag.test(run_conf={"dataset": "model_details"})
