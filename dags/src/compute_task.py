@@ -8,17 +8,15 @@ from the real ComputeTask instead.
 
 What a real ComputeTask is expected to own (and how it's faked here):
 
-- ``record_set_id``: the input samplesheet RecordSet. A 1:1 task -> recordset
+- record_set_id: the input samplesheet RecordSet. A 1:1 task -> recordset
   link. Faked as a hardcoded DAG param for now; future: a task property
-  (``RecordBasedMetadataTaskProperties.recordSetId``) read straight off the task.
-- launch info: the synstage / sarek / synindex ``LaunchInfo`` specs. Built here
+- (RecordBasedMetadataTaskProperties.recordSetId) read straight off the task.
+- launch info: the synstage / sarek / synindex LaunchInfo specs. Built here
   from params for now; future: the launch info is captured within the Synapse
   compute task, so these methods read it off the task.
-- ``task_status``: read from a ``task_status`` *annotation* on the RecordSet for
-  now (settable today for testing); future: a real task field.
+- task_status: read from a task_status annotation on the RecordSet for
+  now (settable today for testing), in the future, this will be a real task field.
 
-Nothing here imports Airflow, so it stays unit-testable and usable from any
-runner.
 """
 
 from __future__ import annotations
