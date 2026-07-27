@@ -8,7 +8,7 @@ Orchestrates four steps:
   4. nf-synapse synindex  : Index results back to Synapse
 
 Somatic mode is set by the samplesheet, not a flag: a tumor (status=1) and matched
-normal (status=0) sharing a `patient` id trigger tumor-vs-normal calling.
+normal (status=0) sharing a patient id trigger tumor-vs-normal calling.
 
 Config reproduces the JHU NF1 Biobank release-2 run (JH_batch1): sarek 3.1.2,
 GATK.GRCh38, WES + Agilent V6 intervals, callers strelka,mutect2,vep.
@@ -18,18 +18,6 @@ Prerequisites:
   - SYNAPSE_AUTH_TOKEN set as a Tower workspace secret (not a user secret).
   - Airflow connections configured for Synapse, Nextflow Tower, and AWS.
 
-DAG Parameters:
-- `synapse_conn_id`: Connection ID for the Synapse service account.
-- `tower_conn_id`: Connection ID for the Nextflow Tower workspace.
-- `tower_compute_env_type`: Tower compute environment filter to launch runs on.
-- `aws_conn_id`: Connection ID used to stage the samplesheet into S3.
-- `samplesheet_id`: Synapse ID of the samplesheet to run.
-- `samplesheet_name`: File name of the samplesheet.
-- `samplesheet_version`: Synapse version to fetch (null = latest).
-- `output_folder_id`: Synapse folder where synindex uploads results.
-- `bucket_name` / `staging_key`: S3 staging location for the run.
-- `institution`: sample-generating institution ('JH' or 'WU'); selects the BED.
-- `run_number`: run version (increment for a clean rerun preserving outputs).
 """
 
 import csv
@@ -212,18 +200,15 @@ def prepare_synindex_launch_info(dataset: Dataset) -> LaunchInfo:
 
 
 def fetch_samplesheet_from_record_set(params: dict[str, Any]) -> None:
-    """Alternative to the `fetch_samplesheet` task: materialize the synstage input
+    """Alternative to the fetch_samplesheet task: materialize the synstage input
     samplesheet from a Synapse RecordSet instead of a curated CSV file.
 
-    This is the intended future source of the samplesheet. Wire it in later by
-    replacing the body of the `fetch_samplesheet` task with:
+    This is the intended future source of the samplesheet.
 
-        fetch_samplesheet_from_record_set(context["params"])
-
-    The RecordSet (`params['record_set_id']`) is expected to export the samplesheet
+    The RecordSet (params['record_set_id']) is expected to export the samplesheet
     (columns patient,sample,fastq_1,fastq_2,lane,status; fastqs as syn:// URIs)
     that synstage consumes. It is downloaded to a temp CSV and uploaded to the same
-    S3 `to_stage` location the current method uses, so nothing downstream changes.
+    S3 to_stage location the current method uses, so nothing downstream changes.
     """
     import tempfile
 
@@ -248,32 +233,21 @@ RECORD_SET_READY_STATUS = "COMPLETE"
 
 
 def record_set_ready(params: dict[str, Any]) -> bool:
-    """Poll check: is the RecordSet's `task_status` COMPLETE (ready for processing)?
+    """Poll check: is the RecordSet's task_status COMPLETE (ready for processing)?
 
-    NOT WIRED INTO THIS DAG YET. Intended to back an Airflow sensor that polls the
+    Intended to back an Airflow sensor that polls the
     RecordSet every 10 seconds until the upstream compute task marks it complete,
-    gating the rest of the pipeline. `mode="poke"` (not "reschedule") is what makes
+    gating the rest of the pipeline. mode="poke" (not "reschedule") is what makes
     a true ~10s cadence possible, since the sensor holds a worker slot and re-checks
-    every `poke_interval`. Wire it in later as the first step, e.g.:
+    every poke_interval.
 
-        @task.sensor(poke_interval=10, timeout=60 * 60 * 24, mode="poke")
-        def wait_for_record_set(**context: Any) -> bool:
-            return record_set_ready(context["params"])
+    There is no native task_status field on a Synapse RecordSet yet, so for now
+    this reads a task_status entity annotation
 
-        ready = wait_for_record_set()
-        ready >> fetch_samplesheet()   # (swapped to the RecordSet source)
+    TODO: Swap the annotation read for the real field once it exists.
 
-    There is no native `task_status` field on a Synapse RecordSet yet, so for now
-    this reads a `task_status` *entity annotation* -- which you can set today to
-    test, e.g.:
-
-        from synapseclient.models import RecordSet
-        rs = RecordSet(id="syn123").get()
-        rs.annotations["task_status"] = ["COMPLETE"]
-        rs.store()
-
-    Swap the annotation read for the real field once it exists. Returns True once
-    the RecordSet's `task_status` equals ``COMPLETE``.
+    Returns: bool, True once
+        the RecordSet's task_status equals COMPLETE.
     """
     from synapseclient.models import RecordSet
 
@@ -309,16 +283,18 @@ dag_params = {
     "synapse_conn_id": Param("SYNAPSE_ORCA_SERVICE_ACCOUNT_CONN", type="string"),
     "tower_conn_id": Param("NTAP_ADD5_PROJECT_TOWER_CONN", type="string"),
     "tower_compute_env_type": Param("spot", type="string"),
-    "aws_conn_id": Param("AWS_DNT_DEV_SQS_CONN", type="string"),
-    "samplesheet_id": Param("syn52236715", type="string"),
+    # AWS identity for S3 staging. Must have access to bucket_name (the Tower
+    # bucket), which lives in a different account than Airflow's secrets backend.
+    "aws_conn_id": Param("AWS_TOWER_PROD_S3_CONN", type="string"),
+    "samplesheet_id": Param("syn76340211", type="string"),
     "samplesheet_name": Param(
-        "sarek_JH_batch1_1_reprocess_samplesheet.csv", type="string"
+        "jhu_biobank_wes_demo_samplesheet_test_for_airflow.csv", type="string"
     ),
     "samplesheet_version": Param(None, type=["null", "integer"]),
     # RecordSet exposing the samplesheet; used by the alternative
     # fetch_samplesheet_from_record_set() source (not wired in yet).
-    "record_set_id": Param(None, type=["null", "string"]),
-    "output_folder_id": Param("TODO-syn-JH_batch1-output-folder", type="string"),
+    "record_set_id": Param("syn76458430", type=["null", "string"]),
+    "output_folder_id": Param("syn76340288", type="string"),
     "bucket_name": Param("ntap-add5-project-tower-bucket", type="string"),
     "staging_key": Param("samplesheets/Sarek_Process/EAGER-somatic/", type="string"),
     "institution": Param("JH", type="string", enum=["JH", "WU"]),
@@ -330,7 +306,7 @@ dag_config = {
     "start_date": datetime(2026, 7, 15),
     "catchup": False,
     "default_args": {
-        "retries": 1,
+        "retries": 0,
     },
     "tags": ["nextflow_tower", "synapse", "sarek"],
     "params": dag_params,
@@ -339,14 +315,24 @@ dag_config = {
 
 @dag(**dag_config)
 def bdf_sarek_somatic_pipeline_dag() -> DAG:
+
+    @task.sensor(poke_interval=10, timeout=60 * 60 * 24, mode="poke")
+    def wait_for_record_set(**context: Any) -> bool:
+        """Wait for the Synapse RecordSet to be ready.
+
+        Returns:
+            bool: True if the RecordSet is ready, False otherwise.
+        """
+        return record_set_ready(context["params"])
+
     @task()
     def fetch_samplesheet(**context: Any) -> None:
         """Download the samplesheet from Synapse and upload it to S3 where synstage reads it.
 
         Current method: fetch a curated samplesheet CSV file by its synID. To
         source the samplesheet from a Synapse RecordSet instead, replace the body
-        below with `fetch_samplesheet_from_record_set(context["params"])`.
-        """
+        below with fetch_samplesheet_from_record_set(context["params"]).
+
         params = context["params"]
         dataset = Dataset.from_params(params)
         syn = SynapseHook(params["synapse_conn_id"]).client
@@ -357,6 +343,8 @@ def bdf_sarek_somatic_pipeline_dag() -> DAG:
             bucket_name=dataset.bucket_name,
             replace=True,
         )
+        """
+        fetch_samplesheet_from_record_set(context["params"])
 
     @task()
     def launch_synstage(**context: Any) -> str:
@@ -392,10 +380,10 @@ def bdf_sarek_somatic_pipeline_dag() -> DAG:
         )
 
     @task.sensor(poke_interval=300, timeout=604800, mode="reschedule")
-    def monitor_workflow(run_id: str, **context: Any) -> bool:
+    def monitor_workflow(tower_run_id: str, **context: Any) -> bool:
         """Poll Tower until the given run reaches a terminal state."""
         hook = NextflowTowerHook(context["params"]["tower_conn_id"])
-        workflow = hook.ops.get_workflow(run_id)
+        workflow = hook.ops.get_workflow(tower_run_id)
         print(f"Current workflow state: {workflow.status.state.value}")
         return workflow.status.is_done
 
@@ -408,7 +396,7 @@ def bdf_sarek_somatic_pipeline_dag() -> DAG:
     ) -> None:
         """Attach minimal Synapse Activity provenance to the indexed sarek outputs.
 
-        `used` = the input samplesheet synID and the original input FASTQ synIDs;
+        used = the input samplesheet synID and the original input FASTQ synIDs;
         the pipeline config and Tower run IDs are recorded in the activity
         description. The activity is set on every file synindex indexed under the
         output folder.
@@ -448,7 +436,7 @@ def bdf_sarek_somatic_pipeline_dag() -> DAG:
             f"Set provenance on {indexed} output file(s) under "
             f"{dataset.synapse_id_for_output}; used={used}"
         )
-
+    ready = wait_for_record_set()
     fetch = fetch_samplesheet()
 
     synstage_run_id = launch_synstage()
@@ -464,6 +452,7 @@ def bdf_sarek_somatic_pipeline_dag() -> DAG:
 
     # Strict ordering: fetch -> synstage -> sarek -> synindex -> provenance, each
     # stage waiting for the previous to finish.
+    ready >> fetch_samplesheet()
     fetch >> synstage_run_id
     synstage_done >> sarek_run_id
     sarek_done >> synindex_run_id
@@ -484,4 +473,8 @@ if __name__ == "__main__":
         ],
         variable_names=[],
     )
-    dag.test()
+    dag.test(
+        run_conf={
+            "run_number": 734,
+        }
+    )
