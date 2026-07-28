@@ -17,8 +17,8 @@ GATK.GRCh38, WES + Agilent V6 intervals, callers strelka,mutect2,vep.
 Ref: https://github.com/nf-osi/biobank-release-2
 
 The recordSetId, launch info, and task_status all come from a temporary
-`ComputeTask` shim (`src/compute_task.py`) that stands in for the not-yet-built
-Synapse Data Processing Compute Task; migrating later = swapping that shim's
+ComputeTask (`src/bdf_compute_task.py`) that stands in for the not-yet-built
+Synapse Data Processing Compute Task; migrating later = swapping that shim layer's
 method bodies, not this DAG.
 
 Prerequisites:
@@ -27,21 +27,22 @@ Prerequisites:
 """
 
 import csv
+import json
+import os
 import re
 import tempfile
 from datetime import datetime
 from typing import Any
 
-import synapseutils
 from airflow.decorators import dag, task
 from airflow.models.dag import DAG
 from airflow.models.param import Param
 from airflow.providers.amazon.aws.hooks.s3 import S3Hook
 from orca.services.nextflowtower import NextflowTowerHook
 from orca.services.synapse import SynapseHook
-from synapseclient import Activity
+from synapseclient import Activity, File
 
-from src.compute_task import RECORD_SET_READY_STATUS, ComputeTask
+from src.bdf_compute_task import RECORD_SET_READY_STATUS, ComputeTask
 
 
 def extract_fastq_synapse_ids(samplesheet_path: str) -> list[str]:
@@ -61,6 +62,173 @@ def extract_fastq_synapse_ids(samplesheet_path: str) -> list[str]:
                 synapse_ids.extend(re.findall(r"syn\d+", value))
     # Preserve order while dropping duplicates.
     return list(dict.fromkeys(synapse_ids))
+
+
+def input_fastq_ids_from_record_set(syn: Any, record_set_id: str) -> list[str]:
+    """Extract the input fastq synIDs from the ComputeTask's input RecordSet.
+
+    This downloads the RecordSet's samplesheet and parses its input fastq syn:// URIs,
+    the actual inputs the run consumed, so no separate samplesheet file or
+    output-folder walk is needed.
+
+    Args:
+        syn (Any): Logged-in Synapse client.
+        record_set_id (str): The input RecordSet's synID (from ComputeTask).
+
+    Returns:
+        list[str]: Deduped input synIDs, in samplesheet order.
+    """
+    from synapseclient.models import RecordSet
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        record_set = RecordSet(id=record_set_id, path=tmp_dir).get(synapse_client=syn)
+        return extract_fastq_synapse_ids(record_set.path)
+
+
+def fetch_tower_run_config(ops: Any, run_id: str) -> dict[str, Any]:
+    """Fetch the actual launch config Tower recorded for a workflow run.
+
+    Uses Tower's describe-launch endpoint (GET /workflow/{id}/launch), which
+    returns the config as launched: configText, paramsText, profiles, revision,
+    workDir, pipeline i.e. the authoritative per-run config Tower used, not
+    just what we submitted.
+
+    Args:
+        ops (Any): NextflowTowerOps (hook.ops), for its client + workspace id.
+        run_id (str): Tower workflow run ID
+
+    Returns:
+        dict[str, Any]: The run's launch config.
+    """
+    launch = ops.client.get(
+        f"/workflow/{run_id}/launch",
+        params={"workspaceId": ops.workspace_id},
+    )["launch"]
+    return {
+        "pipeline": launch.get("pipeline"),
+        "revision": launch.get("revision"),
+        "profiles": launch.get("configProfiles"),
+        "work_dir": launch.get("workDir"),
+        "params_text": launch.get("paramsText"),
+        "config_text": launch.get("configText"),
+    }
+
+
+def submitted_run_configs(compute_task: ComputeTask) -> dict[str, Any]:
+    """Fallback: the configs we SUBMITTED for each stage (from ComputeTask launch info).
+
+    Used when `fetch_tower_run_config` can't retrieve the launched config from
+    Tower (e.g. the API shape differs). This is what we sent, not necessarily
+    what Tower resolved, but it keeps provenance populated.
+
+    Args:
+        compute_task (ComputeTask): Provides the per-stage LaunchInfo.
+
+    Returns:
+        dict[str, Any]: Per-stage submitted configs keyed by stage name.
+    """
+
+    def as_dict(info: Any) -> dict[str, Any]:
+        return {
+            "pipeline": info.pipeline,
+            "revision": info.revision,
+            "profiles": info.profiles,
+            "params": info.params,
+            "config_text": info.nextflow_config,
+            "pre_run_script": info.pre_run_script,
+        }
+
+    return {
+        "synstage": as_dict(compute_task.synstage_launch_info()),
+        "sarek": as_dict(compute_task.sarek_launch_info()),
+        "synindex": as_dict(compute_task.synindex_launch_info()),
+    }
+
+
+def upload_run_configs(syn: Any, compute_task: ComputeTask, run_configs: dict[str, Any]) -> str:
+    """Upload the per-run Tower configs as one JSON file in the output folder.
+
+    Args:
+        syn (Any): Logged-in Synapse client.
+        compute_task (ComputeTask): Provides the output folder + run name.
+        run_configs (dict[str, Any]): Per-stage Tower configs keyed by stage name.
+
+    Returns:
+        str: synID of the uploaded config file.
+    """
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        config_path = os.path.join(
+            tmp_dir, f"{compute_task.sarek_run_name}_tower_run_configs.json"
+        )
+        with open(config_path, "w") as handle:
+            json.dump(run_configs, handle, indent=2, sort_keys=True)
+        stored = syn.store(File(config_path, parent=compute_task.output_folder_id))
+    return stored.id
+
+
+def record_run_provenance(
+    syn: Any,
+    tower_ops: Any,
+    compute_task: ComputeTask,
+    synstage_run_id: str,
+    sarek_run_id: str,
+    synindex_run_id: str,
+) -> str:
+    """Build and attach the run's Synapse Activity provenance to the output folder.
+
+    Free of Airflow: takes an explicit Synapse client and Tower ops so it can be
+    unit-tested directly. Reads the input FASTQs from the RecordSet, captures the
+    per-run configs (actual from Tower, else the submitted configs on failure),
+    uploads them, and sets the Activity (used = RecordSet + FASTQs + config file;
+    executed = nf-core/sarek) on the output folder.
+
+    Args:
+        syn (Any): Logged-in Synapse client.
+        tower_ops (Any): NextflowTowerOps (hook.ops), for fetching run configs.
+        compute_task (ComputeTask): Provides record_set_id, output folder, config.
+        synstage_run_id (str): Tower run ID of the synstage workflow.
+        sarek_run_id (str): Tower run ID of the nf-core/sarek workflow.
+        synindex_run_id (str): Tower run ID of the synindex workflow.
+
+    Returns:
+        str: The output folder synID the Activity was set on.
+    """
+    fastq_ids = input_fastq_ids_from_record_set(syn, compute_task.record_set_id)
+
+    # Capture the ACTUAL launched config Tower recorded for each of the three runs.
+    # If the Tower endpoint can't be read, fall back to the configs we submitted.
+    try:
+        run_configs = {
+            "synstage": fetch_tower_run_config(tower_ops, synstage_run_id),
+            "sarek": fetch_tower_run_config(tower_ops, sarek_run_id),
+            "synindex": fetch_tower_run_config(tower_ops, synindex_run_id),
+        }
+    except Exception as error:  # noqa: BLE001 - any Tower/API failure -> fallback
+        print(f"Could not fetch run configs from Tower ({error!r}); using submitted configs.")
+        run_configs = submitted_run_configs(compute_task)
+
+    config_synapse_id = upload_run_configs(syn, compute_task, run_configs)
+    used = [compute_task.record_set_id, *fastq_ids, config_synapse_id]
+
+    activity = Activity(
+        name=compute_task.sarek_run_name,
+        description=(
+            "nf-core/sarek 3.1.2 somatic variant calling "
+            "(genome=GATK.GRCh38, wes=True, tools=strelka,mutect2,vep, "
+            f"intervals={compute_task.intervals}, institution={compute_task.institution}). "
+            f"Input RecordSet: {compute_task.record_set_id}. "
+            f"Input FASTQs: {fastq_ids}. "
+            f"Tower run configs (synstage/sarek/synindex): {config_synapse_id}. "
+            f"Tower runs: synstage={synstage_run_id}, sarek={sarek_run_id}, "
+            f"synindex={synindex_run_id}."
+        ),
+        used=used,
+        executed=["https://github.com/nf-core/sarek"],
+    )
+
+    syn.setProvenance(compute_task.output_folder_id, activity)
+    print(f"Set provenance on output folder {compute_task.output_folder_id}; used={used}")
+    return compute_task.output_folder_id
 
 
 dag_params = {
@@ -197,12 +365,10 @@ def bdf_sarek_somatic_pipeline_dag() -> DAG:
         synindex_run_id: str,
         **context: Any,
     ) -> None:
-        """Attach minimal Synapse Activity provenance to the indexed sarek outputs.
+        """Attach Synapse Activity provenance to the ComputeTask's output folder.
 
-        used = the input samplesheet synID and the original input FASTQ synIDs;
-        the pipeline config and Tower run IDs are recorded in the activity
-        description. The activity is set on every file synindex indexed under the
-        output folder.
+        Thin wrapper: builds the Synapse + Tower clients from params and delegates
+        to record_run_provenance (the testable, Airflow-free implementation).
 
         Args:
             synstage_run_id (str): The Nextflow Tower run ID of the launched synstage workflow.
@@ -212,39 +378,14 @@ def bdf_sarek_somatic_pipeline_dag() -> DAG:
         params = context["params"]
         compute_task = ComputeTask.load(params["compute_task_id"])
         syn = SynapseHook(params["synapse_conn_id"]).client
-
-        samplesheet_file = syn.get(
-            compute_task.samplesheet_id, version=compute_task.samplesheet_version
-        )
-        fastq_ids = extract_fastq_synapse_ids(samplesheet_file.path)
-        used = [compute_task.samplesheet_id, *fastq_ids]
-
-        activity = Activity(
-            name=compute_task.sarek_run_name,
-            description=(
-                "nf-core/sarek 3.1.2 somatic variant calling "
-                "(genome=GATK.GRCh38, wes=True, tools=strelka,mutect2,vep, "
-                f"intervals={compute_task.intervals}, institution={compute_task.institution}). "
-                f"Input samplesheet: {compute_task.samplesheet_id}. "
-                f"Input FASTQs: {fastq_ids}. "
-                f"Tower runs: synstage={synstage_run_id}, sarek={sarek_run_id}, "
-                f"synindex={synindex_run_id}."
-            ),
-            used=used,
-            executed=["https://github.com/nf-core/sarek"],
-        )
-
-        stored = None
-        indexed = 0
-        for _dirpath, _dirnames, filenames in synapseutils.walk(
-            syn, compute_task.output_folder_id
-        ):
-            for _name, syn_id in filenames:
-                stored = syn.setProvenance(syn_id, stored or activity)
-                indexed += 1
-        print(
-            f"Set provenance on {indexed} output file(s) under "
-            f"{compute_task.output_folder_id}; used={used}"
+        tower_ops = NextflowTowerHook(params["tower_conn_id"]).ops
+        record_run_provenance(
+            syn=syn,
+            tower_ops=tower_ops,
+            compute_task=compute_task,
+            synstage_run_id=synstage_run_id,
+            sarek_run_id=sarek_run_id,
+            synindex_run_id=synindex_run_id,
         )
 
     ready = wait_for_record_set()

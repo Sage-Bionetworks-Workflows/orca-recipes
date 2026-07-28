@@ -73,15 +73,21 @@ class ComputeTask:
         """Load the compute task, which provides all of its own values.
 
         These values belong to the compute task, not the DAG -- the DAG only says
-        *which* task to run (``compute_task_id``). Today this returns the single
-        task we set up in Synapse for the POC (``compute_task_id`` is accepted but
-        ignored); the ``samplesheet_*`` fields are transitional and fall away once
+        *which* task to run (compute_task_id). Today this returns the single
+        task we set up in Synapse for the POC (compute_task_id is accepted but
+        ignored); the samplesheet_* fields are transitional and fall away once
         the samplesheet is sourced entirely from the RecordSet.
 
         Future: replace the body with a real lookup, e.g.
-        ``ComputeTask(id=compute_task_id).get()``, that reads record_set_id,
+        ComputeTask(id=compute_task_id).get(), that reads record_set_id,
         launch info, output_folder_id, bucket_name, staging_key, institution,
         run_number, and task_status straight off the Synapse compute task.
+
+        Args:
+            compute_task_id (Optional[str], optional): ID of the compute task to load. Defaults to None.
+
+        Returns:
+            ComputeTask: deserialized ComputeTask object with all its values.
         """
         return cls(
             record_set_id="syn76458430",
