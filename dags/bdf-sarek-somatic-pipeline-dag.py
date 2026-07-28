@@ -42,7 +42,7 @@ from orca.services.nextflowtower import NextflowTowerHook
 from orca.services.synapse import SynapseHook
 from synapseclient import Activity, File
 
-from src.bdf_compute_task import RECORD_SET_READY_STATUS, ComputeTask
+from src.bdf_compute_task import CURATION_TASK_READY_STATUS, ComputeTask
 
 
 def extract_fastq_synapse_ids(samplesheet_path: str) -> list[str]:
@@ -234,7 +234,7 @@ def record_run_provenance(
 dag_params = {
     "synapse_conn_id": Param("SYNAPSE_ORCA_SERVICE_ACCOUNT_CONN", type="string"),
     "tower_conn_id": Param("NTAP_ADD5_PROJECT_TOWER_CONN", type="string"),
-    "tower_compute_env_type": Param("spot", type="string"),
+    "tower_compute_env_type": Param("ondemand", type="string"),
     # AWS identity for S3 staging. Must have access to the ComputeTask's Tower
     # bucket, which lives in a different account than Airflow's secrets backend.
     "aws_conn_id": Param("AWS_TOWER_PROD_S3_CONN", type="string"),
@@ -261,20 +261,21 @@ def bdf_sarek_somatic_pipeline_dag() -> DAG:
 
     @task.sensor(poke_interval=10, timeout=60 * 60 * 24, mode="poke")
     def wait_for_record_set(**context: Any) -> bool:
-        """Poll the ComputeTask's RecordSet every 10s until it is ready.
+        """Poll the ComputeTask's CurationTask every 10s until it is ready.
 
         The ComputeTask only provides the status; the readiness decision (is it
         COMPLETE?) is this DAG's.
 
         Returns:
-            bool: Whether the RecordSet with samplesheet is ready for processing
+            bool: Whether the CurationTask containing RecordSet with samplesheet
+                is ready for processing
         """
         params = context["params"]
         compute_task = ComputeTask.load(params["compute_task_id"])
         syn = SynapseHook(params["synapse_conn_id"]).client
         status = compute_task.task_status(syn)
         print(f"compute task record_set {compute_task.record_set_id} task_status={status}")
-        return status == RECORD_SET_READY_STATUS
+        return status == CURATION_TASK_READY_STATUS
 
     @task()
     def fetch_samplesheet(**context: Any) -> None:

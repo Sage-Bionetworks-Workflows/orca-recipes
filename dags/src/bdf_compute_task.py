@@ -14,8 +14,8 @@ What a real ComputeTask is expected to own (and how it's faked here):
 - launch info: the synstage / sarek / synindex LaunchInfo specs. Built here
   from params for now; future: the launch info is captured within the Synapse
   compute task, so these methods read it off the task.
-- task_status: read from a task_status annotation on the RecordSet for
-  now (settable today for testing), in the future, this will be a real task field.
+- task status: the state of the Synapse CurationTask that holds the input
+  RecordSet (task_properties.recordSetId).
 
 """
 
@@ -26,8 +26,8 @@ from typing import Any, Optional
 
 from orca.services.nextflowtower.models import LaunchInfo
 
-# task_status annotation value on the RecordSet meaning "ready for processing".
-RECORD_SET_READY_STATUS = "COMPLETE"
+# CurationTask state
+CURATION_TASK_READY_STATUS = "COMPLETED"
 
 # BED files for exome seq data from JHU NF1 repository - different batches/institutions.
 BED_JH = "s3://ntap-add5-project-tower-bucket/reference/Baits_BED_Files_AgilentV6_REVISED_S07604514_ALLBED_merged_020816_withChr_GRCh38_sorted.bed"
@@ -44,8 +44,10 @@ class ComputeTask:
     """Temporary ComputeTask: recordSetId + launch info + task_status in one place.
 
     Attributes:
-        record_set_id: RecordSet holding the samplesheet (hardcoded from a param
-            for now; future: a task property).
+        curation_task_id: task_id of the Synapse CurationTask that holds the input
+            RecordSet; its status is polled for readiness.
+        record_set_id: RecordSet holding the samplesheet (the CurationTask's
+            task_properties.recordSetId; hardcoded here for now).
         samplesheet_id: Synapse ID of the samplesheet file (used to fetch the
             samplesheet + for input provenance until fully sourced from the
             RecordSet).
@@ -58,6 +60,7 @@ class ComputeTask:
         samplesheet_version: Synapse version of the samplesheet (None = latest).
     """
 
+    curation_task_id: str
     record_set_id: str
     samplesheet_id: str
     output_folder_id: str
@@ -90,6 +93,7 @@ class ComputeTask:
             ComputeTask: deserialized ComputeTask object with all its values.
         """
         return cls(
+            curation_task_id="6954",
             record_set_id="syn76458430",
             samplesheet_id="syn76340211",
             samplesheet_name="jhu_biobank_wes_demo_samplesheet_test_for_airflow.csv",
@@ -213,30 +217,16 @@ class ComputeTask:
 
 
     def task_status(self, synapse_client: Any) -> Optional[str]:
-        """Retrieve the current task status.
+        """Retrieve the CurationTask's state (its status in the task lifecycle).
 
-        The ComputeTask only *provides* the status; deciding readiness (comparing
-        to RECORD_SET_READY_STATUS) and gating on it is the DAG's job.
-
-        For now this reads a task_status *entity annotation* on the RecordSet
-        (there is no native field yet). Set it today to test, e.g.:
-
-            from synapseclient.models import RecordSet
-            rs = RecordSet(id="syn123").get()
-            rs.annotations["task_status"] = ["COMPLETE"]
-            rs.store()
-
-        Future: read the real task field off the ComputeTask.
+        Uses the raw REST endpoint (equivalent to CurationTask.get_status().state)
+        so it works regardless of synapseclient version. Returns None if unavailable.
 
         Args:
-            synapse_client (Any): Synapse client to use for fetching the RecordSet
+            synapse_client (Any): Synapse client used to fetch the task status.
 
         Returns:
-            Optional[str]: The current task status, or None if not set
+            Optional[str]: The CurationTask's state, or None if unavailable.
         """
-        from synapseclient.models import RecordSet
-
-        record_set = RecordSet(id=self.record_set_id).get(synapse_client=synapse_client)
-        # Annotations are dict[str, list[...]]; take the first value if present.
-        values = (record_set.annotations or {}).get("task_status") or []
-        return values[0] if values else None
+        status = synapse_client.restGET(f"/curation/task/{self.curation_task_id}/status")
+        return status.get("state")
