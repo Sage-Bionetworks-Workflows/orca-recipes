@@ -35,6 +35,7 @@ from datetime import datetime
 from typing import Any
 
 from airflow.decorators import dag, task
+from airflow.exceptions import AirflowException
 from airflow.models.dag import DAG
 from airflow.models.param import Param
 from airflow.providers.amazon.aws.hooks.s3 import S3Hook
@@ -245,7 +246,8 @@ dag_params = {
 }
 
 dag_config = {
-    "schedule": None,
+    "schedule": "*/30 * * * *",
+    "max_active_runs": 1,
     "start_date": datetime(2026, 7, 15),
     "catchup": False,
     "default_args": {
@@ -347,17 +349,33 @@ def bdf_sarek_somatic_pipeline_dag() -> DAG:
             ignore_previous_runs=True,
         )
 
-    @task.sensor(poke_interval=300, timeout=604800, mode="reschedule")
+    @task.sensor(poke_interval=60, timeout=604800, mode="reschedule")
     def monitor_workflow(tower_run_id: str, **context: Any) -> bool:
-        """Poll Tower until the given run reaches a terminal state.
+        """Poll Tower until the run succeeds; fail if it ends non-successfully.
+
+        Only a SUCCEEDED run lets the sensor pass (so the next stage launches). A
+        terminal non-success state (FAILED / CANCELLED / UNKNOWN) fails this task,
+        which stops the pipeline -- downstream launch tasks won't run. Still
+        running -> keep poking.
 
         Returns:
-            bool: True if the workflow has reached a terminal state, False otherwise
+            bool: True once the workflow has succeeded.
+
+        Raises:
+            AirflowException: If the workflow reached a terminal non-success state.
         """
         hook = NextflowTowerHook(context["params"]["tower_conn_id"])
         workflow = hook.ops.get_workflow(tower_run_id)
-        print(f"Current workflow state: {workflow.status.state.value}")
-        return workflow.status.is_done
+        state = workflow.status.state.value
+        print(f"Current workflow state: {state}")
+        if not workflow.status.is_done:
+            return False
+        if workflow.status.is_successful:
+            return True
+        raise AirflowException(
+            f"Tower run {tower_run_id} ended in non-success state '{state}'; "
+            "stopping the pipeline (downstream stages will not launch)."
+        )
 
     @task()
     def record_provenance(

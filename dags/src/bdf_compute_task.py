@@ -93,8 +93,8 @@ class ComputeTask:
             ComputeTask: deserialized ComputeTask object with all its values.
         """
         return cls(
-            curation_task_id="6954",
-            record_set_id="syn76458430",
+            curation_task_id="6957",
+            record_set_id="syn76458438",
             samplesheet_id="syn76340211",
             samplesheet_name="jhu_biobank_wes_demo_samplesheet_test_for_airflow.csv",
             samplesheet_version=None,
