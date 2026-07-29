@@ -40,9 +40,9 @@ from airflow.models.dag import DAG
 from airflow.models.param import Param
 from airflow.providers.amazon.aws.hooks.s3 import S3Hook
 from orca.services.nextflowtower import NextflowTowerHook
-from orca.services.synapse import SynapseHook
 from synapseclient import Activity, File
 
+from src.synapse_hook import SynapseHook
 from src.bdf_compute_task import CURATION_TASK_READY_STATUS, ComputeTask
 
 
@@ -246,13 +246,14 @@ dag_params = {
 }
 
 dag_config = {
-    "schedule": "*/30 * * * *",
+    "schedule": None,
     "max_active_runs": 1,
     "start_date": datetime(2026, 7, 15),
     "catchup": False,
     "default_args": {
         "retries": 0,
     },
+    "max_active_runs": 1,
     "tags": ["nextflow_tower", "synapse", "sarek"],
     "params": dag_params,
 }
@@ -261,7 +262,7 @@ dag_config = {
 @dag(**dag_config)
 def bdf_sarek_somatic_pipeline_dag() -> DAG:
 
-    @task.sensor(poke_interval=10, timeout=60 * 60 * 24, mode="poke")
+    @task.sensor(poke_interval=10, timeout=60 * 60 * 24, mode="reschedule")
     def wait_for_record_set(**context: Any) -> bool:
         """Poll the ComputeTask's CurationTask every 10s until it is ready.
 
