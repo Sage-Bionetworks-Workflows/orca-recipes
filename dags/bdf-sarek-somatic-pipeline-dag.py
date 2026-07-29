@@ -65,7 +65,7 @@ def extract_fastq_synapse_ids(samplesheet_path: str) -> list[str]:
     return list(dict.fromkeys(synapse_ids))
 
 
-def input_fastq_ids_from_record_set(syn: Any, record_set_id: str) -> list[str]:
+def input_fastq_ids_from_record_set(syn: "synapseclient.Synapse", record_set_id: str) -> list[str]:
     """Extract the input fastq synIDs from the ComputeTask's input RecordSet.
 
     This downloads the RecordSet's samplesheet and parses its input fastq syn:// URIs,
@@ -73,7 +73,7 @@ def input_fastq_ids_from_record_set(syn: Any, record_set_id: str) -> list[str]:
     output-folder walk is needed.
 
     Args:
-        syn (Any): Logged-in Synapse client.
+        syn (synapseclient.Synapse): Logged-in Synapse client.
         record_set_id (str): The input RecordSet's synID (from ComputeTask).
 
     Returns:
@@ -86,7 +86,7 @@ def input_fastq_ids_from_record_set(syn: Any, record_set_id: str) -> list[str]:
         return extract_fastq_synapse_ids(record_set.path)
 
 
-def fetch_tower_run_config(ops: Any, run_id: str) -> dict[str, Any]:
+def fetch_tower_run_config(ops: "NextflowTowerOps", run_id: str) -> dict[str, Any]:
     """Fetch the actual launch config Tower recorded for a workflow run.
 
     Uses Tower's describe-launch endpoint (GET /workflow/{id}/launch), which
@@ -95,7 +95,7 @@ def fetch_tower_run_config(ops: Any, run_id: str) -> dict[str, Any]:
     just what we submitted.
 
     Args:
-        ops (Any): NextflowTowerOps (hook.ops), for its client + workspace id.
+        ops (NextflowTowerOps): (hook.ops), for its client + workspace id.
         run_id (str): Tower workflow run ID
 
     Returns:
@@ -146,11 +146,11 @@ def submitted_run_configs(compute_task: ComputeTask) -> dict[str, Any]:
     }
 
 
-def upload_run_configs(syn: Any, compute_task: ComputeTask, run_configs: dict[str, Any]) -> str:
+def upload_run_configs(syn: "synapseclient.Synapse", compute_task: ComputeTask, run_configs: dict[str, Any]) -> str:
     """Upload the per-run Tower configs as one JSON file in the output folder.
 
     Args:
-        syn (Any): Logged-in Synapse client.
+        syn (synapseclient.Synapse): Logged-in Synapse client.
         compute_task (ComputeTask): Provides the output folder + run name.
         run_configs (dict[str, Any]): Per-stage Tower configs keyed by stage name.
 
@@ -168,8 +168,8 @@ def upload_run_configs(syn: Any, compute_task: ComputeTask, run_configs: dict[st
 
 
 def record_run_provenance(
-    syn: Any,
-    tower_ops: Any,
+    syn: "synapseclient.Synapse",
+    tower_ops: "NextflowTowerOps",
     compute_task: ComputeTask,
     synstage_run_id: str,
     sarek_run_id: str,
@@ -184,8 +184,8 @@ def record_run_provenance(
     executed = nf-core/sarek) on the output folder.
 
     Args:
-        syn (Any): Logged-in Synapse client.
-        tower_ops (Any): NextflowTowerOps (hook.ops), for fetching run configs.
+        syn (synapseclient.Synapse): Logged-in Synapse client.
+        tower_ops (NextflowTowerOps): (hook.ops), for fetching run configs.
         compute_task (ComputeTask): Provides record_set_id, output folder, config.
         synstage_run_id (str): Tower run ID of the synstage workflow.
         sarek_run_id (str): Tower run ID of the nf-core/sarek workflow.
@@ -253,7 +253,6 @@ dag_config = {
     "default_args": {
         "retries": 0,
     },
-    "max_active_runs": 1,
     "tags": ["nextflow_tower", "synapse", "sarek"],
     "params": dag_params,
 }
@@ -261,6 +260,15 @@ dag_config = {
 
 @dag(**dag_config)
 def bdf_sarek_somatic_pipeline_dag() -> DAG:
+    """ Airflow DAG for the BDF Sarek somatic variant calling pipeline
+
+    Raises:
+        AirflowException: If any of the Tower runs end in a
+            terminal non-success state (FAILED / CANCELLED / UNKNOWN)
+
+    Returns:
+        DAG: The Airflow DAG object for the BDF Sarek somatic pipeline
+    """
 
     @task.sensor(poke_interval=10, timeout=60 * 60 * 24, mode="reschedule")
     def wait_for_record_set(**context: Any) -> bool:
