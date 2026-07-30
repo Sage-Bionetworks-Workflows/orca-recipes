@@ -2,9 +2,7 @@ from datetime import datetime
 
 from airflow.decorators import dag, task
 from airflow.models import Param
-from orca.services.nextflowtower import NextflowTowerHook
-from orca.services.nextflowtower.models import LaunchInfo
-
+from src.seqera_hook import LaunchInfo, SeqeraHook
 from src.synapse_hook import SynapseHook
 
 
@@ -41,9 +39,7 @@ def challenge_submission_dag():
             evaluation_id (str): Evaluation ID for challenge
         """
         hook = SynapseHook(context["params"]["synapse_conn_id"])
-        if hook.ops.monitor_evaluation_queue(
-            context["params"]["synapse_evaluation_id"]
-        ):
+        if hook.monitor_evaluation_queue(context["params"]["synapse_evaluation_id"]):
             return "launch_model2data_workflow"
         return "stop_dag"
 
@@ -53,7 +49,7 @@ def challenge_submission_dag():
 
     @task()
     def launch_model2data_workflow(**context):
-        hook = NextflowTowerHook(context["params"]["tower_conn_id"])
+        hook = SeqeraHook(context["params"]["tower_conn_id"])
         info = LaunchInfo(
             run_name=context["params"]["tower_run_name"],
             pipeline="https://github.com/Sage-Bionetworks-Workflows/nf-model2data",
@@ -64,15 +60,15 @@ def challenge_submission_dag():
                 "input_id": context["params"]["tower_input_id"],
             },
         )
-        run_id = hook.ops.launch_workflow(
+        run_id = hook.launch_workflow(
             info, context["params"]["tower_compute_env_type"]
         )
         return run_id
 
     @task.sensor(poke_interval=300, timeout=604800, mode="reschedule")
     def monitor_model2data_workflow(run_id: str, **context):
-        hook = NextflowTowerHook(context["params"]["tower_conn_id"])
-        workflow = hook.ops.get_workflow(run_id)
+        hook = SeqeraHook(context["params"]["tower_conn_id"])
+        workflow = hook.get_workflow(run_id)
         print(f"Current workflow state: {workflow.status.state.value}")
         return workflow.status.is_done
 

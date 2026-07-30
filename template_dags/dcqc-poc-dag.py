@@ -19,9 +19,8 @@ from airflow.decorators import dag, task
 from airflow.models.param import Param
 from airflow.providers.amazon.aws.hooks.s3 import S3Hook
 
-from orca.services.synapse import SynapseHook
-from orca.services.nextflowtower import NextflowTowerHook
-from orca.services.nextflowtower.models import LaunchInfo
+from src.seqera_hook import LaunchInfo, SeqeraHook
+from src.synapse_hook import SynapseHook
 
 from synapseclient.models import File
 
@@ -128,7 +127,7 @@ def dcqc_poc_dag():
         """
         Launches nf-dcqc tower workflow
         """
-        hook = NextflowTowerHook(context["params"]["tower_conn_id"])
+        hook = SeqeraHook(context["params"]["tower_conn_id"])
         parent = context["params"]["synapse_container"]
         run_uuid = context["params"]["uuid"]
         info = LaunchInfo(
@@ -141,7 +140,7 @@ def dcqc_poc_dag():
             },
             workspace_secrets=["SYNAPSE_AUTH_TOKEN"],
         )
-        run_id = hook.ops.launch_workflow(
+        run_id = hook.launch_workflow(
             info, context["params"]["tower_compute_env_type"]
         )
         return run_id
@@ -151,8 +150,8 @@ def dcqc_poc_dag():
         """
         Monitor the nf-dcqc tower workflow.
         """
-        hook = NextflowTowerHook(context["params"]["tower_conn_id"])
-        workflow = hook.ops.get_workflow(run_id)
+        hook = SeqeraHook(context["params"]["tower_conn_id"])
+        workflow = hook.get_workflow(run_id)
         print(f"Current workflow state: {workflow.status.state.value}")
         return workflow.status.is_done
 
