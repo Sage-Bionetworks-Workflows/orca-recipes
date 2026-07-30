@@ -11,9 +11,7 @@ from airflow.models import Param, DagRun
 from airflow.providers.amazon.aws.hooks.s3 import S3Hook
 from airflow.utils.session import create_session
 from airflow.utils.state import State
-from orca.services.nextflowtower import NextflowTowerHook
-from orca.services.nextflowtower.models import LaunchInfo
-
+from src.seqera_hook import LaunchInfo, SeqeraHook
 from src.synapse_hook import SynapseHook
 
 
@@ -207,8 +205,8 @@ def create_challenge_dag(challenge_name: str, config: dict):
 
         @task(do_xcom_push=False)
         def verify_bucket_name(**context):
-            hook = NextflowTowerHook(context["params"]["tower_conn_id"])
-            workspace = os.path.basename(hook.ops.workspace)
+            hook = SeqeraHook(context["params"]["tower_conn_id"])
+            workspace = os.path.basename(hook.workspace)
 
             bucket_name = context["params"]["bucket_name"].lower()
             expected_bucket_names = [f"{workspace}{suffix}".lower() for suffix in ["-tower-scratch", "-tower-bucket"]]
@@ -288,7 +286,7 @@ def create_challenge_dag(challenge_name: str, config: dict):
 
         @task
         def launch_workflow(manifest_path, run_uuid, **context):
-            hook = NextflowTowerHook(context["params"]["tower_conn_id"])
+            hook = SeqeraHook(context["params"]["tower_conn_id"])
             info = LaunchInfo(
                 run_name=f"{challenge_name}-evaluation-{run_uuid}",
                 pipeline="https://github.com/Sage-Bionetworks-Workflows/nf-synapse-challenge",
@@ -297,13 +295,13 @@ def create_challenge_dag(challenge_name: str, config: dict):
                 profiles=["tower", context["params"]["challenge_profile"]],
                 params={"manifest": manifest_path},
             )
-            tower_run_id = hook.ops.launch_workflow(info, context["params"]["tower_compute_env_type"])
+            tower_run_id = hook.launch_workflow(info, context["params"]["tower_compute_env_type"])
             return tower_run_id
 
         @task.sensor(poke_interval=60, timeout=604800, mode="reschedule")
         def monitor_workflow(tower_run_id, **context):
-            hook = NextflowTowerHook(context["params"]["tower_conn_id"])
-            workflow = hook.ops.get_workflow(tower_run_id)
+            hook = SeqeraHook(context["params"]["tower_conn_id"])
+            workflow = hook.get_workflow(tower_run_id)
             print(f"Current workflow state: {workflow.status.state.value}")
             return workflow.status.is_done
 

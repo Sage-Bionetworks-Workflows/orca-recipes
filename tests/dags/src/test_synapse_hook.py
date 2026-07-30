@@ -114,6 +114,27 @@ def test_get_submissions_with_status(monkeypatch):
     assert "status = 'RECEIVED'" in queries[-1]
 
 
+@pytest.mark.parametrize(
+    "bundles, expected",
+    [([], False), ([{"submission": 1}], True), ([{"a": 1}, {"b": 2}], True)],
+)
+def test_monitor_evaluation_queue(bundles, expected):
+    class MockClient:
+        def __init__(self):
+            self.call = None
+
+        def getSubmissionBundles(self, evaluation_id, status=None):
+            self.call = (evaluation_id, status)
+            # The real client returns a generator, not a list.
+            return iter(bundles)
+
+    hook = SynapseHook("conn")
+    hook._client = MockClient()
+
+    assert hook.monitor_evaluation_queue("9615332") is expected
+    assert hook._client.call == ("9615332", "RECEIVED")
+
+
 def test_update_submission_status(monkeypatch):
     class MockStatus:
         def __init__(self):
