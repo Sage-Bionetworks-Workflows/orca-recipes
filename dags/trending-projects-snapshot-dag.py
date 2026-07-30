@@ -195,5 +195,5 @@ def trending_projects_snapshot() -> None:
 dag = trending_projects_snapshot()
 
 if __name__ == "__main__":
-    # Replace with a test Synapse table ID before running locally
+    # This is a staging Synapse table
     dag.test(run_conf={"synapse_results_table": "syn74496614"})

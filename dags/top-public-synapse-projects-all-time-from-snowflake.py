@@ -167,5 +167,5 @@ def top_public_synapse_projects_all_time_from_snowflake() -> None:
 dag = top_public_synapse_projects_all_time_from_snowflake()
 
 if __name__ == "__main__":
-    # Replace with a test Synapse table ID before running locally
+    # This is a staging Synapse table
     dag.test(run_conf={"synapse_results_table": "syn74496606"})

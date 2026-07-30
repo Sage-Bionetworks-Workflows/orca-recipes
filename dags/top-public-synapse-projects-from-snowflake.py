@@ -665,7 +665,7 @@ dag = top_public_synapse_projects_from_snowflake()
 if __name__ == "__main__":
     # backfill=False so the Slack branch runs; slack_channel redirects the post
     # to #dpe-prs for local testing (the DPE bot must be a member of that channel).
-    # Replace synapse_results_table with a test table ID before running locally.
+    # This is a staging Synapse table
     from datetime import date
     dag.test(run_conf={
         "backfill": False,

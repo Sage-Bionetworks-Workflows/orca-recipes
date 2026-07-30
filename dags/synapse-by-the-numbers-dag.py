@@ -163,4 +163,5 @@ def synapse_by_the_numbers_past_month() -> None:
 dag = synapse_by_the_numbers_past_month()
 
 if __name__ == "__main__":
+    # This is a staging Synapse table
     dag.test(run_conf={"synapse_results_table": "syn74496297"})
