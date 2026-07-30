@@ -34,6 +34,7 @@
 - [Secrets](#secrets)
   - [Creating a New Secret](#creating-a-new-secret)
   - [Configuring a SynapseHook Connection Secret](#configuring-a-synapsehook-connection-secret)
+  - [Configuring a SlackHook Connection Secret](#configuring-a-slackhook-connection-secret)
   - [Configuring a SnowflakeHook Connection Secret](#configuring-a-snowflakehook-connection-secret)
 - [Contributing a Challenge DAG](#contributing-a-challenge-dag)
   - [TL;DR](#tldr)
@@ -293,14 +294,17 @@ AGORA_PROJECT_TOWER_CONN:
 
 ##### Handling Airflow Variables Locally
 
-`LocalFilesystemBackend`'s `connections_file_path` config above only covers Connections, not Airflow **Variables**. Some DAGs also call `Variable.get("SOME_NAME")` — for example, `SLACK_DPE_TEAM_BOT_TOKEN`, a Slack bot token normally pulled from AWS Secrets Manager. Once you switch away from `SecretsManagerBackend`, there's no source for Variables at all — a plain env var like `SLACK_DPE_TEAM_BOT_TOKEN` in your shell or `.env` is **not** visible to `Variable.get()`. There are two ways to fill that gap without AWS access:
+`LocalFilesystemBackend`'s `connections_file_path` config above only covers Connections, not Airflow **Variables**. Some DAGs also call `Variable.get("SOME_NAME")` — for example, `SIGNOZ_INGESTION_KEY` or `ZENODO_API_TOKEN`, normally pulled from AWS Secrets Manager. Once you switch away from `SecretsManagerBackend`, there's no source for Variables at all — a plain env var like `SIGNOZ_INGESTION_KEY` in your shell or `.env` is **not** visible to `Variable.get()`. There are two ways to fill that gap without AWS access:
+
+> [!NOTE]
+> Slack credentials are **not** Variables anymore. Every DAG that posts to Slack now uses the Slack provider's `SlackHook` with an Airflow Slack connection (`DPE_SLACK_BOT_CONN`), so the token is supplied through `connections.yaml` like any other connection — see [Configuring a SlackHook connection secret](#configuring-a-slackhook-connection-secret). The former `SLACK_DPE_TEAM_BOT_TOKEN` Variable is no longer read by any DAG.
 
 **Option A: `AIRFLOW_VAR_` environment variable**
 
-Prefix the Variable's name with `AIRFLOW_VAR_` and export it as a regular environment variable, e.g. `AIRFLOW_VAR_SLACK_DPE_TEAM_BOT_TOKEN`. Airflow checks for this automatically, regardless of which secrets backend is configured — so it works even with `LocalFilesystemBackend`, which has no Variables source of its own.
+Prefix the Variable's name with `AIRFLOW_VAR_` and export it as a regular environment variable, e.g. `AIRFLOW_VAR_SIGNOZ_INGESTION_KEY`. Airflow checks for this automatically, regardless of which secrets backend is configured — so it works even with `LocalFilesystemBackend`, which has no Variables source of its own.
 
 ```console
-export AIRFLOW_VAR_SLACK_DPE_TEAM_BOT_TOKEN="<the-secret-value>"
+export AIRFLOW_VAR_SIGNOZ_INGESTION_KEY="<the-secret-value>"
 ```
 
 **Option B: `variables_file_path` via `LocalFilesystemBackend`**
@@ -316,7 +320,7 @@ Then create `variables.json` with the Variables your DAG needs:
 
 ```json
 {
-  "SLACK_DPE_TEAM_BOT_TOKEN": "<the-secret-value>"
+  "SIGNOZ_INGESTION_KEY": "<the-secret-value>"
 }
 ```
 
@@ -570,6 +574,8 @@ Airflow secrets (_e.g._ connections and variables) are stored in Secrets Manager
    - The Airflow connection ID used to connect to AWS service.
 1. `snowflake_conn_id`: `"SNOWFLAKE_DEVELOPER_SERVICE_RAW_CONN"`
    - The Airflow connection ID used to connect to the Snowflake service. Use this to run Snowflake commands as `DEVELOPER_SERVICE` in the `DATA_ENGINEER` role.
+1. `dpe_slack_bot_conn`: `"DPE_SLACK_BOT_CONN"`
+   - The Airflow connection ID used to post messages to Slack as the DPE team bot. This replaces the former `SLACK_DPE_TEAM_BOT_TOKEN` Airflow Variable — see [Configuring a SlackHook connection secret](#configuring-a-slackhook-connection-secret).
 
 These are all located in AWS Secrets Manager in the `dpe-prod` account.
 
@@ -588,6 +594,28 @@ New secrets must be created in AWS Secrets Manager in the `dpe-prod` account.
 ### Configuring a SynapseHook connection secret
 
 See [Synapse credentials section in the py-orca's env.example](https://github.com/Sage-Bionetworks-Workflows/py-orca/blob/main/.env.example) for the expected format of your custom `SYNAPSE_CONNECTION_URI`.
+
+### Configuring a SlackHook connection secret
+
+Slack posting goes through the Slack provider's [`SlackHook`](https://airflow.apache.org/docs/apache-airflow-providers-slack/stable/connections/slack.html), which reads the bot token from an Airflow **connection** (conn type `slack`) rather than from an Airflow Variable. DAGs take the connection ID as a `Param` (default `DPE_SLACK_BOT_CONN`) and do:
+
+```python
+from airflow.providers.slack.hooks.slack import SlackHook
+
+client = SlackHook(slack_conn_id=context["params"]["dpe_slack_bot_conn"]).client
+client.chat_postMessage(channel="<channel>", text=message)
+```
+
+The connection only needs the bot token (`xoxb-…`) in its `password` field. In AWS Secrets Manager that means a secret named `airflow/connections/DPE_SLACK_BOT_CONN`; locally, an entry in `connections.yaml`:
+
+```yaml
+DPE_SLACK_BOT_CONN:
+  conn_type: slack
+  password: "<your-slack-bot-token>"
+```
+
+> [!NOTE]
+> Earlier versions of these DAGs used the `slack_sdk` `WebClient` directly with a `SLACK_DPE_TEAM_BOT_TOKEN` Airflow Variable. That Variable is no longer read by any DAG, and `slack-sdk` is no longer a direct dependency (it comes in transitively via `apache-airflow-providers-slack`). Use the connection above instead.
 
 ### Configuring a SnowflakeHook connection secret
 
