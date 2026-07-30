@@ -18,11 +18,10 @@ from datetime import datetime, timedelta, timezone
 from airflow.decorators import dag, task
 from airflow.models.param import Param
 from airflow.providers.amazon.aws.hooks.s3 import S3Hook
+from synapseclient.models import File
 
 from src.seqera_hook import LaunchInfo, SeqeraHook
 from src.synapse_hook import SynapseHook
-
-from synapseclient.models import File
 
 REGION_NAME = "us-east-1"
 BUCKET_NAME = "example-dev-project-tower-scratch"
