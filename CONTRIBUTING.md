@@ -296,8 +296,6 @@ AGORA_PROJECT_TOWER_CONN:
 
 `LocalFilesystemBackend`'s `connections_file_path` config above only covers Connections, not Airflow **Variables**. Some DAGs also call `Variable.get("SOME_NAME")` — for example, `SIGNOZ_INGESTION_KEY` or `ZENODO_API_TOKEN`, normally pulled from AWS Secrets Manager. Once you switch away from `SecretsManagerBackend`, there's no source for Variables at all — a plain env var like `SIGNOZ_INGESTION_KEY` in your shell or `.env` is **not** visible to `Variable.get()`. There are two ways to fill that gap without AWS access:
 
-> [!NOTE]
-> Slack credentials are **not** Variables anymore. Every DAG that posts to Slack now uses the Slack provider's `SlackHook` with an Airflow Slack connection (`DPE_SLACK_BOT_CONN`), so the token is supplied through `connections.yaml` like any other connection — see [Configuring a SlackHook connection secret](#configuring-a-slackhook-connection-secret). The former `SLACK_DPE_TEAM_BOT_TOKEN` Variable is no longer read by any DAG.
 
 **Option A: `AIRFLOW_VAR_` environment variable**
 
