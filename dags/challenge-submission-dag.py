@@ -2,6 +2,7 @@ from datetime import datetime
 
 from airflow.decorators import dag, task
 from airflow.models import Param
+
 from src.seqera_hook import LaunchInfo, SeqeraHook
 from src.synapse_hook import SynapseHook
 

@@ -11,6 +11,7 @@ from airflow.models import Param, DagRun
 from airflow.providers.amazon.aws.hooks.s3 import S3Hook
 from airflow.utils.session import create_session
 from airflow.utils.state import State
+
 from src.seqera_hook import LaunchInfo, SeqeraHook
 from src.synapse_hook import SynapseHook
 
