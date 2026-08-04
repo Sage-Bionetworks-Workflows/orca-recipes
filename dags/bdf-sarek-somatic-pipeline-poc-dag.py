@@ -251,7 +251,8 @@ dag_params = {
 }
 
 dag_config = {
-    "schedule": None,
+    # runs Mon-Fri at 14:00 UTC (7:00am PDT)
+    "schedule": "0 14 * * 1-5",
     "max_active_runs": 1,
     "start_date": datetime(2026, 7, 15),
     "catchup": False,
