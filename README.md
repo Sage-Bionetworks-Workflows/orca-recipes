@@ -187,7 +187,7 @@ Set the following exports (e.g., in your shell profile) so Airflow can resolve c
 ```console
 export AIRFLOW__SECRETS__BACKEND=airflow.providers.amazon.aws.secrets.secrets_manager.SecretsManagerBackend
 
-export AIRFLOW__SECRETS__BACKEND_KWARGS='{"connections_prefix": "airflow/connections", "variables_prefix": "airflow/variables", "profile_name": "dpe-airflow"}'
+export AIRFLOW__SECRETS__BACKEND_KWARGS='{"connections_prefix": "airflow/connections", "variables_prefix": "airflow/variables", "profile_name": "<your-aws-profile>"}'
 
 export AIRFLOW__CORE__ALLOWED_DESERIALIZATION_CLASSES="airflow.* astro.* __main__.*"
 ```
