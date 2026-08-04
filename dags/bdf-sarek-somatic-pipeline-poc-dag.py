@@ -43,7 +43,10 @@ from orca.services.nextflowtower import NextflowTowerHook
 from synapseclient import Activity, File
 
 from src.synapse_hook import SynapseHook
-from src.bdf_compute_task import CURATION_TASK_READY_STATUS, ComputeTask
+from src.bdf_local_compute_task import CURATION_TASK_READY_STATUS, ComputeTask
+from src.utils import get_logger
+
+logger = get_logger(__name__)
 
 
 def extract_fastq_synapse_ids(samplesheet_path: str) -> list[str]:
@@ -205,7 +208,7 @@ def record_run_provenance(
             "synindex": fetch_tower_run_config(tower_ops, synindex_run_id),
         }
     except Exception as error:  # noqa: BLE001 - any Tower/API failure -> fallback
-        print(f"Could not fetch run configs from Tower ({error!r}); using submitted configs.")
+        logger.warning(f"Could not fetch run configs from Tower ({error!r}); using submitted configs.")
         run_configs = submitted_run_configs(compute_task)
 
     config_synapse_id = upload_run_configs(syn, compute_task, run_configs)
@@ -228,14 +231,16 @@ def record_run_provenance(
     )
 
     syn.setProvenance(compute_task.output_folder_id, activity)
-    print(f"Set provenance on output folder {compute_task.output_folder_id}; used={used}")
+    logger.info(f"Set provenance on output folder {compute_task.output_folder_id}; used={used}")
     return compute_task.output_folder_id
 
 
 dag_params = {
     "synapse_conn_id": Param("SYNAPSE_ORCA_SERVICE_ACCOUNT_CONN", type="string"),
     "tower_conn_id": Param("NTAP_ADD5_PROJECT_TOWER_CONN", type="string"),
-    "tower_compute_env_type": Param("ondemand", type="string"),
+    # run on spot, the long, interruption-sensitive sarek run uses ondemand.
+    "tower_spot_compute_env_type": Param("spot", type="string"),
+    "tower_ondemand_compute_env_type": Param("ondemand", type="string"),
     # AWS identity for S3 staging. Must have access to the ComputeTask's Tower
     # bucket, which lives in a different account than Airflow's secrets backend.
     "aws_conn_id": Param("AWS_TOWER_PROD_S3_CONN", type="string"),
@@ -259,8 +264,9 @@ dag_config = {
 
 
 @dag(**dag_config)
-def bdf_sarek_somatic_pipeline_dag() -> DAG:
+def bdf_sarek_somatic_pipeline_poc_dag() -> DAG:
     """ Airflow DAG for the BDF Sarek somatic variant calling pipeline
+
 
     Raises:
         AirflowException: If any of the Tower runs end in a
@@ -269,13 +275,11 @@ def bdf_sarek_somatic_pipeline_dag() -> DAG:
     Returns:
         DAG: The Airflow DAG object for the BDF Sarek somatic pipeline
     """
-
-    @task.sensor(poke_interval=10, timeout=60 * 60 * 24, mode="reschedule")
+    @task.sensor(poke_interval=10, timeout=60 * 60 * 6, mode="reschedule")
     def wait_for_record_set(**context: Any) -> bool:
         """Poll the ComputeTask's CurationTask every 10s until it is ready.
-
-        The ComputeTask only provides the status; the readiness decision (is it
-        COMPLETE?) is this DAG's.
+        Times out after 6 hours. The ComputeTask's CurationTask is ready when
+        its state is COMPLETE.
 
         Returns:
             bool: Whether the CurationTask containing RecordSet with samplesheet
@@ -285,7 +289,7 @@ def bdf_sarek_somatic_pipeline_dag() -> DAG:
         compute_task = ComputeTask.load(params["compute_task_id"])
         syn = SynapseHook(params["synapse_conn_id"]).client
         status = compute_task.task_status(syn)
-        print(f"compute task record_set {compute_task.record_set_id} task_status={status}")
+        logger.info(f"compute task record_set {compute_task.record_set_id} task_status={status}")
         return status == CURATION_TASK_READY_STATUS
 
     @task()
@@ -324,7 +328,7 @@ def bdf_sarek_somatic_pipeline_dag() -> DAG:
         hook = NextflowTowerHook(context["params"]["tower_conn_id"])
         return hook.ops.launch_workflow(
             compute_task.synstage_launch_info(),
-            context["params"]["tower_compute_env_type"],
+            context["params"]["tower_spot_compute_env_type"],
             ignore_previous_runs=True,
         )
 
@@ -339,7 +343,7 @@ def bdf_sarek_somatic_pipeline_dag() -> DAG:
         hook = NextflowTowerHook(context["params"]["tower_conn_id"])
         return hook.ops.launch_workflow(
             compute_task.sarek_launch_info(),
-            context["params"]["tower_compute_env_type"],
+            context["params"]["tower_ondemand_compute_env_type"],
             ignore_previous_runs=True,
         )
 
@@ -354,7 +358,7 @@ def bdf_sarek_somatic_pipeline_dag() -> DAG:
         hook = NextflowTowerHook(context["params"]["tower_conn_id"])
         return hook.ops.launch_workflow(
             compute_task.synindex_launch_info(),
-            context["params"]["tower_compute_env_type"],
+            context["params"]["tower_spot_compute_env_type"],
             ignore_previous_runs=True,
         )
 
@@ -364,19 +368,22 @@ def bdf_sarek_somatic_pipeline_dag() -> DAG:
 
         Only a SUCCEEDED run lets the sensor pass (so the next stage launches). A
         terminal non-success state (FAILED / CANCELLED / UNKNOWN) fails this task,
-        which stops the pipeline -- downstream launch tasks won't run. Still
+        which stops the pipeline -downstream launch tasks won't run. Still
         running -> keep poking.
 
+        Args:
+            tower_run_id (str): The Nextflow Tower run ID to monitor
+
         Returns:
-            bool: True once the workflow has succeeded.
+            bool: True once the workflow has succeeded
 
         Raises:
-            AirflowException: If the workflow reached a terminal non-success state.
+            AirflowException: If the workflow reached a terminal non-success state
         """
         hook = NextflowTowerHook(context["params"]["tower_conn_id"])
         workflow = hook.ops.get_workflow(tower_run_id)
         state = workflow.status.state.value
-        print(f"Current workflow state: {state}")
+        logger.info(f"Current workflow state: {state}")
         if not workflow.status.is_done:
             return False
         if workflow.status.is_successful:
@@ -439,7 +446,7 @@ def bdf_sarek_somatic_pipeline_dag() -> DAG:
     synindex_done >> provenance
 
 
-dag = bdf_sarek_somatic_pipeline_dag()
+dag = bdf_sarek_somatic_pipeline_poc_dag()
 
 
 if __name__ == "__main__":

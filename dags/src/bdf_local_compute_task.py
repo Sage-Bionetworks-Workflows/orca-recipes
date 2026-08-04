@@ -6,7 +6,7 @@ migrate to it with minimal churn later. Today each piece is backed by a DAG
 param or a RecordSet annotation; migrating = swapping the method bodies to read
 from the real ComputeTask instead.
 
-What a real ComputeTask is expected to own (and how it's faked here):
+What a real ComputeTask is expected to own:
 
 - record_set_id: the input samplesheet RecordSet. A 1:1 task -> recordset
   link. Faked as a hardcoded DAG param for now; future: a task property
@@ -96,7 +96,7 @@ class ComputeTask:
             curation_task_id="6957",
             record_set_id="syn76458438",
             samplesheet_id="syn76340211",
-            samplesheet_name="jhu_biobank_wes_demo_samplesheet_test_for_airflow.csv",
+            samplesheet_name="jhu_biobank_wes_demo_samplesheet.csv",
             samplesheet_version=None,
             output_folder_id="syn76340288",
             bucket_name="ntap-add5-project-tower-bucket",
