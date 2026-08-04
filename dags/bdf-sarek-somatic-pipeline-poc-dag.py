@@ -251,8 +251,8 @@ dag_params = {
 }
 
 dag_config = {
-    # runs Mon-Fri at 14:00 UTC (7:00am PDT)
-    "schedule": "0 14 * * 1-5",
+    # runs Mon-Fri at 13:00 UTC (6:00am PDT)
+    "schedule": "0 13 * * 1-5",
     "max_active_runs": 1,
     "start_date": datetime(2026, 7, 15),
     "catchup": False,
@@ -276,10 +276,10 @@ def bdf_sarek_somatic_pipeline_poc_dag() -> DAG:
     Returns:
         DAG: The Airflow DAG object for the BDF Sarek somatic pipeline
     """
-    @task.sensor(poke_interval=10, timeout=60 * 60 * 6, mode="reschedule")
+    @task.sensor(poke_interval=10, timeout=60 * 60 * 12, mode="reschedule")
     def wait_for_record_set(**context: Any) -> bool:
         """Poll the ComputeTask's CurationTask every 10s until it is ready.
-        Times out after 6 hours. The ComputeTask's CurationTask is ready when
+        Times out after 12 hours. The ComputeTask's CurationTask is ready when
         its state is COMPLETE.
 
         Returns:
