@@ -7,14 +7,14 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from dags.agora_nf import dag
-from src.seqera_hook import SeqeraHook, WorkflowState, WorkflowStatus
+from src.nextflow_tower_hook import NextflowTowerHook, WorkflowState, WorkflowStatus
 
 
 RUN_ID = "tw-run"
 RUN_NAME = "test_run"
 DATASET = "test_dataset1, test_dataset2"
 
-# Patched onto SeqeraHook in place of its real methods. A MagicMock attribute is
+# Patched onto NextflowTowerHook in place of its real methods. A MagicMock attribute is
 # not a descriptor, so calls through a hook instance do not pass `self`, and
 # call_args holds exactly the arguments the DAG task passed.
 mock_tower = MagicMock()
@@ -42,8 +42,8 @@ def fake_context() -> dict[str, dict[str, Any]]:
     }
 
 
-@patch.object(SeqeraHook, "launch_workflow", new=mock_tower.launch_workflow)
-@patch.object(SeqeraHook, "get_workflow", new=mock_tower.get_workflow)
+@patch.object(NextflowTowerHook, "launch_workflow", new=mock_tower.launch_workflow)
+@patch.object(NextflowTowerHook, "get_workflow", new=mock_tower.get_workflow)
 def test_launch_agora_on_tower(fake_context: dict[str, dict[str, Any]]) -> None:
     """Tests the launch_agora_on_tower task with input parameters."""
 
@@ -76,8 +76,8 @@ def test_launch_agora_on_tower(fake_context: dict[str, dict[str, Any]]) -> None:
     "state",
     [WorkflowState.SUCCEEDED, WorkflowState.FAILED, WorkflowState.CANCELLED, WorkflowState.UNKNOWN, WorkflowState.RUNNING],
 )
-@patch.object(SeqeraHook, "launch_workflow", new=mock_tower.launch_workflow)
-@patch.object(SeqeraHook, "get_workflow", new=mock_tower.get_workflow)
+@patch.object(NextflowTowerHook, "launch_workflow", new=mock_tower.launch_workflow)
+@patch.object(NextflowTowerHook, "get_workflow", new=mock_tower.get_workflow)
 def test_monitor_agora_workflow_state(fake_context: dict[str, dict[str, Any]], state: WorkflowState) -> None:
     """Tests that monitor_nf_agora_workflow reports done only for terminal workflow states."""
     mock_tower.reset_mock()
@@ -102,8 +102,8 @@ def test_monitor_agora_workflow_state(fake_context: dict[str, dict[str, Any]], s
     "dataset_param, expected_dataset",
     [(DATASET, DATASET), (None, "all datasets"), ("", "all datasets")],
 )
-@patch.object(SeqeraHook, "launch_workflow", new=mock_tower.launch_workflow)
-@patch.object(SeqeraHook, "get_workflow", new=mock_tower.get_workflow)
+@patch.object(NextflowTowerHook, "launch_workflow", new=mock_tower.launch_workflow)
+@patch.object(NextflowTowerHook, "get_workflow", new=mock_tower.get_workflow)
 def test_generate_message(
     fake_context: dict[str, dict[str, Any]],
     state: WorkflowState,
