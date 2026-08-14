@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 
 import airflow.hooks.base as base
 import pytest
+from airflow.exceptions import AirflowNotFoundException
 from requests.exceptions import HTTPError
 
 from src import nextflow_tower_hook
@@ -90,10 +91,10 @@ def make_hook(responses=None, post_responses=None, workspace=WORKSPACE):
 
 
 def disable_airflow_connections(monkeypatch):
-    """Make BaseHook.get_connection fail, as it does outside Airflow."""
+    """Make BaseHook.get_connection fail, as it does for an unknown connection."""
 
     def mock_get_connection(cls, conn_id):
-        raise RuntimeError("no such connection")
+        raise AirflowNotFoundException("no such connection")
 
     monkeypatch.setattr(
         base.BaseHook, "get_connection", classmethod(mock_get_connection)
