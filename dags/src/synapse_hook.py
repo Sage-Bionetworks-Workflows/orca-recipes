@@ -1,6 +1,7 @@
 import os
 from typing import Union
 
+from airflow.exceptions import AirflowNotFoundException
 import synapseclient
 from synapseclient.models import query
 
@@ -42,17 +43,17 @@ class SynapseHook:
         self.client.store(sub_status)
 
     def _login(self) -> synapseclient.Synapse:
-        auth_token = self._resolve_token()
+        auth_token = self._get_connection()
         syn = synapseclient.Synapse()
         syn.login(authToken=auth_token, silent=True)
         return syn
 
-    def _resolve_token(self) -> str:
+    def _get_connection(self) -> str:
         try:
             from airflow.hooks.base import BaseHook
 
             return BaseHook.get_connection(self.conn_id).password
-        except Exception:
+        except AirflowNotFoundException:
             token = os.environ.get("SYNAPSE_AUTH_TOKEN")
             if not token:
                 raise EnvironmentError(
