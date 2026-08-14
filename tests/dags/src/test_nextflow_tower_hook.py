@@ -160,20 +160,21 @@ def test_parse_datetime(value, expected):
 
 
 @pytest.mark.parametrize(
-    "state, is_done, is_successful",
+    "state, is_done, is_successful, is_indeterminate",
     [
-        (WorkflowState.SUBMITTED, False, False),
-        (WorkflowState.RUNNING, False, False),
-        (WorkflowState.SUCCEEDED, True, True),
-        (WorkflowState.FAILED, True, False),
-        (WorkflowState.CANCELLED, True, False),
-        (WorkflowState.UNKNOWN, True, False),
+        (WorkflowState.SUBMITTED, False, False, False),
+        (WorkflowState.RUNNING, False, False, False),
+        (WorkflowState.SUCCEEDED, True, True, False),
+        (WorkflowState.FAILED, True, False, False),
+        (WorkflowState.CANCELLED, True, False, False),
+        (WorkflowState.UNKNOWN, True, False, True),
     ],
 )
-def test_workflow_status(state, is_done, is_successful):
+def test_workflow_status(state, is_done, is_successful, is_indeterminate):
     status = WorkflowStatus(state=state)
     assert status.is_done is is_done
     assert status.is_successful is is_successful
+    assert status.is_indeterminate is is_indeterminate
 
 
 def test_workflow_status_accepts_raw_string():
