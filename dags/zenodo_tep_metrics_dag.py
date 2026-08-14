@@ -98,9 +98,9 @@ CSV_HEADERS = [
 
 dag_params = {
     "synapse_conn_id": Param("SYNAPSE_ORCA_SERVICE_ACCOUNT_CONN", type="string"),
-    # Synapse id of the Synapse folder/project the csv report is uploaded to. Update to the
-    # shared TREAT-AD reporting location.
-    "synapse_export_folder_id": Param("syn75951837", type="string"),
+    # Synapse id of the Synapse folder/project the csv report is uploaded to
+    # (Zenodo Metrics folder under the TREAT-AD Internal Sharing Site)
+    "synapse_export_folder_id": Param("syn76890261", type="string"),
     # Comma-separated Synapse usernames of collaborator(s) to notify when the
     # monthly report is available. (No support for python lists in Params.)
     "collaborator_user_list": Param("3409149", type="string"), # Model-AD collaborators

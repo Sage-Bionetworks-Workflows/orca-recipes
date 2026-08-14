@@ -1,4 +1,4 @@
-"""Airflow hook for Seqera Platform (formerly Nextflow Tower).
+"""Airflow hook for Seqera Platform (Nextflow Tower).
 
 This is an in-repo replacement for ``orca.services.nextflowtower`` from py-orca,
 which collapses that package's hook/ops/client/config layers into a single hook
@@ -12,16 +12,17 @@ existing connection secrets keep working:
     conn_type: tower
     host:      tower.sagebionetworks.org
     schema:    api                              # -> https://<host>/<schema>
-    password:  <Seqera personal access token>
+    password:  <Nextflow Tower personal access token>
     extra:     {"workspace": "<organization>/<workspace>"}
 
 Local fallbacks (used only when the connection cannot be resolved, e.g. under
-``dag.test()`` without a metadata database) follow the names Seqera's own CLI
-uses: ``TOWER_ACCESS_TOKEN``, ``TOWER_API_ENDPOINT``, and ``TOWER_WORKSPACE``.
+``dag.test()`` without a metadata database) follow the names Nextflow Tower's
+own CLI uses: ``TOWER_ACCESS_TOKEN``, ``TOWER_API_ENDPOINT``, and
+``TOWER_WORKSPACE``.
 
 Typical DAG usage:
 
-    hook = SeqeraHook(context["params"]["tower_conn_id"])
+    hook = NextflowTowerHook(context["params"]["tower_conn_id"])
     run_id = hook.launch_workflow(LaunchInfo(...), "ondemand")
     workflow = hook.get_workflow(run_id)
     workflow.status.is_done
@@ -35,6 +36,7 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Iterable, Optional, TypeVar
 
+from airflow.exceptions import AirflowNotFoundException
 import requests
 from requests.exceptions import HTTPError
 
@@ -48,7 +50,7 @@ T = TypeVar("T")
 # Number of items to request per page from Tower's paged endpoints.
 PAGE_SIZE = 50
 
-# Requests never block a worker slot forever; Seqera's API responds in seconds.
+# Requests never block a worker slot forever; Nextflow Tower's API responds in seconds.
 REQUEST_TIMEOUT = 30
 
 # Sort fallback for runs and compute environments with no usable timestamp.
@@ -56,7 +58,7 @@ EPOCH = datetime.min.replace(tzinfo=timezone.utc)
 
 
 class WorkflowState(str, Enum):
-    """Valid values for the state of a Seqera workflow run."""
+    """Valid values for the state of a Nextflow Tower workflow run."""
 
     SUBMITTED = "SUBMITTED"
     RUNNING = "RUNNING"
@@ -133,7 +135,7 @@ def to_camel_case(name: str) -> str:
 
 
 def parse_datetime(value: Any) -> Optional[datetime]:
-    """Parse a Seqera timestamp (RFC 3339) into a UTC datetime.
+    """Parse a Nextflow Tower timestamp (RFC 3339) into a UTC datetime.
 
     Args:
         value: Timestamp string, datetime, or None.
@@ -152,7 +154,7 @@ def parse_datetime(value: Any) -> Optional[datetime]:
             # Python 3.10's fromisoformat() does not accept the 'Z' suffix.
             parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
         except ValueError:
-            logger.warning(f"Could not parse Seqera timestamp: {value!r}")
+            logger.warning(f"Could not parse Nextflow Tower timestamp: {value!r}")
             return None
     if parsed.tzinfo is None:
         return parsed.replace(tzinfo=timezone.utc)
@@ -214,10 +216,14 @@ class WorkflowStatus:
         """Whether the workflow run succeeded."""
         return self.state == WorkflowState.SUCCEEDED
 
+    @property
+    def is_indeterminate(self) -> bool:
+        return self.state == WorkflowState.UNKNOWN
+
 
 @dataclass
 class LaunchInfo:
-    """Description of which workflow to launch on Seqera Platform, and how.
+    """Description of which workflow to launch on Nextflow Tower, and how.
 
     Attributes:
         pipeline: Pipeline to run (a repository URL or ``<org>/<repo>``).
@@ -231,10 +237,10 @@ class LaunchInfo:
             when looking for previous runs of the same workflow.
         pre_run_script: Script to run before the pipeline. Defaults to the
             compute environment's own pre-run script when left unset.
-        params: Pipeline parameters (Seqera's "params" YAML/JSON).
+        params: Pipeline parameters (Nextflow Tower's "params" YAML/JSON).
         profiles: Nextflow config profiles to apply, in order.
-        user_secrets: Names of user-scoped Seqera secrets to expose.
-        workspace_secrets: Names of workspace-scoped Seqera secrets to expose.
+        user_secrets: Names of user-scoped Nextflow Tower secrets to expose.
+        workspace_secrets: Names of workspace-scoped Nextflow Tower secrets to expose.
         label_ids: IDs of the labels to attach to the run.
         resume: Whether to resume a previous run.
         session_id: Session ID of the run being resumed.
@@ -311,7 +317,7 @@ class LaunchInfo:
         setattr(self, attr, dedup(current_values + list(values)))
 
     def to_json(self) -> dict[str, Any]:
-        """Generate the request payload for Seqera's workflow launch endpoint.
+        """Generate the request payload for Nextflow Tower's workflow launch endpoint.
 
         Returns:
             JSON representation of this launch specification.
@@ -350,7 +356,7 @@ class LaunchInfo:
 
 @dataclass
 class Workflow:
-    """Details about a Seqera workflow run."""
+    """Details about a Nextflow Tower workflow run."""
 
     id: str
     run_name: Optional[str] = None
@@ -398,7 +404,7 @@ class Workflow:
 
 @dataclass
 class WorkflowTask:
-    """Details about a single task within a Seqera workflow run."""
+    """Details about a single task within a Nextflow Tower workflow run."""
 
     task_id: Optional[int] = None
     status: Optional[str] = None
@@ -422,7 +428,7 @@ class WorkflowTask:
     work_dir: Optional[str] = None
     raw: Optional[dict[str, Any]] = field(default=None, repr=False, compare=False)
 
-    # Seqera spells this one "workdir" (all lowercase) on task payloads.
+    # Nextflow Tower spells this one "workdir" (all lowercase) on task payloads.
     key_overrides = {"work_dir": "workdir"}
 
     @classmethod
@@ -440,7 +446,7 @@ class WorkflowTask:
 
 @dataclass
 class Label:
-    """A Seqera workflow run label."""
+    """A Nextflow Tower workflow run label."""
 
     id: int
     name: Optional[str] = None
@@ -462,7 +468,7 @@ class Label:
 
 @dataclass
 class ComputeEnv:
-    """A Seqera compute environment.
+    """A Nextflow Tower compute environment.
 
     Both the summary form (from listing compute environments) and the detailed
     form (from fetching one) map onto this class.
@@ -502,7 +508,7 @@ class ComputeEnv:
 
 @dataclass
 class Workspace:
-    """A Seqera workspace, and the organization that owns it."""
+    """A Nextflow Tower workspace, and the organization that owns it."""
 
     id: int
     name: str
@@ -530,8 +536,8 @@ class Workspace:
         )
 
 
-class SeqeraClient:
-    """Thin authenticated HTTP client for Seqera Platform's REST API.
+class NextflowTowerClient:
+    """Thin authenticated HTTP client for Nextflow Tower's REST API.
 
     Attributes:
         api_endpoint: API base endpoint
@@ -570,7 +576,7 @@ class SeqeraClient:
 
         Raises:
             HTTPError: If the request failed. The response body is included in
-                the message, since Seqera explains failures there.
+                the message, since Nextflow Tower explains failures there.
 
         Returns:
             The deserialized JSON response.
@@ -628,7 +634,7 @@ class SeqeraClient:
     ) -> list[dict[str, Any]]:
         """GET a list of items, following pagination when the endpoint pages.
 
-        Paged Seqera endpoints report a ``totalSize`` (or ``total``) alongside
+        Paged Nextflow Tower endpoints report a ``totalSize`` (or ``total``) alongside
         the current page of items; unpaged ones return everything at once.
 
         Args:
@@ -661,16 +667,16 @@ class SeqeraClient:
 
 
 @dataclass
-class SeqeraConfig:
-    """Resolved credentials and target workspace for a Seqera connection."""
+class NextflowTowerConfig:
+    """Resolved credentials and target workspace for a Nextflow Tower connection."""
 
     api_endpoint: str
     auth_token: str
     workspace: Optional[str] = None
 
 
-class SeqeraHook:
-    """Airflow hook for Seqera Platform (formerly Nextflow Tower).
+class NextflowTowerHook:
+    """Airflow hook for Nextflow Tower.
 
     Resolves credentials from an Airflow connection (host/schema = API
     endpoint, password = access token, ``extra.workspace`` = fully-qualified
@@ -691,22 +697,22 @@ class SeqeraHook:
 
     def __init__(self, conn_id: str) -> None:
         self.conn_id = conn_id
-        self._config: Optional[SeqeraConfig] = None
-        self._client: Optional[SeqeraClient] = None
+        self._config: Optional[NextflowTowerConfig] = None
+        self._client: Optional[NextflowTowerClient] = None
         self._workspace_id: Optional[int] = None
 
     @property
-    def config(self) -> SeqeraConfig:
-        """Resolved Seqera credentials for this connection."""
+    def config(self) -> NextflowTowerConfig:
+        """Resolved Nextflow Tower credentials for this connection."""
         if self._config is None:
             self._config = self._resolve_config()
         return self._config
 
     @property
-    def client(self) -> SeqeraClient:
-        """Authenticated Seqera API client."""
+    def client(self) -> NextflowTowerClient:
+        """Authenticated Nextflow Tower API client."""
         if self._client is None:
-            self._client = SeqeraClient(
+            self._client = NextflowTowerClient(
                 self.config.api_endpoint, self.config.auth_token
             )
         return self._client
@@ -866,7 +872,7 @@ class SeqeraHook:
         """List workflow runs launched by this hook that match a search filter.
 
         Args:
-            search_filter: A Seqera search query, as you would compose it in
+            search_filter: A Nextflow Tower search query, as you would compose it in
                 the runs search bar. Defaults to no additional filtering.
 
         Returns:
@@ -889,6 +895,7 @@ class SeqeraHook:
             prefix.
         """
         previous_workflows = []
+        # TODO: can we use search filter parameter of `list_workflows` to pass a runName: filter?
         for workflow in self.list_workflows():
             if workflow.project_name != launch_info.pipeline:
                 continue
@@ -1034,7 +1041,7 @@ class SeqeraHook:
             f"'{user.get('userName')}'. Available workspaces: {available}"
         )
 
-    def _resolve_config(self) -> SeqeraConfig:
+    def _resolve_config(self) -> NextflowTowerConfig:
         """Resolve credentials from the Airflow connection, then the environment.
 
         Raises:
@@ -1065,7 +1072,7 @@ class SeqeraHook:
         if workspace:
             self._validate_workspace(workspace)
 
-        return SeqeraConfig(api_endpoint.rstrip("/"), auth_token, workspace)
+        return NextflowTowerConfig(api_endpoint.rstrip("/"), auth_token, workspace)
 
     def _get_connection(self) -> Optional[Any]:
         """Retrieve the Airflow connection, if one is resolvable.
@@ -1078,7 +1085,7 @@ class SeqeraHook:
             from airflow.hooks.base import BaseHook
 
             return BaseHook.get_connection(self.conn_id)
-        except Exception:
+        except AirflowNotFoundException:
             logger.info(
                 f"Could not resolve Airflow connection '{self.conn_id}'; "
                 "falling back to TOWER_* environment variables."
@@ -1089,7 +1096,7 @@ class SeqeraHook:
     def _parse_connection(
         connection: Any,
     ) -> tuple[Optional[str], Optional[str], Optional[str]]:
-        """Parse an Airflow connection into Seqera configuration values.
+        """Parse an Airflow connection into Nextflow Tower configuration values.
 
         Args:
             connection: An Airflow connection object.

@@ -1,23 +1,24 @@
-"""Unit tests for the shared SeqeraHook (dags/src/seqera_hook.py).
+"""Unit tests for the shared NextflowTowerHook (dags/src/nextflow_tower_hook.py).
 
 Everything external is mocked (Airflow's BaseHook, and the HTTP layer), so these
-tests need no Seqera credentials, no network access, and no Airflow metadata
+tests need no Nextflow Tower credentials, no network access, and no Airflow metadata
 database.
 """
 from datetime import datetime, timezone
 
 import airflow.hooks.base as base
 import pytest
+from airflow.exceptions import AirflowNotFoundException
 from requests.exceptions import HTTPError
 
-from src import seqera_hook
-from src.seqera_hook import (
+from src import nextflow_tower_hook
+from src.nextflow_tower_hook import (
     ComputeEnv,
     Label,
     LaunchInfo,
-    SeqeraClient,
-    SeqeraConfig,
-    SeqeraHook,
+    NextflowTowerClient,
+    NextflowTowerConfig,
+    NextflowTowerHook,
     Workflow,
     WorkflowState,
     WorkflowStatus,
@@ -34,7 +35,7 @@ WORKSPACE_ID = 12345
 
 
 class MockConnection:
-    """Stand-in for an Airflow connection with a Seqera-style layout."""
+    """Stand-in for an Airflow connection with a Nextflow Tower-style layout."""
 
     def __init__(
         self,
@@ -54,7 +55,7 @@ class MockConnection:
 class MockClient:
     """Records requests and replays canned responses keyed by path.
 
-    GET and POST responses are kept apart because some Seqera endpoints (such
+    GET and POST responses are kept apart because some Nextflow Tower endpoints (such
     as /labels) are used with both methods.
     """
 
@@ -77,23 +78,23 @@ class MockClient:
         return self.responses[path][items_key]
 
     def unwrap(self, json, key):
-        return SeqeraClient.unwrap(self, json, key)
+        return NextflowTowerClient.unwrap(self, json, key)
 
 
 def make_hook(responses=None, post_responses=None, workspace=WORKSPACE):
     """Build a hook wired to a MockClient, bypassing credential resolution."""
-    hook = SeqeraHook("TEST_TOWER_CONN")
-    hook._config = SeqeraConfig("https://tower.example.org/api", "token", workspace)
+    hook = NextflowTowerHook("TEST_TOWER_CONN")
+    hook._config = NextflowTowerConfig("https://tower.example.org/api", "token", workspace)
     hook._client = MockClient(responses, post_responses)
     hook._workspace_id = WORKSPACE_ID
     return hook
 
 
 def disable_airflow_connections(monkeypatch):
-    """Make BaseHook.get_connection fail, as it does outside Airflow."""
+    """Make BaseHook.get_connection fail, as it does for an unknown connection."""
 
     def mock_get_connection(cls, conn_id):
-        raise RuntimeError("no such connection")
+        raise AirflowNotFoundException("no such connection")
 
     monkeypatch.setattr(
         base.BaseHook, "get_connection", classmethod(mock_get_connection)
@@ -227,7 +228,7 @@ def test_workflow_task_from_json():
             "status": "FAILED",
             "name": "PROCESS (1)",
             "exitStatus": 137,
-            # Seqera spells this one all-lowercase on task payloads.
+            # Nextflow Tower spells this one all-lowercase on task payloads.
             "workdir": "s3://bucket/work/ab/cdef",
             "machineType": "m5.large",
         }
@@ -371,14 +372,14 @@ def test_client_request_is_authenticated_and_bounded(monkeypatch):
         captured.update(method=method, url=url, **kwargs)
         return "response"
 
-    monkeypatch.setattr(seqera_hook.requests, "request", mock_request)
+    monkeypatch.setattr(nextflow_tower_hook.requests, "request", mock_request)
 
-    client = SeqeraClient("https://tower.example.org/api/", "secret")
+    client = NextflowTowerClient("https://tower.example.org/api/", "secret")
     assert client.request("GET", "/user-info") == "response"
 
     assert captured["url"] == "https://tower.example.org/api/user-info"
     assert captured["headers"]["Authorization"] == "Bearer secret"
-    assert captured["timeout"] == seqera_hook.REQUEST_TIMEOUT
+    assert captured["timeout"] == nextflow_tower_hook.REQUEST_TIMEOUT
 
 
 def test_client_request_json_includes_response_body_on_error(monkeypatch):
@@ -392,16 +393,16 @@ def test_client_request_json_includes_response_body_on_error(monkeypatch):
             return {}
 
     monkeypatch.setattr(
-        seqera_hook.requests, "request", lambda *args, **kwargs: MockResponse()
+        nextflow_tower_hook.requests, "request", lambda *args, **kwargs: MockResponse()
     )
 
-    client = SeqeraClient("https://tower.example.org/api", "secret")
+    client = NextflowTowerClient("https://tower.example.org/api", "secret")
     with pytest.raises(HTTPError, match="Workspace not found"):
         client.request_json("GET", "/workflow/1")
 
 
 def test_client_unwrap_raises_on_missing_key():
-    client = SeqeraClient("https://tower.example.org/api", "secret")
+    client = NextflowTowerClient("https://tower.example.org/api", "secret")
     assert client.unwrap({"workflow": {"id": "1"}}, "workflow") == {"id": "1"}
     with pytest.raises(HTTPError, match="Expecting 'workflow' key"):
         client.unwrap({}, "workflow")
@@ -415,7 +416,7 @@ def test_client_get_items_follows_pagination(monkeypatch):
     ]
     requested_params = []
 
-    client = SeqeraClient("https://tower.example.org/api", "secret")
+    client = NextflowTowerClient("https://tower.example.org/api", "secret")
 
     def mock_get(path, params=None):
         # Copied: the client reuses one params dict across pages.
@@ -433,7 +434,7 @@ def test_client_get_items_follows_pagination(monkeypatch):
 
 
 def test_client_get_items_returns_unpaged_response_as_is(monkeypatch):
-    client = SeqeraClient("https://tower.example.org/api", "secret")
+    client = NextflowTowerClient("https://tower.example.org/api", "secret")
     monkeypatch.setattr(
         client, "get", lambda path, params=None: {"computeEnvs": [{"id": "ce-1"}]}
     )
@@ -442,7 +443,7 @@ def test_client_get_items_returns_unpaged_response_as_is(monkeypatch):
 
 def test_client_get_items_stops_on_empty_page(monkeypatch):
     # A totalSize the endpoint never delivers must not spin forever.
-    client = SeqeraClient("https://tower.example.org/api", "secret")
+    client = NextflowTowerClient("https://tower.example.org/api", "secret")
     pages = [{"totalSize": 10, "labels": [{"id": 1}]}, {"totalSize": 10, "labels": []}]
     monkeypatch.setattr(client, "get", lambda path, params=None: pages.pop(0))
     assert client.get_items("/labels", "labels") == [{"id": 1}]
@@ -459,7 +460,7 @@ def test_config_prefers_airflow_connection(monkeypatch):
     )
     monkeypatch.setenv("TOWER_ACCESS_TOKEN", "env-token")
 
-    config = SeqeraHook("MY_CONN").config
+    config = NextflowTowerHook("MY_CONN").config
     assert config.api_endpoint == "https://tower.sagebionetworks.org/api"
     assert config.auth_token == "conn-token"
     assert config.workspace == WORKSPACE
@@ -472,7 +473,7 @@ def test_config_falls_back_to_env(monkeypatch):
     monkeypatch.setenv("TOWER_API_ENDPOINT", "https://tower-dev.example.org/api/")
     monkeypatch.setenv("TOWER_WORKSPACE", WORKSPACE)
 
-    config = SeqeraHook("MISSING_CONN").config
+    config = NextflowTowerHook("MISSING_CONN").config
     assert config.auth_token == "env-token"
     assert config.api_endpoint == "https://tower-dev.example.org/api"
     assert config.workspace == WORKSPACE
@@ -483,8 +484,8 @@ def test_config_defaults_api_endpoint(monkeypatch):
     clear_tower_env(monkeypatch)
     monkeypatch.setenv("TOWER_ACCESS_TOKEN", "env-token")
 
-    config = SeqeraHook("MISSING_CONN").config
-    assert config.api_endpoint == SeqeraHook.default_api_endpoint
+    config = NextflowTowerHook("MISSING_CONN").config
+    assert config.api_endpoint == NextflowTowerHook.default_api_endpoint
     assert config.workspace is None
 
 
@@ -493,7 +494,7 @@ def test_config_raises_when_token_unresolvable(monkeypatch):
     clear_tower_env(monkeypatch)
 
     with pytest.raises(EnvironmentError, match="TOWER_ACCESS_TOKEN"):
-        SeqeraHook("MISSING_CONN").config
+        NextflowTowerHook("MISSING_CONN").config
 
 
 def test_config_rejects_malformed_workspace(monkeypatch):
@@ -505,7 +506,7 @@ def test_config_rejects_malformed_workspace(monkeypatch):
         ),
     )
     with pytest.raises(ValueError, match="organization-name"):
-        SeqeraHook("MY_CONN").config
+        NextflowTowerHook("MY_CONN").config
 
 
 def test_connection_without_host_leaves_endpoint_to_fallbacks(monkeypatch):
@@ -515,7 +516,7 @@ def test_connection_without_host_leaves_endpoint_to_fallbacks(monkeypatch):
         classmethod(lambda cls, conn_id: MockConnection(host=None)),
     )
     clear_tower_env(monkeypatch)
-    assert SeqeraHook("MY_CONN").config.api_endpoint == SeqeraHook.default_api_endpoint
+    assert NextflowTowerHook("MY_CONN").config.api_endpoint == NextflowTowerHook.default_api_endpoint
 
 
 def test_client_is_lazy_and_cached(monkeypatch):
@@ -525,7 +526,7 @@ def test_client_is_lazy_and_cached(monkeypatch):
         classmethod(lambda cls, conn_id: MockConnection()),
     )
 
-    hook = SeqeraHook("MY_CONN")
+    hook = NextflowTowerHook("MY_CONN")
     assert hook._client is None  # not created until first access
     client = hook.client
     assert client is hook.client  # cached
@@ -609,7 +610,7 @@ def test_list_workflows_filters_on_launch_label():
 
     assert [workflow.id for workflow in workflows] == ["1"]
     _, params = hook._client.calls[0]
-    assert params["search"] == f"runName:foo label:{SeqeraHook.launch_label}"
+    assert params["search"] == f"runName:foo label:{NextflowTowerHook.launch_label}"
 
 
 def test_list_previous_workflows_matches_pipeline_and_run_name_prefix():
@@ -798,13 +799,13 @@ def test_create_label_reuses_existing_non_resource_label():
             "/labels": {
                 "labels": [
                     # Resource labels are a different namespace and never reused.
-                    {"id": 1, "name": SeqeraHook.launch_label, "resource": True},
-                    {"id": 2, "name": SeqeraHook.launch_label, "resource": False},
+                    {"id": 1, "name": NextflowTowerHook.launch_label, "resource": True},
+                    {"id": 2, "name": NextflowTowerHook.launch_label, "resource": False},
                 ]
             }
         }
     )
-    assert hook.create_label(SeqeraHook.launch_label) == 2
+    assert hook.create_label(NextflowTowerHook.launch_label) == 2
     assert hook._client.posts == []
 
 
@@ -852,7 +853,7 @@ LAUNCH_RESPONSES = {
             "labels": [{"id": 10, "name": "cost-center", "resource": True}],
         }
     },
-    "/labels": {"labels": [{"id": 20, "name": SeqeraHook.launch_label, "resource": False}]},
+    "/labels": {"labels": [{"id": 20, "name": NextflowTowerHook.launch_label, "resource": False}]},
 }
 
 LAUNCH_POST_RESPONSES = {"/workflow/launch": {"workflowId": "new-run"}}

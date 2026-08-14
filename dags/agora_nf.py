@@ -41,7 +41,7 @@ from airflow.models.dag import DAG
 from airflow.models.param import Param
 from slack_sdk import WebClient
 
-from src.seqera_hook import LaunchInfo, SeqeraHook
+from src.nextflow_tower_hook import LaunchInfo, NextflowTowerHook
 from src.synapse_hook import SynapseHook
 from src.utils import validate_required_secrets
 
@@ -94,7 +94,7 @@ def agora_nf_run_dag() -> DAG:
         Args:
             workspace_id (str): Workspace ID for tower run
         """
-        hook = SeqeraHook(context["params"]["tower_conn_id"])
+        hook = NextflowTowerHook(context["params"]["tower_conn_id"])
         dataset = context["params"].get("dataset") or ""
         info = LaunchInfo(
             run_name=context["params"]["tower_run_name"],
@@ -127,7 +127,7 @@ def agora_nf_run_dag() -> DAG:
             True once the workflow has reached a terminal state (success,
             failure, or cancellation), signaling the sensor to stop poking.
         """
-        hook = SeqeraHook(context["params"]["tower_conn_id"])
+        hook = NextflowTowerHook(context["params"]["tower_conn_id"])
         workflow = hook.get_workflow(run_id)
         print(f"Current workflow state: {workflow.status.state.value}")
         return workflow.status.is_done
@@ -144,11 +144,11 @@ def agora_nf_run_dag() -> DAG:
             A message reporting the workflow's dataset, terminal state,
             duration, and a link to the run in Tower's UI.
         """
-        hook = SeqeraHook(context["params"]["tower_conn_id"])
+        hook = NextflowTowerHook(context["params"]["tower_conn_id"])
         workflow = hook.get_workflow(run_id)
 
         emoji = "🎉" if workflow.status.is_successful else "❌"
-        dataset = (workflow.params or {}).get("dataset") or "all datasets"
+        dataset = workflow.params.get("dataset") or "all datasets"
 
         duration = "unknown"
         if workflow.submit and workflow.complete:
