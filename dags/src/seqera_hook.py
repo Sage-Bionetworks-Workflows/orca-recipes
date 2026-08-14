@@ -35,6 +35,7 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Iterable, Optional, TypeVar
 
+from airflow.exceptions import AirflowNotFoundException
 import requests
 from requests.exceptions import HTTPError
 
@@ -1079,7 +1080,7 @@ class SeqeraHook:
             from airflow.hooks.base import BaseHook
 
             return BaseHook.get_connection(self.conn_id)
-        except Exception:
+        except AirflowNotFoundException:
             logger.info(
                 f"Could not resolve Airflow connection '{self.conn_id}'; "
                 "falling back to TOWER_* environment variables."
