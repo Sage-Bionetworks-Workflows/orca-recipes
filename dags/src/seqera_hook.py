@@ -889,6 +889,7 @@ class SeqeraHook:
             prefix.
         """
         previous_workflows = []
+        # TODO: can we use search filter parameter of `list_workflows` to pass a runName: filter?
         for workflow in self.list_workflows():
             if workflow.project_name != launch_info.pipeline:
                 continue
