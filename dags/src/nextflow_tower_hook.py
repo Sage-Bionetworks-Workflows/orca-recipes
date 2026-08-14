@@ -192,7 +192,8 @@ def api_kwargs(
 
 @dataclass
 class WorkflowStatus:
-    """A workflow run's state, and what that state implies."""
+    """A workflow run's state, and what that state implies.
+    https://docs.seqera.io/platform-cloud/monitoring/overview"""
 
     state: WorkflowState
 
@@ -218,6 +219,9 @@ class WorkflowStatus:
 
     @property
     def is_indeterminate(self) -> bool:
+        """Whether the workflow has an indeterminate status.
+        It is possible that the workflow has completed execution but
+        but could not connect with the status of the underlying compute."""
         return self.state == WorkflowState.UNKNOWN
 
 
