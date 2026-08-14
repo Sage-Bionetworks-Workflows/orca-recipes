@@ -3,7 +3,7 @@ from datetime import datetime
 from airflow.decorators import dag, task
 from airflow.models import Param
 
-from src.seqera_hook import LaunchInfo, SeqeraHook
+from src.nextflow_tower_hook import LaunchInfo, NextflowTowerHook
 from src.synapse_hook import SynapseHook
 
 
@@ -50,7 +50,7 @@ def challenge_submission_dag():
 
     @task()
     def launch_model2data_workflow(**context):
-        hook = SeqeraHook(context["params"]["tower_conn_id"])
+        hook = NextflowTowerHook(context["params"]["tower_conn_id"])
         info = LaunchInfo(
             run_name=context["params"]["tower_run_name"],
             pipeline="https://github.com/Sage-Bionetworks-Workflows/nf-model2data",
@@ -68,7 +68,7 @@ def challenge_submission_dag():
 
     @task.sensor(poke_interval=300, timeout=604800, mode="reschedule")
     def monitor_model2data_workflow(run_id: str, **context):
-        hook = SeqeraHook(context["params"]["tower_conn_id"])
+        hook = NextflowTowerHook(context["params"]["tower_conn_id"])
         workflow = hook.get_workflow(run_id)
         print(f"Current workflow state: {workflow.status.state.value}")
         return workflow.status.is_done

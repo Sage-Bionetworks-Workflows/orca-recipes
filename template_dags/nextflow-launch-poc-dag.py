@@ -9,7 +9,7 @@ from datetime import datetime
 from airflow.decorators import dag, task
 from airflow.models import Param
 
-from src.seqera_hook import LaunchInfo, SeqeraHook
+from src.nextflow_tower_hook import LaunchInfo, NextflowTowerHook
 
 
 dag_params = {
@@ -33,7 +33,7 @@ dag_config = {
 def nf_hello_test_dag():
     @task()
     def launch_nf_hello_on_tower(**context):
-        hook = SeqeraHook(context["params"]["tower_conn_id"])
+        hook = NextflowTowerHook(context["params"]["tower_conn_id"])
         info = LaunchInfo(
             run_name="nf-hello-test",
             pipeline="nextflow-io/hello",
@@ -44,7 +44,7 @@ def nf_hello_test_dag():
 
     @task.sensor(poke_interval=300, timeout=604800, mode="reschedule")
     def monitor_nf_hello_workflow(run_id: str, **context):
-        hook = SeqeraHook(context["params"]["tower_conn_id"])
+        hook = NextflowTowerHook(context["params"]["tower_conn_id"])
         workflow = hook.get_workflow(run_id)
         print(f"Current workflow state: {workflow.status.state.value}")
         return workflow.status.is_done

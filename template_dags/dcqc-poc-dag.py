@@ -20,7 +20,7 @@ from airflow.models.param import Param
 from airflow.providers.amazon.aws.hooks.s3 import S3Hook
 from synapseclient.models import File
 
-from src.seqera_hook import LaunchInfo, SeqeraHook
+from src.nextflow_tower_hook import LaunchInfo, NextflowTowerHook
 from src.synapse_hook import SynapseHook
 
 REGION_NAME = "us-east-1"
@@ -126,7 +126,7 @@ def dcqc_poc_dag():
         """
         Launches nf-dcqc tower workflow
         """
-        hook = SeqeraHook(context["params"]["tower_conn_id"])
+        hook = NextflowTowerHook(context["params"]["tower_conn_id"])
         parent = context["params"]["synapse_container"]
         run_uuid = context["params"]["uuid"]
         info = LaunchInfo(
@@ -149,7 +149,7 @@ def dcqc_poc_dag():
         """
         Monitor the nf-dcqc tower workflow.
         """
-        hook = SeqeraHook(context["params"]["tower_conn_id"])
+        hook = NextflowTowerHook(context["params"]["tower_conn_id"])
         workflow = hook.get_workflow(run_id)
         print(f"Current workflow state: {workflow.status.state.value}")
         return workflow.status.is_done

@@ -6,7 +6,7 @@ from datetime import datetime
 from airflow.decorators import dag, task
 from airflow.models.param import Param
 
-from src.seqera_hook import LaunchInfo, SeqeraHook
+from src.nextflow_tower_hook import LaunchInfo, NextflowTowerHook
 
 dag_params = {
     "tower_conn_id": Param("GENIE_BPC_PROJECT_TOWER_CONN", type="string"),
@@ -42,7 +42,7 @@ def genie_nf_validate_dag():
         Args:
             workspace_id (str): Workspace ID for tower run
         """
-        hook = SeqeraHook(context["params"]["tower_conn_id"])
+        hook = NextflowTowerHook(context["params"]["tower_conn_id"])
         info = LaunchInfo(
             run_name=context["params"]["tower_run_name"],
             pipeline=context["params"]["pipeline"],
@@ -62,7 +62,7 @@ def genie_nf_validate_dag():
 
     @task.sensor(poke_interval=300, timeout=604800, mode="reschedule")
     def monitor_nf_genie_workflow(run_id: str, **context):
-        hook = SeqeraHook(context["params"]["tower_conn_id"])
+        hook = NextflowTowerHook(context["params"]["tower_conn_id"])
         workflow = hook.get_workflow(run_id)
         print(f"Current workflow state: {workflow.status.state.value}")
         return workflow.status.is_done

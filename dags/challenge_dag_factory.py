@@ -12,7 +12,7 @@ from airflow.providers.amazon.aws.hooks.s3 import S3Hook
 from airflow.utils.session import create_session
 from airflow.utils.state import State
 
-from src.seqera_hook import LaunchInfo, SeqeraHook
+from src.nextflow_tower_hook import LaunchInfo, NextflowTowerHook
 from src.synapse_hook import SynapseHook
 
 
@@ -206,7 +206,7 @@ def create_challenge_dag(challenge_name: str, config: dict):
 
         @task(do_xcom_push=False)
         def verify_bucket_name(**context):
-            hook = SeqeraHook(context["params"]["tower_conn_id"])
+            hook = NextflowTowerHook(context["params"]["tower_conn_id"])
             workspace = os.path.basename(hook.workspace)
 
             bucket_name = context["params"]["bucket_name"].lower()
@@ -287,7 +287,7 @@ def create_challenge_dag(challenge_name: str, config: dict):
 
         @task
         def launch_workflow(manifest_path, run_uuid, **context):
-            hook = SeqeraHook(context["params"]["tower_conn_id"])
+            hook = NextflowTowerHook(context["params"]["tower_conn_id"])
             info = LaunchInfo(
                 run_name=f"{challenge_name}-evaluation-{run_uuid}",
                 pipeline="https://github.com/Sage-Bionetworks-Workflows/nf-synapse-challenge",
@@ -301,7 +301,7 @@ def create_challenge_dag(challenge_name: str, config: dict):
 
         @task.sensor(poke_interval=60, timeout=604800, mode="reschedule")
         def monitor_workflow(tower_run_id, **context):
-            hook = SeqeraHook(context["params"]["tower_conn_id"])
+            hook = NextflowTowerHook(context["params"]["tower_conn_id"])
             workflow = hook.get_workflow(tower_run_id)
             print(f"Current workflow state: {workflow.status.state.value}")
             return workflow.status.is_done
