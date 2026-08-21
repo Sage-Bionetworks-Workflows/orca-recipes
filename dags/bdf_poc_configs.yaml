@@ -1,0 +1,68 @@
+# One entry per workflow - each becomes a DAG named "<key>_bdf_poc_dag".
+# Per-dataset Synapse/S3/Tower settings, the analysis pipeline, and its inline
+# params all live here.
+
+ntap_add5_rnaseq:
+  synapse_conn_id: SYNAPSE_ORCA_SERVICE_ACCOUNT_CONN
+  tower_conn_id: NTAP_ADD5_PROJECT_TOWER_CONN
+  aws_conn_id: AWS_TOWER_PROD_S3_CONN
+  tower_spot_compute_env_type: spot
+  tower_ondemand_compute_env_type: ondemand
+  samplesheet_id: syn76923670
+  samplesheet_name: rnaseq_samplesheet.csv
+  output_folder_id: syn76973320
+  bucket_name: ntap-add5-project-tower-bucket
+  staging_key: samplesheets/RNAseq/
+  output_prefix: rnaseq_GRCh38
+  pipeline: nf-core/rnaseq
+  revision: "3.11.2"
+  nxf_ver: "23.10.0"
+  run_number: 1
+  # Direct-samplesheet test mode:
+  # fetches the samplesheet file by samplesheet_id when curation task/record set is not available
+  use_record_set: false
+  # curation_task_id:      # required when use_record_set: true
+  # record_set_id:         # required when use_record_set: true
+  # rnaseq final per-sample outputs are star_salmon/<sample>/quant.sf; the sample
+  # is taken from the path.
+  provenance:
+    file_name: quant.sf
+  params:
+    gencode: true
+    fasta: s3://sage-igenomes/igenomes/Homo_sapiens/NCBI/GRCh38/Sequence/WholeGenomeFasta/genome.fa
+    gtf: s3://sage-igenomes/igenomes/Homo_sapiens/NCBI/GRCh38/Annotation/Genes/genes.gtf
+    gene_bed: s3://sage-igenomes/igenomes/Homo_sapiens/NCBI/GRCh38/Annotation/Genes/genes.bed
+    star_index: s3://sage-igenomes/igenomes/Homo_sapiens/NCBI/GRCh38/Sequence/STARIndex/
+
+ntap_add5_sarek:
+  synapse_conn_id: SYNAPSE_ORCA_SERVICE_ACCOUNT_CONN
+  tower_conn_id: NTAP_ADD5_PROJECT_TOWER_CONN
+  aws_conn_id: AWS_TOWER_PROD_S3_CONN
+  tower_spot_compute_env_type: spot
+  tower_ondemand_compute_env_type: ondemand
+  samplesheet_id: syn76340211
+  samplesheet_name: jhu_biobank_wes_demo_samplesheet.csv
+  output_folder_id: syn76552822
+  bucket_name: ntap-add5-project-tower-bucket
+  staging_key: samplesheets/Sarek_Process/EAGER-somatic/
+  output_prefix: sarek_somatic_GRCh38
+  pipeline: nf-core/sarek
+  revision: "3.1.2"
+  run_number: 1
+  # RecordSet/CurationTask trigger mode
+  use_record_set: true
+  curation_task_id: "6954"
+  record_set_id: syn76458430
+  # TEST: stage this decoy samplesheet (other datasets' fastqs) for synstage while
+  # still triggering on the real CurationTask above. Remove to use real inputs.
+  # override_samplesheet_id: syn########
+  # sarek annotated per-sample outputs are annotation/<caller>/<sample>/<sample>.*.vcf.gz;
+  # the sample is taken from the path.
+  provenance:
+    object_uri_contains: annotation
+  params:
+    wes: true
+    intervals: s3://ntap-add5-project-tower-bucket/reference/Baits_BED_Files_AgilentV6_REVISED_S07604514_ALLBED_merged_020816_withChr_GRCh38_sorted.bed
+    igenomes_base: s3://sage-igenomes/igenomes
+    genome: GATK.GRCh38
+    tools: strelka,mutect2,vep
