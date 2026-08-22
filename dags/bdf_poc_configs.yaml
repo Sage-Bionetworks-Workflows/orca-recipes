@@ -10,7 +10,7 @@ ntap_add5_rnaseq:
   tower_ondemand_compute_env_type: ondemand
   samplesheet_id: syn76923670
   samplesheet_name: rnaseq_samplesheet.csv
-  output_folder_id: syn76973320
+  output_folder_id: syn76921355
   bucket_name: ntap-add5-project-tower-bucket
   staging_key: samplesheets/RNAseq/
   output_prefix: rnaseq_GRCh38
@@ -18,11 +18,10 @@ ntap_add5_rnaseq:
   revision: "3.11.2"
   nxf_ver: "23.10.0"
   run_number: 1
-  # Direct-samplesheet test mode:
-  # fetches the samplesheet file by samplesheet_id when curation task/record set is not available
-  use_record_set: false
-  # curation_task_id:      # required when use_record_set: true
-  # record_set_id:         # required when use_record_set: true
+  # RecordSet/CurationTask trigger mode
+  use_record_set: true
+  curation_task_id: "7638"
+  record_set_id: syn76955742
   # rnaseq final per-sample outputs are star_salmon/<sample>/quant.sf; the sample
   # is taken from the path.
   provenance:
@@ -42,17 +41,17 @@ ntap_add5_sarek:
   tower_ondemand_compute_env_type: ondemand
   samplesheet_id: syn76340211
   samplesheet_name: jhu_biobank_wes_demo_samplesheet.csv
-  output_folder_id: syn76552822
+  output_folder_id: syn76996990
   bucket_name: ntap-add5-project-tower-bucket
   staging_key: samplesheets/Sarek_Process/EAGER-somatic/
   output_prefix: sarek_somatic_GRCh38
   pipeline: nf-core/sarek
   revision: "3.1.2"
-  run_number: 1
+  run_number: 996
   # RecordSet/CurationTask trigger mode
   use_record_set: true
-  curation_task_id: "6954"
-  record_set_id: syn76458430
+  curation_task_id: "6957"
+  record_set_id: syn76458438
   # TEST: stage this decoy samplesheet (other datasets' fastqs) for synstage while
   # still triggering on the real CurationTask above. Remove to use real inputs.
   # override_samplesheet_id: syn########

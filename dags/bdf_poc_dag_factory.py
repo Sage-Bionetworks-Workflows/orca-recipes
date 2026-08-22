@@ -808,36 +808,35 @@ def create_bdf_dag(name: str, config: dict[str, Any]) -> DAG:
                 output_rows,
             )
 
-        #ready = wait_for_record_set()
-        #fetch = fetch_samplesheet()
+        ready = wait_for_record_set()
+        fetch = fetch_samplesheet()
 
-        #synstage_run_id = launch_synstage()
-        #synstage_done = monitor_workflow.override(task_id="monitor_synstage")(synstage_run_id)
+        synstage_run_id = launch_synstage()
+        synstage_done = monitor_workflow.override(task_id="monitor_synstage")(synstage_run_id)
 
-        #pipeline_run_id = launch_pipeline()
-        #pipeline_done = monitor_workflow.override(task_id="monitor_pipeline")(pipeline_run_id)
+        pipeline_run_id = launch_pipeline()
+        pipeline_done = monitor_workflow.override(task_id="monitor_pipeline")(pipeline_run_id)
 
-        #synindex_run_id = launch_synindex()
-        #synindex_done = monitor_workflow.override(task_id="monitor_synindex")(synindex_run_id)
+        synindex_run_id = launch_synindex()
+        synindex_done = monitor_workflow.override(task_id="monitor_synindex")(synindex_run_id)
 
         provenance = record_provenance(
-            synstage_run_id="2z23ipu4XgmjuL",
-            pipeline_run_id="3GzxvixPNM2fIu",
-            synindex_run_id="1tfFvIGjkxf9HR")
-
+                    synstage_run_id=synstage_run_id,
+                    pipeline_run_id=pipeline_run_id,
+                    synindex_run_id=synindex_run_id)
         # Strict ordering: wait -> fetch -> synstage -> pipeline -> synindex ->
         # provenance, each stage waiting for the previous to finish.
-        #ready >> fetch
-        #fetch >> synstage_run_id
-        #synstage_done >> pipeline_run_id
-        #pipeline_done >> synindex_run_id
-        #synindex_done >> provenance
+        ready >> fetch
+        fetch >> synstage_run_id
+        synstage_done >> pipeline_run_id
+        pipeline_done >> synindex_run_id
+        synindex_done >> provenance
 
     return bdf_dag()
 
 
 # Load configs and generate one DAG per dataset (assigned to module globals so
-# Airflow discovers them), mirroring challenge_dag_factory.py.
+# Airflow discovers them)
 bdf_poc_configs = load_bdf_poc_configs()
 for bdf_name, bdf_config in bdf_poc_configs.items():
     globals()[f"{bdf_name}_bdf_dag"] = create_bdf_dag(bdf_name, bdf_config)
