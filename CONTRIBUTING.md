@@ -34,15 +34,18 @@
 - [Secrets](#secrets)
   - [Creating a New Secret](#creating-a-new-secret)
   - [Configuring a SynapseHook Connection Secret](#configuring-a-synapsehook-connection-secret)
+  - [Configuring a NextflowTowerHook Connection Secret](#configuring-a-nextflowtowerhook-connection-secret)
   - [Configuring a SnowflakeHook Connection Secret](#configuring-a-snowflakehook-connection-secret)
 - [Contributing a Challenge DAG](#contributing-a-challenge-dag)
   - [TL;DR](#tldr)
   - [Overview](#overview)
+  - [Local Development](#local-development)
   - [Creating Your Challenge DAG Config](#creating-your-challenge-dag-config)
     - [Parameters](#parameters)
   - [Contributing a New Challenge DAG](#contributing-a-new-challenge-dag)
   - [Troubleshooting](#troubleshooting)
-    - [Airflow Provider Hooks Failing to Connect — Outdated Codespace Secrets](#airflow-provider-hooks-failing-to-connect--outdated-codespace-secrets)
+    - [Airflow Provider Hooks Failing to Connect — Expired SSO Credentials](#airflow-provider-hooks-failing-to-connect--expired-sso-credentials)
+  - [Refreshing the `AWS_TOWER_PROD_S3_CONN` - Expired AWS Credentials](#refreshing-the-aws_tower_prod_s3_conn---expired-aws-credentials)
 
 ## Development
 
@@ -568,7 +571,7 @@ Airflow secrets (_e.g._ connections and variables) are stored in Secrets Manager
    - The Airflow connection ID used to connect to the Synapse service. Use  to run Synapse commands. This connection was created under the Synapse orca service account.
 1. `aws_conn_id`: `"AWS_TOWER_PROD_S3_CONN"`
    - The Airflow connection ID used to connect to AWS service (the Nextflow Tower S3 bucket).
-   - **Its credentials are temporary and expire** — when they do, S3 operations start failing (`ExpiredToken`, or `AccessDenied` on `kms:GenerateDataKey`). See [Refreshing the `AWS_TOWER_PROD_S3_CONN` credentials](#refreshing-the-aws_tower_prod_s3_conn-credentials-token-expires) to rotate the token.
+   - **Its credentials are temporary and expire** — when they do, S3 operations start failing (`ExpiredToken`, or `AccessDenied` on `kms:GenerateDataKey`). See [Refreshing the `AWS_TOWER_PROD_S3_CONN` credentials](#refreshing-the-aws_tower_prod_s3_conn---expired-aws-credentials) to rotate the token.
 1. `snowflake_conn_id`: `"SNOWFLAKE_DEVELOPER_SERVICE_RAW_CONN"`
    - The Airflow connection ID used to connect to the Snowflake service. Use this to run Snowflake commands as `DEVELOPER_SERVICE` in the `DATA_ENGINEER` role.
 
@@ -590,39 +593,9 @@ New secrets must be created in AWS Secrets Manager in the `dpe-prod` account.
 
 See [Synapse credentials section in the py-orca's env.example](https://github.com/Sage-Bionetworks-Workflows/py-orca/blob/main/.env.example) for the expected format of your custom `SYNAPSE_CONNECTION_URI`.
 
-### Refreshing the `AWS_TOWER_PROD_S3_CONN` credentials (token expires)
+### Configuring a NextflowTowerHook connection secret
 
-`AWS_TOWER_PROD_S3_CONN` carries **temporary** AWS credentials for the Nextflow Tower S3 bucket (which lives in a different AWS account and is SSE-KMS encrypted). Those credentials expire, so periodically S3 operations — for example a DAG staging a samplesheet — start failing with errors like:
-
-- `botocore.exceptions ... (ExpiredToken) ... The provided token has expired`
-- `(AccessDenied) ... not authorized to perform: kms:GenerateDataKey ...` — this happens when the connection's credentials are stale/empty and Airflow silently falls back to your own SSO role, which isn't authorized on the bucket's KMS key.
-
-When that happens, generate a fresh token and update the secret:
-
-1. **Generate a new IAM token in Nextflow Tower.** In Seqera Platform (Nextflow Tower), go to your workspace's workflows / cloud credentials and generate a new set of temporary AWS credentials (IAM token) for the Tower bucket account.
-1. **Update the secret** `airflow/connections/AWS_TOWER_PROD_S3_CONN` in AWS Secrets Manager (`dpe-prod` account, region **us-east-1**). The secret is JSON, and the AWS fields **must be nested under `extra`** — the Secrets Manager backend only keeps the `login`, `password`, `host`, `port`, `schema`, `conn_type`, and `extra` keys and silently drops any other top-level keys (so top-level `aws_access_key_id`/`region_name`/etc. are lost, leaving an empty connection):
-
-   ```json
-   {
-     "conn_type": "aws",
-     "login": "<aws_access_key_id>",
-     "password": "<aws_secret_access_key>",
-     "extra": {
-       "aws_session_token": "<aws_session_token>",
-       "region_name": "us-east-1"
-     }
-   }
-   ```
-
-   If you use a role instead of static keys, put `"role_arn"` in `extra` (and drop the keys/token).
-1. **Verify** the connection resolves _with_ credentials (not empty) and the S3 operation succeeds again:
-
-   ```console
-   airflow connections get AWS_TOWER_PROD_S3_CONN -o json
-   ```
-
-> [!NOTE]
-> In deployed Airflow the pods assume the `airflow-croissant` IRSA role and no credentials are stored in the connection, so this manual refresh is only needed for local/dev runs that use the stored connection.
+See [Nextflow Tower credentials section in the py-orca's env.example](https://github.com/Sage-Bionetworks-Workflows/py-orca/blob/main/.env.example) for the expected format of your custom `NEXTFLOWTOWER_CONNECTION_URI`.
 
 ### Configuring a SnowflakeHook connection secret
 
@@ -811,3 +784,34 @@ If it still fails, confirm your profile is configured and you are assigned the `
 ```console
 aws sts get-caller-identity --profile <your-sso-profile>
 ```
+
+### Refreshing the `AWS_TOWER_PROD_S3_CONN` - Expired AWS credentials
+
+`AWS_TOWER_PROD_S3_CONN` carries **temporary** AWS credentials for the Nextflow Tower S3 bucket (which lives in a different AWS account and is SSE-KMS encrypted). Those credentials expire, so periodically S3 operations, for example a DAG staging a samplesheet start failing with errors like:
+
+- `botocore.exceptions ... (ExpiredToken) ... The provided token has expired`
+- `(AccessDenied) ... not authorized to perform: kms:GenerateDataKey ...` — this happens when the connection's credentials are stale/empty and Airflow silently falls back to your own SSO role, which isn't authorized on the bucket's KMS key.
+
+When that happens, generate a fresh token and update the secret:
+
+1. **Generate a new IAM token in Nextflow Tower.** In Seqera Platform (Nextflow Tower), go to your workspace's workflows / cloud credentials and generate a new set of temporary AWS credentials (IAM token) for the Tower bucket account.
+1. **Update the secret** `airflow/connections/AWS_TOWER_PROD_S3_CONN` in AWS Secrets Manager (`dpe-prod` account, region **us-east-1**). The secret is JSON, and the AWS fields **must be nested under `extra`** — the Secrets Manager backend only keeps the `login`, `password`, `host`, `port`, `schema`, `conn_type`, and `extra` keys and silently drops any other top-level keys (so top-level `aws_access_key_id`/`region_name`/etc. are lost, leaving an empty connection):
+
+   ```json
+   {
+     "conn_type": "aws",
+     "login": "<aws_access_key_id>",
+     "password": "<aws_secret_access_key>",
+     "extra": {
+       "aws_session_token": "<aws_session_token>",
+       "region_name": "us-east-1"
+     }
+   }
+   ```
+
+   If you use a role instead of static keys, put `"role_arn"` in `extra` (and drop the keys/token).
+1. **Verify** the connection resolves _with_ credentials (not empty) and the S3 operation succeeds again:
+
+   ```console
+   airflow connections get AWS_TOWER_PROD_S3_CONN -o json
+   ```
