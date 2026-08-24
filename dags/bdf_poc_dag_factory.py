@@ -435,6 +435,13 @@ def submitted_run_configs(dataset: Dataset, params: dict[str, Any]) -> dict[str,
     """
 
     def as_dict(info: LaunchInfo) -> dict[str, Any]:
+        """Convert a LaunchInfo instance to a dictionary.
+        Args:
+            info: The LaunchInfo instance to be converted.
+
+        Returns:
+            dict[str, Any]: A dictionary representation of the LaunchInfo instance.
+        """
         return {
             "pipeline": info.pipeline,
             "revision": info.revision,
