@@ -13,7 +13,7 @@ fi
 
 ENV_FILE="$(git rev-parse --show-toplevel 2>/dev/null || echo .)/.env"
 
-aws sso login --profile "${PROFILE}"
+aws sso login --profile "${PROFILE}" --use-device-code
 
 # Fetch the credentials first, so a failure here never mutates the user's .env.
 CREDS="$(aws configure export-credentials --profile "${PROFILE}" --format env-no-export)"

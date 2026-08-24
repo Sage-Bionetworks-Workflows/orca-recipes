@@ -785,6 +785,58 @@ If it still fails, confirm your profile is configured and you are assigned the `
 aws sts get-caller-identity --profile <your-sso-profile>
 ```
 
+#### Codespaces: AWS Credentials Not Reaching the Airflow Containers
+
+In Codespaces, authenticate via the **short-lived keys path**, not `AWS_PROFILE`.
+There is no host `~/.aws` to mount, so an SSO profile can't be resolved inside the
+containers — `scripts/aws-sso-to-env.sh` exports temporary keys into `.env` instead.
+Two failure modes:
+
+- **`botocore.exceptions.ProfileNotFound: The config profile () could not be found`**
+  — `AWS_PROFILE` is set to an empty string. Make sure `AWS_PROFILE` is **not** set
+  in your Codespace `.env` at all (it's for the local profile path, not Codespaces).
+- **`UnrecognizedClientException` / `InvalidClientTokenId: The security token
+  included in the request is invalid`** — the containers are running with stale,
+  incomplete, or mismatched temporary credentials.
+
+Fix, in order:
+
+1. Confirm your SSO session is valid at the source:
+   ```console
+   aws sts get-caller-identity --profile dpe-airflow
+   ```
+   If it fails, re-run `aws sso login --profile dpe-airflow` and finish the browser flow.
+1. Re-export a fresh, matched credential set into `.env` (clear stale/duplicate lines first):
+   ```console
+   sed -i '/^AWS_ACCESS_KEY_ID=/d;/^AWS_SECRET_ACCESS_KEY=/d;/^AWS_SESSION_TOKEN=/d' .env
+   bash scripts/aws-sso-to-env.sh dpe-airflow
+   ```
+1. **Recreate the containers.** Containers only read `.env` at (re)creation, so a
+   plain `restart` won't pick up new credentials — and it must reach the **worker**
+   (where tasks run), so recreate the whole stack:
+   ```console
+   docker compose up -d --force-recreate
+   ```
+1. Verify the **worker** has a complete, valid set (access key starts with `ASIA`,
+   session token present):
+   ```console
+   docker compose exec airflow-worker env | grep AWS_
+   docker compose exec airflow-worker python -c \
+     "import boto3; print(boto3.client('sts', region_name='us-east-1').get_caller_identity())"
+   ```
+1. A task that already failed keeps its old error — clear it (or trigger a fresh run)
+   so it re-executes with the refreshed credentials:
+   ```console
+   docker compose exec airflow-scheduler airflow tasks clear <dag_id> -y
+   ```
+
+> [!NOTE]
+> These exported keys are **short-lived (~1 hour)**. A long-waiting sensor (e.g. a
+> RecordSet/CurationTask poll) can outlive them, so the step that finally runs may
+> fail with `ExpiredToken`. Re-run steps 2–3 shortly before the pipeline needs to
+> run. For long runs, use the local `AWS_PROFILE` + mounted `~/.aws` path (which
+> auto-refreshes) rather than Codespaces.
+
 ### Refreshing the `AWS_TOWER_PROD_S3_CONN` - Expired AWS credentials
 
 `AWS_TOWER_PROD_S3_CONN` carries **temporary** AWS credentials for the Nextflow Tower S3 bucket (which lives in a different AWS account and is SSE-KMS encrypted). Those credentials expire, so periodically S3 operations, for example a DAG staging a samplesheet start failing with errors like:
