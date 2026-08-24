@@ -62,7 +62,7 @@ def load_bdf_poc_configs(path: Path = CONFIG_PATH) -> dict[str, Any]:
         return yaml.safe_load(handle) or {}
 
 
-def curation_task_status(syn: Any, curation_task_id: str) -> Optional[str]:
+def curation_task_status(syn: "synapseclient.Synapse", curation_task_id: str) -> Optional[str]:
     """Retrieve the CurationTask's lifecycle state using
     GET /curation/task/{taskId}/status
 
@@ -262,10 +262,28 @@ def prepare_synindex_info(dataset: Dataset) -> LaunchInfo:
     )
 
 
+def _row_fastq_ids(row: dict[str, str]) -> list[str]:
+    """Return the ordered, de-duplicated fastq synIDs from a single samplesheet row.
+
+    Args:
+        row: A samplesheet row mapping column names to values.
+
+    Returns:
+        list[str]: The synapse IDs found in the row's "fastq_1"/"fastq_2" columns.
+    """
+    fastq_ids: list[str] = []
+    for column in ("fastq_1", "fastq_2"):
+        for synapse_id in re.findall(r"syn\d+", (row.get(column) or "").strip()):
+            if synapse_id not in fastq_ids:
+                fastq_ids.append(synapse_id)
+    return fastq_ids
+
+
 def parse_sample_fastq_map(samplesheet_path: str) -> dict[str, list[str]]:
     """Map each samplesheet sample to the union of its fastq_1/fastq_2 synIDs.
 
        Uses utf-8-sig encoding to handle potential BOM (Byte Order Mark) in the CSV file.
+       Assumes the CSV file has columns named "sample", "fastq_1", and "fastq_2".
 
     Args:
         samplesheet_path: The path to the samplesheet CSV file.
@@ -280,14 +298,13 @@ def parse_sample_fastq_map(samplesheet_path: str) -> dict[str, list[str]]:
             if not sample:
                 continue
             fastq_ids = sample_map.setdefault(sample, [])
-            for column in ("fastq_1", "fastq_2"):
-                for synapse_id in re.findall(r"syn\d+", (row.get(column) or "").strip()):
-                    if synapse_id not in fastq_ids:
-                        fastq_ids.append(synapse_id)
+            for synapse_id in _row_fastq_ids(row):
+                if synapse_id not in fastq_ids:
+                    fastq_ids.append(synapse_id)
     return sample_map
 
 
-def download_samplesheet(syn: Any, params: dict[str, Any], dest_dir: str) -> str:
+def download_samplesheet(syn: "synapseclient.Synapse", params: dict[str, Any], dest_dir: str) -> str:
     """Download the samplesheet CSV to a local directory
 
     Precedence:
@@ -378,7 +395,7 @@ def select_provenance_sample(
     return match_sample_by_path(object_uri, sample_fastqs)
 
 
-def fetch_tower_run_config(ops: Any, run_id: str) -> dict[str, Any]:
+def fetch_tower_run_config(ops: "towerapi.TowerOps", run_id: str) -> dict[str, Any]:
     """Fetch the actual launch config Tower recorded for a workflow run.
 
     Args:
@@ -443,7 +460,7 @@ def submitted_run_configs(dataset: Dataset, params: dict[str, Any]) -> dict[str,
     }
 
 
-def upload_run_configs(syn: Any, dataset: Dataset, run_configs: dict[str, Any]) -> str:
+def upload_run_configs(syn: "synapseclient.Synapse", dataset: Dataset, run_configs: dict[str, Any]) -> str:
     """Upload the per-stage Tower configs as one JSON file in the output folder.
 
     Args:
@@ -501,8 +518,8 @@ def read_synindex_mapping(s3_hook: S3Hook, mapping_uri: str) -> list[dict[str, s
 
 
 def record_run_provenance(
-    syn: Any,
-    tower_ops: Any,
+    syn: "synapseclient.Synapse",
+    tower_ops: "towerapi.TowerOps",
     dataset: Dataset,
     params: dict[str, Any],
     run_ids: dict[str, str],
