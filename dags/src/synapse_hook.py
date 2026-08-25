@@ -1,6 +1,7 @@
 import os
 from typing import Union
 
+from airflow.exceptions import AirflowNotFoundException
 import synapseclient
 from synapseclient.models import query
 
@@ -30,6 +31,20 @@ class SynapseHook:
         )
         return df["id"].tolist()
 
+    def monitor_evaluation_queue(self, evaluation_id: Union[int, str]) -> bool:
+        """Check whether an evaluation queue has submissions awaiting evaluation.
+
+        Args:
+            evaluation_id: Synapse ID of the evaluation queue to monitor.
+
+        Returns:
+            True if the queue has at least one "RECEIVED" submission.
+        """
+        submissions = self.client.getSubmissionBundles(
+            evaluation_id, status="RECEIVED"
+        )
+        return any(True for _ in submissions)
+
     def update_submission_status(
         self,
         submission_id: Union[int, str],
@@ -42,17 +57,17 @@ class SynapseHook:
         self.client.store(sub_status)
 
     def _login(self) -> synapseclient.Synapse:
-        auth_token = self._resolve_token()
+        auth_token = self._get_connection()
         syn = synapseclient.Synapse()
         syn.login(authToken=auth_token, silent=True)
         return syn
 
-    def _resolve_token(self) -> str:
+    def _get_connection(self) -> str:
         try:
             from airflow.hooks.base import BaseHook
 
             return BaseHook.get_connection(self.conn_id).password
-        except Exception:
+        except AirflowNotFoundException:
             token = os.environ.get("SYNAPSE_AUTH_TOKEN")
             if not token:
                 raise EnvironmentError(

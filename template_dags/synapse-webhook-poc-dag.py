@@ -14,7 +14,7 @@ from airflow.decorators import dag, task
 from airflow.models.param import Param
 from airflow.providers.amazon.aws.hooks.sqs import SqsHook
 
-from orca.services.synapse import SynapseHook
+from src.synapse_hook import SynapseHook
 
 # Default parameters for the DAG
 dag_params = {

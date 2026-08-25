@@ -7,6 +7,7 @@ Airflow metadata database.
 import airflow.hooks.base as base
 
 import pytest
+from airflow.exceptions import AirflowNotFoundException
 
 from src import synapse_hook
 from src.synapse_hook import SynapseHook
@@ -29,7 +30,7 @@ def test_client_is_lazy_and_cached(monkeypatch):
     assert len(login_calls) == 1
 
 
-def test_resolve_token_prefers_airflow_connection(monkeypatch):
+def test_get_connection_prefers_airflow_connection(monkeypatch):
     mock_token = "unit-test-token"
 
     class MockConnection:
@@ -42,24 +43,24 @@ def test_resolve_token_prefers_airflow_connection(monkeypatch):
         classmethod(lambda cls, conn_id: MockConnection(mock_token)),
     )
 
-    assert SynapseHook("MY_CONN")._resolve_token() == mock_token
+    assert SynapseHook("MY_CONN")._get_connection() == mock_token
 
 
-def test_resolve_token_falls_back_to_env(monkeypatch):
+def test_get_connection_falls_back_to_env(monkeypatch):
     def mock_get_connection(cls, conn_id):
-        raise RuntimeError("no such connection")
+        raise AirflowNotFoundException("no such connection")
 
     monkeypatch.setattr(
         base.BaseHook, "get_connection", classmethod(mock_get_connection)
     )
     monkeypatch.setenv("SYNAPSE_AUTH_TOKEN", "env-token")
 
-    assert SynapseHook("MISSING_CONN")._resolve_token() == "env-token"
+    assert SynapseHook("MISSING_CONN")._get_connection() == "env-token"
 
 
-def test_resolve_token_raises_when_unresolvable(monkeypatch):
+def test_get_connection_raises_when_unresolvable(monkeypatch):
     def mock_get_connection(cls, conn_id):
-        raise RuntimeError("no such connection")
+        raise AirflowNotFoundException("no such connection")
 
     monkeypatch.setattr(
         base.BaseHook, "get_connection", classmethod(mock_get_connection)
@@ -67,7 +68,7 @@ def test_resolve_token_raises_when_unresolvable(monkeypatch):
     monkeypatch.delenv("SYNAPSE_AUTH_TOKEN", raising=False)
 
     with pytest.raises(EnvironmentError, match="SYNAPSE_AUTH_TOKEN"):
-        SynapseHook("MISSING_CONN")._resolve_token()
+        SynapseHook("MISSING_CONN")._get_connection()
 
 
 def test_login_authenticates_with_resolved_token(monkeypatch):
@@ -81,7 +82,7 @@ def test_login_authenticates_with_resolved_token(monkeypatch):
     monkeypatch.setattr(synapse_hook.synapseclient, "Synapse", MockSynapse)
 
     hook = SynapseHook("conn")
-    monkeypatch.setattr(hook, "_resolve_token", lambda: "resolved-token")
+    monkeypatch.setattr(hook, "_get_connection", lambda: "resolved-token")
 
     client = hook._login()
     assert isinstance(client, MockSynapse)
@@ -112,6 +113,27 @@ def test_get_submissions_with_status(monkeypatch):
     assert result == ["syn1", "syn2"]
     # The second query filters the view by the requested status.
     assert "status = 'RECEIVED'" in queries[-1]
+
+
+@pytest.mark.parametrize(
+    "bundles, expected",
+    [([], False), ([{"submission": 1}], True), ([{"a": 1}, {"b": 2}], True)],
+)
+def test_monitor_evaluation_queue(bundles, expected):
+    class MockClient:
+        def __init__(self):
+            self.call = None
+
+        def getSubmissionBundles(self, evaluation_id, status=None):
+            self.call = (evaluation_id, status)
+            # The real client returns a generator, not a list.
+            return iter(bundles)
+
+    hook = SynapseHook("conn")
+    hook._client = MockClient()
+
+    assert hook.monitor_evaluation_queue("9615332") is expected
+    assert hook._client.call == ("9615332", "RECEIVED")
 
 
 def test_update_submission_status(monkeypatch):
