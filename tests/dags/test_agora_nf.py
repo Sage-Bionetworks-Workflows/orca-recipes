@@ -18,7 +18,16 @@ DATASET = "test_dataset1, test_dataset2"
 # not a descriptor, so calls through a hook instance do not pass `self`, and
 # call_args holds exactly the arguments the DAG task passed.
 mock_tower = MagicMock()
-mock_tower.launch_workflow.return_value = RUN_ID
+
+
+@pytest.fixture(autouse=True)
+def reset_mock_tower() -> None:
+    """Clears call history between tests so shared `mock_tower` state cannot leak.
+
+    Without this, assertions like `assert_called_once()` depend on test ordering.
+    """
+    mock_tower.reset_mock(return_value=True)
+    mock_tower.launch_workflow.return_value = RUN_ID
 
 
 @pytest.fixture
@@ -80,7 +89,6 @@ def test_launch_agora_on_tower(fake_context: dict[str, dict[str, Any]]) -> None:
 @patch.object(NextflowTowerHook, "get_workflow", new=mock_tower.get_workflow)
 def test_monitor_agora_workflow_state(fake_context: dict[str, dict[str, Any]], state: WorkflowState) -> None:
     """Tests that monitor_nf_agora_workflow reports done only for terminal workflow states."""
-    mock_tower.reset_mock()
     mock_tower.get_workflow.return_value.status = WorkflowStatus(state=state)
 
     raw_python_function = dag.get_task("monitor_nf_agora_workflow").python_callable
@@ -111,7 +119,6 @@ def test_generate_message(
     expected_dataset: str,
 ) -> None:
     """Tests that generate_message returns a string containing the run_id."""
-    mock_tower.reset_mock()
     mock_tower.get_workflow.return_value.status = WorkflowStatus(state=state)
     mock_tower.get_workflow.return_value.run_name = RUN_NAME
     mock_tower.get_workflow.return_value.id = RUN_ID
