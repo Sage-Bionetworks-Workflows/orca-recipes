@@ -31,6 +31,20 @@ class SynapseHook:
         )
         return df["id"].tolist()
 
+    def monitor_evaluation_queue(self, evaluation_id: Union[int, str]) -> bool:
+        """Check whether an evaluation queue has submissions awaiting evaluation.
+
+        Args:
+            evaluation_id: Synapse ID of the evaluation queue to monitor.
+
+        Returns:
+            True if the queue has at least one "RECEIVED" submission.
+        """
+        submissions = self.client.getSubmissionBundles(
+            evaluation_id, status="RECEIVED"
+        )
+        return any(True for _ in submissions)
+
     def update_submission_status(
         self,
         submission_id: Union[int, str],
