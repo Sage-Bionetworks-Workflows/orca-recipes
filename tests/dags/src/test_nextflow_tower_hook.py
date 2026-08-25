@@ -19,6 +19,7 @@ from src.nextflow_tower_hook import (
     NextflowTowerClient,
     NextflowTowerConfig,
     NextflowTowerHook,
+    PAGE_SIZE,
     Workflow,
     WorkflowState,
     WorkflowStatus,
@@ -432,6 +433,30 @@ def test_client_get_items_follows_pagination(monkeypatch):
     # The first request is unpaged; later ones page by offset.
     assert requested_params[0] == {"workspaceId": 1}
     assert [params["offset"] for params in requested_params[1:]] == [1, 2]
+
+
+def test_client_get_items_follows_pagination_with_total_key(monkeypatch):
+    # Some endpoints report the page count as 'total' rather than 'totalSize'.
+    pages = [
+        {"total": 2, "labels": [{"id": 1}]},
+        {"total": 2, "labels": [{"id": 2}]},
+    ]
+    requested_params = []
+
+    client = NextflowTowerClient("https://tower.example.org/api", "secret")
+
+    def mock_get(path, params=None):
+        # Copied: the client reuses one params dict across pages.
+        requested_params.append(dict(params or {}))
+        return pages[len(requested_params) - 1]
+
+    monkeypatch.setattr(client, "get", mock_get)
+
+    items = client.get_items("/labels", "labels")
+
+    assert items == [{"id": 1}, {"id": 2}]
+    assert requested_params[0] == {}
+    assert requested_params[1] == {"max": PAGE_SIZE, "offset": 1}
 
 
 def test_client_get_items_returns_unpaged_response_as_is(monkeypatch):
