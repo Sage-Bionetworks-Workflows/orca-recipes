@@ -14,20 +14,20 @@ RUN_ID = "tw-run"
 RUN_NAME = "test_run"
 DATASET = "test_dataset1, test_dataset2"
 
-# Patched onto NextflowTowerHook in place of its real methods. A MagicMock attribute is
-# not a descriptor, so calls through a hook instance do not pass `self`, and
-# call_args holds exactly the arguments the DAG task passed.
-mock_tower = MagicMock()
+@pytest.fixture
+def mock_tower(monkeypatch: pytest.MonkeyPatch) -> MagicMock:
+    """Replaces the NextflowTowerHook methods the DAG calls with a fresh mock per test.
 
-
-@pytest.fixture(autouse=True)
-def reset_mock_tower() -> None:
-    """Clears call history between tests so shared `mock_tower` state cannot leak.
-
-    Without this, assertions like `assert_called_once()` depend on test ordering.
+    monkeypatch undoes the attribute changes at teardown, and building the mock inside
+    the fixture keeps call history from leaking between tests. A MagicMock attribute is
+    not a descriptor, so calls through a hook instance do not pass `self`, and
+    call_args holds exactly the arguments the DAG task passed.
     """
-    mock_tower.reset_mock(return_value=True)
-    mock_tower.launch_workflow.return_value = RUN_ID
+    mock = MagicMock()
+    mock.launch_workflow.return_value = RUN_ID
+    monkeypatch.setattr(NextflowTowerHook, "launch_workflow", mock.launch_workflow)
+    monkeypatch.setattr(NextflowTowerHook, "get_workflow", mock.get_workflow)
+    return mock
 
 
 @pytest.fixture
@@ -51,9 +51,9 @@ def fake_context() -> dict[str, dict[str, Any]]:
     }
 
 
-@patch.object(NextflowTowerHook, "launch_workflow", new=mock_tower.launch_workflow)
-@patch.object(NextflowTowerHook, "get_workflow", new=mock_tower.get_workflow)
-def test_launch_agora_on_tower(fake_context: dict[str, dict[str, Any]]) -> None:
+def test_launch_agora_on_tower(
+    fake_context: dict[str, dict[str, Any]], mock_tower: MagicMock
+) -> None:
     """Tests the launch_agora_on_tower task with input parameters."""
 
     # Task functions are wrapped by the @task decorator; python_callable is the underlying function
@@ -85,9 +85,9 @@ def test_launch_agora_on_tower(fake_context: dict[str, dict[str, Any]]) -> None:
     "state",
     [WorkflowState.SUCCEEDED, WorkflowState.FAILED, WorkflowState.CANCELLED, WorkflowState.UNKNOWN, WorkflowState.RUNNING],
 )
-@patch.object(NextflowTowerHook, "launch_workflow", new=mock_tower.launch_workflow)
-@patch.object(NextflowTowerHook, "get_workflow", new=mock_tower.get_workflow)
-def test_monitor_agora_workflow_state(fake_context: dict[str, dict[str, Any]], state: WorkflowState) -> None:
+def test_monitor_agora_workflow_state(
+    fake_context: dict[str, dict[str, Any]], mock_tower: MagicMock, state: WorkflowState
+) -> None:
     """Tests that monitor_nf_agora_workflow reports done only for terminal workflow states."""
     mock_tower.get_workflow.return_value.status = WorkflowStatus(state=state)
 
@@ -110,10 +110,9 @@ def test_monitor_agora_workflow_state(fake_context: dict[str, dict[str, Any]], s
     "dataset_param, expected_dataset",
     [(DATASET, DATASET), (None, "all datasets"), ("", "all datasets")],
 )
-@patch.object(NextflowTowerHook, "launch_workflow", new=mock_tower.launch_workflow)
-@patch.object(NextflowTowerHook, "get_workflow", new=mock_tower.get_workflow)
 def test_generate_message(
     fake_context: dict[str, dict[str, Any]],
+    mock_tower: MagicMock,
     state: WorkflowState,
     dataset_param: str | None,
     expected_dataset: str,
