@@ -7,16 +7,27 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from dags.agora_nf import dag
-from orca.services.nextflowtower import NextflowTowerHook
-from orca.services.nextflowtower.models import WorkflowState, WorkflowStatus
+from src.nextflow_tower_hook import NextflowTowerHook, WorkflowState, WorkflowStatus
 
 
 RUN_ID = "tw-run"
 RUN_NAME = "test_run"
 DATASET = "test_dataset1, test_dataset2"
 
-mock_ops_client = MagicMock()
-mock_ops_client.launch_workflow.return_value = RUN_ID
+@pytest.fixture
+def mock_tower(monkeypatch: pytest.MonkeyPatch) -> MagicMock:
+    """Replaces the NextflowTowerHook methods the DAG calls with a fresh mock per test.
+
+    monkeypatch undoes the attribute changes at teardown, and building the mock inside
+    the fixture keeps call history from leaking between tests. A MagicMock attribute is
+    not a descriptor, so calls through a hook instance do not pass `self`, and
+    call_args holds exactly the arguments the DAG task passed.
+    """
+    mock = MagicMock()
+    mock.launch_workflow.return_value = RUN_ID
+    monkeypatch.setattr(NextflowTowerHook, "launch_workflow", mock.launch_workflow)
+    monkeypatch.setattr(NextflowTowerHook, "get_workflow", mock.get_workflow)
+    return mock
 
 
 @pytest.fixture
@@ -40,18 +51,19 @@ def fake_context() -> dict[str, dict[str, Any]]:
     }
 
 
-@patch.object(NextflowTowerHook, 'ops', new=mock_ops_client)
-def test_launch_agora_on_tower(fake_context: dict[str, dict[str, Any]]) -> None:
+def test_launch_agora_on_tower(
+    fake_context: dict[str, dict[str, Any]], mock_tower: MagicMock
+) -> None:
     """Tests the launch_agora_on_tower task with input parameters."""
 
     # Task functions are wrapped by the @task decorator; python_callable is the underlying function
     raw_python_function = dag.get_task("launch_agora_on_tower").python_callable
     run_id = raw_python_function(**fake_context)
-    mock_ops_client.launch_workflow.assert_called_once()
+    mock_tower.launch_workflow.assert_called_once()
     assert run_id == RUN_ID
 
     # Validate the full LaunchInfo payload and the remaining launch_workflow call args
-    called_args, called_kwargs = mock_ops_client.launch_workflow.call_args
+    called_args, called_kwargs = mock_tower.launch_workflow.call_args
     launched_info_object, compute_env = called_args
 
     assert launched_info_object.run_name == RUN_NAME
@@ -73,11 +85,11 @@ def test_launch_agora_on_tower(fake_context: dict[str, dict[str, Any]]) -> None:
     "state",
     [WorkflowState.SUCCEEDED, WorkflowState.FAILED, WorkflowState.CANCELLED, WorkflowState.UNKNOWN, WorkflowState.RUNNING],
 )
-@patch.object(NextflowTowerHook, 'ops', new=mock_ops_client)
-def test_monitor_agora_workflow_state(fake_context: dict[str, dict[str, Any]], state: WorkflowState) -> None:
+def test_monitor_agora_workflow_state(
+    fake_context: dict[str, dict[str, Any]], mock_tower: MagicMock, state: WorkflowState
+) -> None:
     """Tests that monitor_nf_agora_workflow reports done only for terminal workflow states."""
-    mock_ops_client.reset_mock()
-    mock_ops_client.get_workflow.return_value.status = WorkflowStatus(state=state)
+    mock_tower.get_workflow.return_value.status = WorkflowStatus(state=state)
 
     raw_python_function = dag.get_task("monitor_nf_agora_workflow").python_callable
     workflow_state = raw_python_function(run_id=RUN_ID, **fake_context)
@@ -87,7 +99,7 @@ def test_monitor_agora_workflow_state(fake_context: dict[str, dict[str, Any]], s
         assert workflow_state is False
     else:
         assert workflow_state is True
-    mock_ops_client.get_workflow.assert_called_once_with(RUN_ID)
+    mock_tower.get_workflow.assert_called_once_with(RUN_ID)
 
 
 @pytest.mark.parametrize(
@@ -98,26 +110,25 @@ def test_monitor_agora_workflow_state(fake_context: dict[str, dict[str, Any]], s
     "dataset_param, expected_dataset",
     [(DATASET, DATASET), (None, "all datasets"), ("", "all datasets")],
 )
-@patch.object(NextflowTowerHook, 'ops', new=mock_ops_client)
 def test_generate_message(
     fake_context: dict[str, dict[str, Any]],
+    mock_tower: MagicMock,
     state: WorkflowState,
     dataset_param: str | None,
     expected_dataset: str,
 ) -> None:
     """Tests that generate_message returns a string containing the run_id."""
-    mock_ops_client.reset_mock()
-    mock_ops_client.get_workflow.return_value.status = WorkflowStatus(state=state)
-    mock_ops_client.get_workflow.return_value.run_name = RUN_NAME
-    mock_ops_client.get_workflow.return_value.id = RUN_ID
-    mock_ops_client.get_workflow.return_value.params = {"dataset": dataset_param}
+    mock_tower.get_workflow.return_value.status = WorkflowStatus(state=state)
+    mock_tower.get_workflow.return_value.run_name = RUN_NAME
+    mock_tower.get_workflow.return_value.id = RUN_ID
+    mock_tower.get_workflow.return_value.params = {"dataset": dataset_param}
 
     # Both submit and complete must be set for generate_message to compute a duration
     # instead of falling back to "unknown"
     submit = datetime(2026, 1, 1, 0, 0, 0)
     complete = datetime(2026, 1, 1, 1, 30, 0)
-    mock_ops_client.get_workflow.return_value.submit = submit
-    mock_ops_client.get_workflow.return_value.complete = complete
+    mock_tower.get_workflow.return_value.submit = submit
+    mock_tower.get_workflow.return_value.complete = complete
 
     raw_python_function = dag.get_task("generate_message").python_callable
     message = raw_python_function(run_id=RUN_ID, **fake_context)
