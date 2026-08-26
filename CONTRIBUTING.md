@@ -604,7 +604,7 @@ client = SlackHook(slack_conn_id=context["params"]["dpe_slack_bot_conn"]).client
 client.chat_postMessage(channel="<channel>", text=message)
 ```
 
-The connection only needs the bot token (`xoxb-…`) in its `password` field. In AWS Secrets Manager that means a secret named `airflow/connections/DPE_SLACK_BOT_CONN`; locally, an entry in `connections.yaml`:
+The connection only needs the bot token (`xoxb-…`) in its `password` field. See Slack's [bot token documentation](https://docs.slack.dev/authentication/tokens/#bot) for how to create, view, or rotate one (Slack app settings → **OAuth & Permissions**). In AWS Secrets Manager that means a secret named `airflow/connections/DPE_SLACK_BOT_CONN`; locally, an entry in `connections.yaml`:
 
 ```yaml
 DPE_SLACK_BOT_CONN:
