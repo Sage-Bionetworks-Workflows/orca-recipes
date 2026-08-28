@@ -13,6 +13,8 @@ fi
 
 ENV_FILE="$(git rev-parse --show-toplevel 2>/dev/null || echo .)/.env"
 
+# Needed to add --use-device-code for codespaces otherwise when I try to
+# aws login it takes me to an error page and the verification just hangs.
 aws sso login --profile "${PROFILE}" --use-device-code
 
 # Fetch the credentials first, so a failure here never mutates the user's .env.
