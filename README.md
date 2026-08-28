@@ -56,6 +56,8 @@ The Airflow Secrets backend reads connections and variables from AWS Secrets Man
 aws sso login --profile <your-sso-profile>
 ```
 
+**NOTE** You may need to add `--use-device-code` in Codespaces to get the above to work
+
 Then supply the credentials to Airflow, which differs by path:
 
 * **Local Dev Container / VS Code** — set `AWS_PROFILE` (and, if your AWS config is not at `$HOME/.aws`, `HOST_AWS_DIR`) in `.env`. Your `~/.aws` is mounted read-only into the containers and SSO tokens refresh automatically.
