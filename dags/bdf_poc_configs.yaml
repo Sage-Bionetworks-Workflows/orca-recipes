@@ -52,9 +52,6 @@ ntap_add5_sarek:
   use_record_set: true
   curation_task_id: "6957"
   record_set_id: syn76458438
-  # TEST: stage this decoy samplesheet (other datasets' fastqs) for synstage while
-  # still triggering on the real CurationTask above. Remove to use real inputs.
-  # override_samplesheet_id: syn########
   # sarek annotated per-sample outputs are annotation/<caller>/<sample>/<sample>.*.vcf.gz;
   # the sample is taken from the path.
   provenance:
@@ -65,3 +62,33 @@ ntap_add5_sarek:
     igenomes_base: s3://sage-igenomes/igenomes
     genome: GATK.GRCh38
     tools: strelka,mutect2,vep
+
+
+ntap_add5_scrnaseq:
+  synapse_conn_id: SYNAPSE_ORCA_SERVICE_ACCOUNT_CONN
+  tower_conn_id: NTAP_ADD5_PROJECT_TOWER_CONN
+  aws_conn_id: AWS_TOWER_PROD_S3_CONN
+  tower_spot_compute_env_type: spot
+  tower_ondemand_compute_env_type: ondemand
+  samplesheet_id: syn76926335
+  samplesheet_name: scrnaseq_samplesheet.csv
+  output_folder_id: syn76921961
+  bucket_name: ntap-add5-project-tower-bucket
+  staging_key: samplesheets/scRNAseq/
+  output_prefix: scrnaseq_GRCh38
+  pipeline: nf-core/scrnaseq
+  revision: "4.1.0"
+  run_number: 1
+  # RecordSet/CurationTask trigger mode
+  use_record_set: false
+  curation_task_id: ""
+  record_set_id: ""
+  # annotated per-sample outputs are {sample}/cellbender_removebackground/{sample}_filtered.h5;
+  # the sample is taken from the path.
+  provenance:
+    object_uri_contains: _filtered.h5
+  params:
+    protocol: "10XV2"
+    aligner: "cellranger"
+    genome: "GRCh38"
+    cellranger_index: "s3://ntap-add5-project-tower-bucket/reference/10x_references/refdata-gex-GRCh38-2020-A"

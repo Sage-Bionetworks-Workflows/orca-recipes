@@ -40,9 +40,8 @@ from airflow.exceptions import AirflowException
 from airflow.models.dag import DAG
 from airflow.models.param import Param
 from airflow.providers.amazon.aws.hooks.s3 import S3Hook
-from orca.services.nextflowtower import NextflowTowerHook
-from orca.services.nextflowtower.models import LaunchInfo
-from orca.services.synapse import SynapseHook
+from src.nextflow_tower_hook import LaunchInfo, NextflowTowerClient, NextflowTowerHook
+from src.synapse_hook import SynapseHook
 from synapseclient import Activity, File
 
 from src.utils import get_logger
@@ -308,11 +307,9 @@ def download_samplesheet(syn: "synapseclient.Synapse", params: dict[str, Any], d
     """Download the samplesheet CSV to a local directory
 
     Precedence:
-      1. Checks for override_samplesheet_id in params, if present
-            gets that file from synapse
-      2. Checks if use_record_set is True in params, if so gets
+      1. Checks if use_record_set is True in params, if so gets
             the samplesheet from the specified RecordSet.
-      3. If neither of the above conditions are met, gets the samplesheet file from
+      2. Otherwise, gets the samplesheet file from
             the specified samplesheet_id and optional version
 
     Args:
@@ -323,9 +320,6 @@ def download_samplesheet(syn: "synapseclient.Synapse", params: dict[str, Any], d
     Returns:
         str: The path to the downloaded samplesheet CSV file.
     """
-    override_samplesheet_id = params.get("override_samplesheet_id")
-    if override_samplesheet_id:
-        return syn.get(override_samplesheet_id, downloadLocation=dest_dir).path
     if params["use_record_set"]:
         from synapseclient.models import RecordSet
 
@@ -636,10 +630,6 @@ def create_bdf_dag(name: str, config: dict[str, Any]) -> DAG:
         "samplesheet_id": Param(config["samplesheet_id"], type="string"),
         "samplesheet_name": Param(config["samplesheet_name"], type="string"),
         "samplesheet_version": Param(config.get("samplesheet_version"), type=["null", "integer"]),
-        # TEST override: synID of a decoy samplesheet File (fastqs of other datasets)
-        # to stage for synstage instead of the real inputs; the trigger stays the
-        # actual CurationTask/RecordSet. Null = use the real samplesheet.
-        "override_samplesheet_id": Param(config.get("override_samplesheet_id"), type=["null", "string"]),
         # RecordSet/CurationTask trigger. use_record_set=True -> wait on the
         # CurationTask status and source the samplesheet from the RecordSet;
         # False -> skip the wait and fetch the samplesheet File by synID directly
@@ -816,7 +806,7 @@ def create_bdf_dag(name: str, config: dict[str, Any]) -> DAG:
             params = context["params"]
             dataset = Dataset.from_params(params)
             syn = SynapseHook(params["synapse_conn_id"]).client
-            tower_ops = NextflowTowerHook(params["tower_conn_id"]).ops
+            tower_ops = NextflowTowerHook(params["tower_conn_id"]).client
             s3_hook = S3Hook(aws_conn_id=params["aws_conn_id"])
             output_rows = read_synindex_mapping(s3_hook, synindex_mapping_uri(dataset))
             record_run_provenance(
