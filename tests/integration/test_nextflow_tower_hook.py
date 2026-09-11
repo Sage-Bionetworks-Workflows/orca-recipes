@@ -27,9 +27,6 @@ dag_params = {
 
 dag_config = {
     "schedule": None,
-    "default_args": {
-        "retries": 1,
-    },
     "tags": ["nextflow_tower"],
     "params": dag_params,
 }
