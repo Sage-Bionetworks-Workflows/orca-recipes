@@ -13,18 +13,10 @@ run it as a real test.
 
 Run directly with: python3 tests/integration/test_snowflake_hook.py
 """
-import sys
-from pathlib import Path
+import _bootstrap  # noqa: F401  (sets up sys.path for dags.*/src.* imports)
 from airflow.providers.snowflake.hooks.snowflake import SnowflakeHook
 from airflow.decorators import dag, task
 from airflow.models.param import Param
-
-
-# dags/ must be on the path too, since dags/src/nextflow_tower_hook.py imports
-# `from src.utils import ...` (src -> dags/src).
-REPO_ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(REPO_ROOT))
-sys.path.insert(0, str(REPO_ROOT / "dags"))
 
 
 dag_params = {

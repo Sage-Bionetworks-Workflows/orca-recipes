@@ -10,16 +10,9 @@ service and requires real credentials for `tower_conn_id`.
 
 Run directly with: python3 tests/integration/test_nextflow_tower_hook.py
 """
-import sys
 from datetime import datetime
-from pathlib import Path
 
-# dags/ must be on the path too, since dags/src/nextflow_tower_hook.py imports
-# `from src.utils import ...` (src -> dags/src).
-REPO_ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(REPO_ROOT))
-sys.path.insert(0, str(REPO_ROOT / "dags"))
-
+import _bootstrap  # noqa: F401  (sets up sys.path for dags.*/src.* imports)
 from airflow.decorators import dag, task
 from airflow.models import Param
 
