@@ -34,17 +34,15 @@ dag_params = {
 
 dag_config = {
     "schedule": None,
-    "start_date": datetime(2023, 6, 1),
-    "catchup": False,
     "default_args": {
-        "retries": 2,
+        "retries": 1,
     },
     "tags": ["nextflow_tower"],
     "params": dag_params,
 }
 
 @dag(**dag_config)
-def nf_hello_test_dag():
+def nextflow_tower_hook_test_dag():
     """Smoke-test NextflowTowerHook by launching and monitoring nextflow-io/hello.
 
     This DAG launches the trivial nextflow-io/hello pipeline on Nextflow Tower
@@ -105,7 +103,7 @@ def nf_hello_test_dag():
     monitor_nf_hello_workflow(run_id=run_id)
 
 
-dag = nf_hello_test_dag()
+dag = nextflow_tower_hook_test_dag()
 
 if __name__ == "__main__":
     dag.test()
