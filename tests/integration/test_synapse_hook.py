@@ -18,6 +18,8 @@ from airflow.decorators import dag, task
 from orca.services.synapse import SynapseHook
 from synapseclient.models import Team
 
+from src.utils import validate_required_secrets
+
 dag_params = {
   "synapse_conn_id": Param("SYNAPSE_ORCA_SERVICE_ACCOUNT_CONN", type="string"),
 }
@@ -59,5 +61,8 @@ def synapse_hook_test_dag():
 dag = synapse_hook_test_dag()
 
 if __name__ == "__main__":
+    validate_required_secrets(
+        connection_ids=[dag_params["synapse_conn_id"].value],
+        variable_names=[],
+    )
     dag.test()
-

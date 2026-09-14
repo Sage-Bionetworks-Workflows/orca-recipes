@@ -1,26 +1,29 @@
 """Sensor reschedule/poke_interval demo using a simulated long-running task.
 
-`long_running_task` blocks for a fixed duration (standing in for a real
-long-running external job), and `monitor_long_run_task` (mode="reschedule")
+`long_running_task` blocks for RUN_DURATION_SECONDS (standing in for a real
+hours-long external job), and `monitor_long_run_task` (mode="reschedule")
 polls its TaskInstance state every `poke_interval` seconds until it succeeds.
 
-CAUTION: This does NOT demonstrate real polling behavior when run locally via
+DO NOT RUN THIS LOCALLY via `python3 tests/integration/test_poll.py` /
 `dag.test()`. `dag.test()` uses Airflow's DebugExecutor, which runs tasks one
 at a time in a single process/thread. Once `long_running_task` starts its
-blocking sleep, it freezes that entire process, so the sensor can't be
-rescheduled and re-poked until the sleep finishes, regardless of
-`poke_interval`. Real poking on this interval only happens on a real Airflow
-deployment (e.g. our EKS-hosted Airflow), where each task instance runs in
-its own worker process/pod, so a blocking task can't starve the scheduler
-from re-queuing a reschedule-mode sensor.
+blocking sleep, it freezes that entire process for the full
+RUN_DURATION_SECONDS (a couple hours) — the sensor can't be rescheduled and
+re-poked until the sleep finishes, regardless of `poke_interval`, so locally
+this just hangs your terminal for hours with no visible progress.
 
-Run directly with: python3 tests/integration/test_poll.py
+This DAG is meant to be deployed and triggered on a real Airflow deployment
+(e.g. MWAA environment) instead, where each task instance runs in its
+own separate worker process/pod, so the blocking sleep in `long_running_task`
+can't starve the scheduler from re-queuing `monitor_long_run_task` every
+`poke_interval` seconds as intended.
 """
 import _bootstrap  # noqa: F401  (sets up sys.path for dags.*/src.* imports)
 import time
 from airflow.decorators import dag, task
 from airflow.models import Param
 
+RUN_DURATION_SECONDS = 2 * 60 * 60  # simulate a couple hours of "work"
 
 dag_config = {
     "schedule": None,
@@ -30,11 +33,11 @@ dag_config = {
 def poll_test_dag():
     @task()
     def long_running_task():
-        """Simulate a long-running task by sleeping for 10 seconds."""
-        time.sleep(60)
+        """Simulate an hours-long task by sleeping for RUN_DURATION_SECONDS."""
+        time.sleep(RUN_DURATION_SECONDS)
         return True
 
-    @task.sensor(poke_interval=5, timeout=604800, mode="reschedule")
+    @task.sensor(poke_interval=30, timeout=604800, mode="reschedule")
     def monitor_long_run_task(target_task_id: str,  **context):
         """Monitor the long-running task until it completes."""
         ti = context["dag_run"].get_task_instance(target_task_id)

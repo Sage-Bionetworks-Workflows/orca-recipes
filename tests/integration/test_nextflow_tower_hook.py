@@ -15,6 +15,7 @@ from airflow.decorators import dag, task
 from airflow.models import Param
 
 from src.nextflow_tower_hook import LaunchInfo, NextflowTowerHook
+from src.utils import validate_required_secrets
 
 
 dag_params = {
@@ -94,4 +95,8 @@ def nextflow_tower_hook_test_dag():
 dag = nextflow_tower_hook_test_dag()
 
 if __name__ == "__main__":
+    validate_required_secrets(
+        connection_ids=[dag_params["tower_conn_id"].value],
+        variable_names=[],
+    )
     dag.test()

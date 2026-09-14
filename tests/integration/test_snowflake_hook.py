@@ -18,6 +18,8 @@ from airflow.providers.snowflake.hooks.snowflake import SnowflakeHook
 from airflow.decorators import dag, task
 from airflow.models.param import Param
 
+from src.utils import validate_required_secrets
+
 
 dag_params = {
     "snowflake_developer_service_conn": Param(
@@ -82,4 +84,8 @@ dag = snowflake_hook_test_dag()
 
 
 if __name__ == "__main__":
+    validate_required_secrets(
+        connection_ids=[dag_params["snowflake_developer_service_conn"].value],
+        variable_names=[],
+    )
     dag.test()
