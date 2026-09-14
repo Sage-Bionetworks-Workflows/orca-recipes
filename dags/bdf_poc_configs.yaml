@@ -92,3 +92,59 @@ ntap_add5_scrnaseq:
     aligner: "cellranger"
     genome: "GRCh38"
     cellranger_index: "s3://ntap-add5-project-tower-bucket/reference/10x_references/refdata-gex-GRCh38-2020-A"
+
+
+ntap_add5_spatial_transcriptomics:
+  synapse_conn_id: SYNAPSE_ORCA_SERVICE_ACCOUNT_CONN
+  tower_conn_id: NTAP_ADD5_PROJECT_TOWER_CONN
+  aws_conn_id: AWS_TOWER_PROD_S3_CONN
+  tower_spot_compute_env_type: spot
+  tower_ondemand_compute_env_type: ondemand
+  samplesheet_id: syn76403838
+  samplesheet_name: spatialvi_test_samplesheet_csv.csv
+  output_folder_id: syn76402999
+  bucket_name: ntap-add5-project-tower-bucket
+  staging_key: samplesheets/spatialvi/
+  output_prefix: spatialvi_GRCh38
+  pipeline: nf-core/spatialvi
+  revision: "0.1.0"
+  run_number: 1
+  # RecordSet/CurationTask trigger mode
+  use_record_set: false
+  curation_task_id: ""
+  record_set_id: ""
+  provenance:
+    object_uri_contains: .h5ad
+  params:
+    cluster_n_hvgs: 2000
+    plaintext_email: false
+    cluster_resolution: 1
+    monochrome_logs: false
+    svg_autocorr_method: moran
+    custom_config_version: master
+    spaceranger_reference: s3://ntap-add5-project-tower-bucket/reference/refdata-gex-GRCh38-2020-A.tar.gz
+    helpFull: false
+    qc_mito_threshold: 20
+    hd_bin_size: 8
+    max_multiqc_email_size: 25.MB
+    qc_min_genes: 250
+    qc_ribo_threshold: 0
+    validate_params: true
+    show_hidden: false
+    integration_n_hvgs: 2000
+    spaceranger_save_reference: false
+    qc_hb_threshold: 100
+    integrate_sdata: false
+    version: false
+    qc_min_counts: 500
+    pipelines_testdata_base_path: https://raw.githubusercontent.com/nf-core/test-datasets/
+    input: >-
+      s3://ntap-add5-project-tower-bucket/synapse_spatialvi_testing/multi_sample/spatialvi_samplesheet.csv
+    integration_cluster_resolution: 1
+    spaceranger_probeset: >-
+      s3://ntap-add5-project-tower-bucket/spatialvi_testing/Visium_Human_Transcriptome_Probe_Set_v2.0_GRCh38-2020-A.csv
+    n_top_svgs: 14
+    trace_report_suffix: 2026-03-04_03-14-35
+    merge_sdata: false
+    qc_min_spots: 1
+    save_untar_output: false
