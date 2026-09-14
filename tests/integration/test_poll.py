@@ -50,8 +50,6 @@ def poll_test_dag():
     # 2. Extract the task_id string dynamically and pass it to the sensor
     monitor = monitor_long_run_task(target_task_id=long_task.operator.task_id)
 
-    long_task >> monitor
-
 dag = poll_test_dag()
 
 if __name__ == "__main__":
