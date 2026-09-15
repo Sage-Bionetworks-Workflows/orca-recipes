@@ -1,28 +1,23 @@
-"""Sensor reschedule/poke_interval demo using a simulated long-running task.
+"""Sensor reschedule/poke_interval demo.
 
-`long_running_task` blocks for RUN_DURATION_SECONDS (standing in for a real
-hours-long external job), and `monitor_long_run_task` (mode="reschedule")
-polls its TaskInstance state every `poke_interval` seconds until it succeeds.
+A minimal, standalone model of polling an external resource (e.g. a Synapse
+entity's state) every `poke_interval` seconds until it changes, then
+stopping. `timeout` caps how long it's willing to keep polling before giving
+up.
 
-DO NOT RUN THIS LOCALLY via `python3 dags/integration_tests/test_polling.py` /
-`dag.test()`. `dag.test()` uses Airflow's DebugExecutor, which runs tasks one
-at a time in a single process/thread. Once `long_running_task` starts its
-blocking sleep, it freezes that entire process for the full
-RUN_DURATION_SECONDS (a couple hours) — the sensor can't be rescheduled and
-re-poked until the sleep finishes, regardless of `poke_interval`, so locally
-this just hangs your terminal for hours with no visible progress.
+Here, the "external state" being polled is simply enough wall-clock time
+having passed since the DAG run started (RUN_DURATION_SECONDS), checked
+directly from the sensor's own context — no companion task, global variable,
+or XCom needed. A real usage would replace that check with an actual external
+call (e.g. fetching a Synapse entity's status).
 
-This DAG is meant to be deployed and triggered on a real Airflow deployment
-(e.g. MWAA environment) instead, where each task instance runs in its
-own separate worker process/pod, so the blocking sleep in `long_running_task`
-can't starve the scheduler from re-queuing `monitor_long_run_task` every
-`poke_interval` seconds as intended.
+Run directly with: python3 dags/integration_tests/test_polling.py
 """
-import time
-from airflow.decorators import dag, task
-from airflow.models import Param
+from datetime import datetime, timezone
 
-RUN_DURATION_SECONDS = 2 * 60 * 60  # simulate a couple hours of "work"
+from airflow.decorators import dag, task
+
+RUN_DURATION_SECONDS = 2 * 60 * 60  # simulate polling for a couple hours
 
 dag_config = {
     "schedule": None,
@@ -30,24 +25,26 @@ dag_config = {
 
 @dag(**dag_config)
 def poll_test_dag():
-    @task()
-    def long_running_task():
-        """Simulate an hours-long task by sleeping for RUN_DURATION_SECONDS."""
-        time.sleep(RUN_DURATION_SECONDS)
-        return True
+    @task.sensor(poke_interval=30, timeout=RUN_DURATION_SECONDS, mode="reschedule")
+    def monitor_long_run_task(**context):
+        """Poll a simulated external resource until its state "changes".
 
-    @task.sensor(poke_interval=30, timeout=604800, mode="reschedule")
-    def monitor_long_run_task(target_task_id: str,  **context):
-        """Monitor the long-running task until it completes."""
-        ti = context["dag_run"].get_task_instance(target_task_id)
-        print(f"Now tracking task with ID: {target_task_id}")
-        return ti.state == "success"
+        Stands in for polling something like a Synapse entity's state every
+        `poke_interval` seconds until it changes. Here, the "state change" is
+        simply enough wall-clock time having passed since the DAG run
+        started.
 
-    # 1. Instantiate the long-running task
-    long_task = long_running_task()
+        Returns:
+            bool: True once RUN_DURATION_SECONDS has elapsed since the DAG
+                run started, signaling the sensor to stop poking.
+        """
+        elapsed = (
+            datetime.now(timezone.utc) - context["dag_run"].start_date
+        ).total_seconds()
+        print(f"Elapsed: {elapsed:.0f}s / {RUN_DURATION_SECONDS}s")
+        return elapsed >= RUN_DURATION_SECONDS
 
-    # 2. Extract the task_id string dynamically and pass it to the sensor
-    monitor = monitor_long_run_task(target_task_id=long_task.operator.task_id)
+    monitor_long_run_task()
 
 dag = poll_test_dag()
 
