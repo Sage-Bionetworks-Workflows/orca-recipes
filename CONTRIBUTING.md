@@ -16,6 +16,7 @@
     - [Integration Testing](#integration-testing)
       - [DAG Set Up](#dag-set-up)
       - [DAG Testing](#dag-testing)
+      - [Running Integration Test DAGs Before Infra Changes](#running-integration-test-dags-before-infra-changes)
     - [Testing DAGs Locally](#testing-dags-locally)
       - [Skip AWS Secrets Manager for Local Development](#skip-aws-secrets-manager-for-local-development)
       - [Handling Airflow Variables Locally](#handling-airflow-variables-locally)
@@ -253,6 +254,18 @@ docker compose up --build --detach
 # docker compose up --no-cache --build --detach
 ```
 
+##### Running Integration Test DAGs Before Infra Changes
+
+The DAGs under [`dags/integration_tests/`](./dags/integration_tests/) (`test_synapse_hook.py`, `test_snowflake_hook.py`, `test_nextflow_tower_hook.py`, `test_polling.py`) validate baseline Airflow functionality — hooks authenticate, a real pipeline can be launched, sensors poll correctly — independent of any specific production DAG. Run them whenever you change something that could affect *all* DAGs, not just the one you're editing (e.g. migrating to MWAA, upgrading Airflow, changing the secrets backend, editing `airflow.cfg`). They matter less for a change scoped to a single non-integration-test DAG.
+
+1. Follow [DAG Set Up](#dag-set-up) above to get your Dev Container/Codespace running and connected to Airflow.
+2. **Un-pause** the relevant integration test DAG(s) in the Airflow UI and trigger them manually.
+3. Check the result — refer to each DAG's own module docstring for exactly what it validates:
+   - `test_synapse_hook.py` / `test_snowflake_hook.py` — succeed if the task completes without raising (each asserts on real data returned from the service).
+   - `test_nextflow_tower_hook.py` — succeeds once the sensor reports the launched `nextflow-io/hello` workflow reached a terminal state; check task logs for `Current workflow state: ...`.
+   - `test_polling.py` — succeeds once `RUN_DURATION_SECONDS` has elapsed since the DAG run started; confirm multiple `Elapsed: ...s / ...s` log lines appear roughly `poke_interval` (30s) apart across separate task-instance attempts, so the scheduler isn't being starved by other running DAGs.
+4. Once you've confirmed the result, **re-pause** the DAG so it doesn't keep running or getting triggered unintentionally.
+
 #### Testing DAGs Locally
 
 There are two distinct ways to test a DAG's task logic without deploying to Airflow:
@@ -269,6 +282,8 @@ If you'd rather not authenticate to AWS just to test a DAG (e.g., to talk to the
 export AIRFLOW__SECRETS__BACKEND=airflow.secrets.local_filesystem.LocalFilesystemBackend
 export AIRFLOW__SECRETS__BACKEND_KWARGS='{"connections_file_path": "connections.yaml"}'
 ```
+
+You'll also need `AIRFLOW__CORE__DAGS_FOLDER` pointed at this repo's `dags/` folder (see [README.md](./README.md#3-configure-environment-variables)) if the DAG imports from `src.*` (e.g. everything under `dags/integration_tests/`) — otherwise those imports fail with `ModuleNotFoundError: No module named 'src'`.
 
 Create `connections.yaml` from the template:
 
