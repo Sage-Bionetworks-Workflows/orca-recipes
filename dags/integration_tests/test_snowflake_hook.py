@@ -11,9 +11,8 @@ Its DAG function is intentionally not named with a `test_` prefix (unlike the
 file name) so pytest's `testpaths = tests` config doesn't try to collect and
 run it as a real test.
 
-Run directly with: python3 tests/integration/test_snowflake_hook.py
+Run directly with: python3 dags/integration_tests/test_snowflake_hook.py
 """
-import _bootstrap  # noqa: F401  (sets up sys.path for dags.*/src.* imports)
 from airflow.providers.snowflake.hooks.snowflake import SnowflakeHook
 from airflow.decorators import dag, task
 from airflow.models.param import Param

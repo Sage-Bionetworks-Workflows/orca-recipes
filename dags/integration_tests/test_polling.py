@@ -4,7 +4,7 @@
 hours-long external job), and `monitor_long_run_task` (mode="reschedule")
 polls its TaskInstance state every `poke_interval` seconds until it succeeds.
 
-DO NOT RUN THIS LOCALLY via `python3 tests/integration/test_poll.py` /
+DO NOT RUN THIS LOCALLY via `python3 dags/integration_tests/test_polling.py` /
 `dag.test()`. `dag.test()` uses Airflow's DebugExecutor, which runs tasks one
 at a time in a single process/thread. Once `long_running_task` starts its
 blocking sleep, it freezes that entire process for the full
@@ -18,7 +18,6 @@ own separate worker process/pod, so the blocking sleep in `long_running_task`
 can't starve the scheduler from re-queuing `monitor_long_run_task` every
 `poke_interval` seconds as intended.
 """
-import _bootstrap  # noqa: F401  (sets up sys.path for dags.*/src.* imports)
 import time
 from airflow.decorators import dag, task
 from airflow.models import Param

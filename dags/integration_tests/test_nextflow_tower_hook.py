@@ -8,9 +8,8 @@ a real bioinformatics pipeline or waiting on a long-running job.
 This is a plain runnable script, not a pytest test: it hits a real external
 service and requires real credentials for `tower_conn_id`.
 
-Run directly with: python3 tests/integration/test_nextflow_tower_hook.py
+Run directly with: python3 dags/integration_tests/test_nextflow_tower_hook.py
 """
-import _bootstrap  # noqa: F401  (sets up sys.path for dags.*/src.* imports)
 from airflow.decorators import dag, task
 from airflow.models import Param
 
