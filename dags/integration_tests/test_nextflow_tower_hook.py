@@ -7,6 +7,29 @@ a real bioinformatics pipeline or waiting on a long-running job.
 
 This is a plain runnable script, not a pytest test: it hits a real external
 service and requires real credentials for `tower_conn_id`.
+
+Prerequisites:
+    - Access to the `example-project` workspace on Seqera Platform, so you can
+      open the run and check on it. Request access to the corresponding
+      project on `nextflow-infra`.
+    - Credentials for `EXAMPLE_DEV_PROJECT_TOWER_CONN`, stored in AWS Secrets
+      Manager under `airflow/connections/` in the `org-sagebase-dpe-prod`
+      account.
+
+Checking the results:
+    Confirm the run in Seqera Platform:
+
+    1. Go to https://tower.sagebionetworks.org and
+       find the `example-project` workspace under the Sage-Bionetworks org.
+    2. Locate the run named `nf-hello-test` in the Runs list.
+    3. Confirm it reaches the `SUCCEEDED` state and its `sayHello` processes
+       completed.
+
+    If the workflow fails, check whether the cause is actually on the Seqera
+    side (compute environment unavailable, Spot capacity reclaimed, a Seqera
+    outage) rather than something in this repo, MWAA, or our servers. Those
+    failures are outside our control, but still worth noting when reporting
+    results.
 """
 from airflow.decorators import dag, task
 from airflow.models import Param
@@ -18,7 +41,7 @@ from src.utils import validate_required_secrets
 dag_params = {
     "tower_conn_id": Param("EXAMPLE_DEV_PROJECT_TOWER_CONN", type="string"),
     "tower_run_name": Param("nf-hello-test", type="string"),
-    "tower_compute_env_type": Param("manual-shared-ce-prod-project-spot-v13", type="string"),
+    "tower_compute_env_type": Param("spot", type="string"),
 }
 
 dag_config = {
