@@ -278,7 +278,7 @@ Steps to Run:
 2. **Un-pause** the relevant integration test DAG(s) in the Airflow UI and trigger them manually.
 3. Check the result — refer to each DAG's own module docstring for exactly what it validates:
    - `test_synapse_hook.py` / `test_snowflake_hook.py` — succeed if the task completes without raising (each asserts on real data returned from the service).
-   - `test_nextflow_tower_hook.py` — succeeds once the sensor reports the launched `nextflow-io/hello` workflow reached a terminal state; check task logs for `Current workflow state: ...`.
+   - `test_nextflow_tower_hook.py` — succeeds once the sensor reports the launched `nextflow-io/hello` workflow reached a terminal state; check task logs for `Current workflow state: ...`. **Also open the run in Seqera Platform and confirm it actually `SUCCEEDED`**. 
    - `test_polling.py` — succeeds once `RUN_DURATION_SECONDS` has elapsed since the DAG run started; confirm multiple `Elapsed: ...s / ...s` log lines appear roughly `poke_interval` apart across separate task-instance attempts, so the scheduler isn't being starved by other running DAGs.
 4. Once you've confirmed the result, **re-pause** the DAG so it doesn't keep running or getting triggered unintentionally.
 

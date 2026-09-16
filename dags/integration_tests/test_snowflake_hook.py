@@ -10,6 +10,14 @@ service and requires real credentials for `snowflake_developer_service_conn`.
 Its DAG function is intentionally not named with a `test_` prefix (unlike the
 file name) so pytest's `testpaths = tests` config doesn't try to collect and
 run it as a real test.
+
+Prerequisites:
+    - Credentials for `SNOWFLAKE_DEVELOPER_SERVICE_RAW_CONN`, stored in AWS
+      Secrets Manager under `airflow/connections/` in the
+      `org-sagebase-dpe-prod` account.
+    - The role in that connection (`DATA_ENGINEER`) needs read access to
+      `synapse_data_warehouse.synapse_event.objectdownload_event`, which this
+      DAG queries.
 """
 from airflow.providers.snowflake.hooks.snowflake import SnowflakeHook
 from airflow.decorators import dag, task
