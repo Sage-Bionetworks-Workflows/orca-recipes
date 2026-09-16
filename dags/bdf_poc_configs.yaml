@@ -1,0 +1,150 @@
+# One entry per workflow - each becomes a DAG named "<key>_bdf_poc_dag".
+# Per-dataset Synapse/S3/Tower settings, the analysis pipeline, and its inline
+# params all live here.
+
+ntap_add5_rnaseq:
+  synapse_conn_id: SYNAPSE_ORCA_SERVICE_ACCOUNT_CONN
+  tower_conn_id: NTAP_ADD5_PROJECT_TOWER_CONN
+  aws_conn_id: AWS_TOWER_PROD_S3_CONN
+  tower_spot_compute_env_type: spot
+  tower_ondemand_compute_env_type: ondemand
+  samplesheet_id: syn76923670
+  samplesheet_name: rnaseq_samplesheet.csv
+  output_folder_id: syn76921355
+  bucket_name: ntap-add5-project-tower-bucket
+  staging_key: samplesheets/RNAseq/
+  output_prefix: rnaseq_GRCh38
+  pipeline: nf-core/rnaseq
+  revision: "3.11.2"
+  nxf_ver: "23.10.0"
+  run_number: 1
+  # RecordSet/CurationTask trigger mode
+  use_record_set: true
+  curation_task_id: "7638"
+  record_set_id: syn76955742
+  # rnaseq final per-sample outputs are star_salmon/<sample>/quant.sf; the sample
+  # is taken from the path.
+  provenance:
+    file_name: quant.sf
+  params:
+    gencode: true
+    fasta: s3://sage-igenomes/igenomes/Homo_sapiens/NCBI/GRCh38/Sequence/WholeGenomeFasta/genome.fa
+    gtf: s3://sage-igenomes/igenomes/Homo_sapiens/NCBI/GRCh38/Annotation/Genes/genes.gtf
+    gene_bed: s3://sage-igenomes/igenomes/Homo_sapiens/NCBI/GRCh38/Annotation/Genes/genes.bed
+    star_index: s3://sage-igenomes/igenomes/Homo_sapiens/NCBI/GRCh38/Sequence/STARIndex/
+
+ntap_add5_sarek:
+  synapse_conn_id: SYNAPSE_ORCA_SERVICE_ACCOUNT_CONN
+  tower_conn_id: NTAP_ADD5_PROJECT_TOWER_CONN
+  aws_conn_id: AWS_TOWER_PROD_S3_CONN
+  tower_spot_compute_env_type: spot
+  tower_ondemand_compute_env_type: ondemand
+  samplesheet_id: syn76340211
+  samplesheet_name: jhu_biobank_wes_demo_samplesheet.csv
+  output_folder_id: syn76996990
+  bucket_name: ntap-add5-project-tower-bucket
+  staging_key: samplesheets/Sarek_Process/EAGER-somatic/
+  output_prefix: sarek_somatic_GRCh38
+  pipeline: nf-core/sarek
+  revision: "3.1.2"
+  run_number: 996
+  # RecordSet/CurationTask trigger mode
+  use_record_set: true
+  curation_task_id: "6957"
+  record_set_id: syn76458438
+  # sarek annotated per-sample outputs are annotation/<caller>/<sample>/<sample>.*.vcf.gz;
+  # the sample is taken from the path.
+  provenance:
+    object_uri_contains: annotation
+  params:
+    wes: true
+    intervals: s3://ntap-add5-project-tower-bucket/reference/Baits_BED_Files_AgilentV6_REVISED_S07604514_ALLBED_merged_020816_withChr_GRCh38_sorted.bed
+    igenomes_base: s3://sage-igenomes/igenomes
+    genome: GATK.GRCh38
+    tools: strelka,mutect2,vep
+
+
+ntap_add5_scrnaseq:
+  synapse_conn_id: SYNAPSE_ORCA_SERVICE_ACCOUNT_CONN
+  tower_conn_id: NTAP_ADD5_PROJECT_TOWER_CONN
+  aws_conn_id: AWS_TOWER_PROD_S3_CONN
+  tower_spot_compute_env_type: spot
+  tower_ondemand_compute_env_type: ondemand
+  samplesheet_id: syn76926335
+  samplesheet_name: scrnaseq_samplesheet.csv
+  output_folder_id: syn76921961
+  bucket_name: ntap-add5-project-tower-bucket
+  staging_key: samplesheets/scRNAseq/
+  output_prefix: scrnaseq_GRCh38
+  pipeline: nf-core/scrnaseq
+  revision: "4.1.0"
+  run_number: 1
+  # RecordSet/CurationTask trigger mode
+  use_record_set: false
+  curation_task_id: ""
+  record_set_id: ""
+  # annotated per-sample outputs are {sample}/cellbender_removebackground/{sample}_filtered.h5;
+  # the sample is taken from the path.
+  provenance:
+    object_uri_contains: _filtered.h5
+  params:
+    protocol: "10XV2"
+    aligner: "cellranger"
+    genome: "GRCh38"
+    cellranger_index: "s3://ntap-add5-project-tower-bucket/reference/10x_references/refdata-gex-GRCh38-2020-A"
+
+
+ntap_add5_spatial_transcriptomics:
+  synapse_conn_id: SYNAPSE_ORCA_SERVICE_ACCOUNT_CONN
+  tower_conn_id: NTAP_ADD5_PROJECT_TOWER_CONN
+  aws_conn_id: AWS_TOWER_PROD_S3_CONN
+  tower_spot_compute_env_type: spot
+  tower_ondemand_compute_env_type: ondemand
+  samplesheet_id: syn76403838
+  samplesheet_name: spatialvi_test_samplesheet_csv.csv
+  output_folder_id: syn76402999
+  bucket_name: ntap-add5-project-tower-bucket
+  staging_key: samplesheets/spatialvi/
+  output_prefix: spatialvi_GRCh38
+  pipeline: nf-core/spatialvi
+  revision: "0.1.0"
+  run_number: 1
+  # RecordSet/CurationTask trigger mode
+  use_record_set: false
+  curation_task_id: ""
+  record_set_id: ""
+  provenance:
+    object_uri_contains: .h5ad
+  params:
+    cluster_n_hvgs: 2000
+    plaintext_email: false
+    cluster_resolution: 1
+    monochrome_logs: false
+    svg_autocorr_method: moran
+    custom_config_version: master
+    spaceranger_reference: s3://ntap-add5-project-tower-bucket/reference/refdata-gex-GRCh38-2020-A.tar.gz
+    helpFull: false
+    qc_mito_threshold: 20
+    hd_bin_size: 8
+    max_multiqc_email_size: 25.MB
+    qc_min_genes: 250
+    qc_ribo_threshold: 0
+    validate_params: true
+    show_hidden: false
+    integration_n_hvgs: 2000
+    spaceranger_save_reference: false
+    qc_hb_threshold: 100
+    integrate_sdata: false
+    version: false
+    qc_min_counts: 500
+    pipelines_testdata_base_path: https://raw.githubusercontent.com/nf-core/test-datasets/
+    input: >-
+      s3://ntap-add5-project-tower-bucket/synapse_spatialvi_testing/multi_sample/spatialvi_samplesheet.csv
+    integration_cluster_resolution: 1
+    spaceranger_probeset: >-
+      s3://ntap-add5-project-tower-bucket/spatialvi_testing/Visium_Human_Transcriptome_Probe_Set_v2.0_GRCh38-2020-A.csv
+    n_top_svgs: 14
+    trace_report_suffix: 2026-03-04_03-14-35
+    merge_sdata: false
+    qc_min_spots: 1
+    save_untar_output: false
