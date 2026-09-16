@@ -12,7 +12,7 @@ real test.
 """
 from airflow.models import Param
 from airflow.decorators import dag, task
-from orca.services.synapse import SynapseHook
+from src.synapse_hook import SynapseHook
 from synapseclient.models import Team
 
 from src.utils import validate_required_secrets
