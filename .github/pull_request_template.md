@@ -23,3 +23,4 @@
     - How you tested the solution
     - Any relevant test results (Do not include any test results that may contain sensitive information)
     - Any automated tests that were added to the codebase
+- [ ] Ran the relevant integration test DAGs and they PASS. See [Running Integration Test DAGs Before Infra Changes](https://github.com/Sage-Bionetworks-Workflows/orca-recipes/blob/main/CONTRIBUTING.md#running-integration-test-dags-before-infra-changes).
