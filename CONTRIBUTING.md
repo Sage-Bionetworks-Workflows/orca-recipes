@@ -283,7 +283,7 @@ Steps to Run:
 4. Once you've confirmed the result, **re-pause** the DAG so it doesn't keep running or getting triggered unintentionally.
 
 > [!NOTE]
-> You can also run these **locally** as plain scripts instead of triggering them through the Airflow UI — see [Testing DAGs Locally](#testing-dags-locally) below, which covers the extra environment variable a local run needs.
+> You can also run these **locally** as plain scripts instead of triggering them through the Airflow UI — see [Running Integration Test DAGs Locally](#running-integration-test-dags-before-infra-changes) below, which covers the extra environment variable a local run needs.
 
 #### Testing DAGs Locally
 
