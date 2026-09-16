@@ -75,7 +75,10 @@ x-airflow-common:
       # AWS credentials. Two mutually-exclusive ways to authenticate (see .env.example):
       #   1. AWS_PROFILE + a mounted ~/.aws (SSO profile, auto-refreshes tokens)
       #   2. Exported short-lived AWS_ACCESS_KEY_ID/SECRET/SESSION_TOKEN
-    AWS_PROFILE: ${AWS_PROFILE:-}
+      # AWS_PROFILE is intentionally NOT set here - it is passed through from .env
+      # (env_file) only when path 1 is used. Injecting it as "" (path 2 / Codespaces,
+      # where .env has no AWS_PROFILE) makes boto3 raise
+      # "ProfileNotFound: The config profile () could not be found".
     AWS_REGION: ${AWS_REGION:-us-east-1}
     AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
     AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
