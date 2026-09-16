@@ -10,8 +10,6 @@ having passed since the DAG run started (RUN_DURATION_SECONDS), checked
 directly from the sensor's own context — no companion task, global variable,
 or XCom needed. A real usage would replace that check with an actual external
 call (e.g. fetching a Synapse entity's status).
-
-Run directly with: python3 dags/integration_tests/test_polling.py
 """
 from datetime import datetime, timezone
 

@@ -9,8 +9,6 @@ service and requires real credentials for `synapse_conn_id`. Its DAG function
 is intentionally not named with a `test_` prefix (unlike the file name) so
 pytest's `testpaths = tests` config doesn't try to collect and run it as a
 real test.
-
-Run directly with: python3 dags/integration_tests/test_synapse_hook.py
 """
 from airflow.models import Param
 from airflow.decorators import dag, task
