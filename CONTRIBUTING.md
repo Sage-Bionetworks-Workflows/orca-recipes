@@ -264,7 +264,7 @@ You must run integration test DAGs IF you make changes to one of the following:
 - Adding dependencies to each DAG or to the requirements-airflow
 - Updating the codespaces environment
 
-And any other change that could affect *all** DAGs
+And any other change that could affect *all* DAGs
 
 The DAGs under [`dags/integration_tests/`](./dags/integration_tests/) ([`test_synapse_hook.py`](./dags/integration_tests/test_synapse_hook.py), [`test_snowflake_hook.py`](./dags/integration_tests/test_snowflake_hook.py), [`test_nextflow_tower_hook.py`](./dags/integration_tests/test_nextflow_tower_hook.py), [`test_polling.py`](./dags/integration_tests/test_polling.py)) validate baseline Airflow functionality — hooks authenticate, a real pipeline can be launched, sensors poll correctly — independent of any specific production DAG. They matter less for a change scoped to a single non-integration-test DAG.
 
