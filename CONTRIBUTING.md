@@ -257,7 +257,18 @@ docker compose up --build --detach
 
 ##### Running Integration Test DAGs Before Infra Changes
 
-The DAGs under [`dags/integration_tests/`](./dags/integration_tests/) (`test_synapse_hook.py`, `test_snowflake_hook.py`, `test_nextflow_tower_hook.py`, `test_polling.py`) validate baseline Airflow functionality — hooks authenticate, a real pipeline can be launched, sensors poll correctly — independent of any specific production DAG. Run them whenever you change something that could affect *all* DAGs, not just the one you're editing (e.g. migrating to MWAA, upgrading Airflow, changing the secrets backend, editing `airflow.cfg`). They matter less for a change scoped to a single non-integration-test DAG.
+You must run integration test DAGs IF you make changes to one of the following:
+- Airflow upgrades
+- Changing the secrets backend
+- Editing `airflow.cfg`
+- Adding dependencies to each DAG or to the requirements-airflow
+- Updating the codespaces environment
+
+And any other change that could affect *all** DAGs
+
+The DAGs under [`dags/integration_tests/`](./dags/integration_tests/) (`test_synapse_hook.py`, `test_snowflake_hook.py`, `test_nextflow_tower_hook.py`, `test_polling.py`) validate baseline Airflow functionality — hooks authenticate, a real pipeline can be launched, sensors poll correctly — independent of any specific production DAG. They matter less for a change scoped to a single non-integration-test DAG.
+
+Steps to Run:
 
 
 1. Get connected to whichever Airflow environment you're validating:
