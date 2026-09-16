@@ -258,7 +258,10 @@ docker compose up --build --detach
 
 The DAGs under [`dags/integration_tests/`](./dags/integration_tests/) (`test_synapse_hook.py`, `test_snowflake_hook.py`, `test_nextflow_tower_hook.py`, `test_polling.py`) validate baseline Airflow functionality — hooks authenticate, a real pipeline can be launched, sensors poll correctly — independent of any specific production DAG. Run them whenever you change something that could affect *all* DAGs, not just the one you're editing (e.g. migrating to MWAA, upgrading Airflow, changing the secrets backend, editing `airflow.cfg`). They matter less for a change scoped to a single non-integration-test DAG.
 
-1. Follow [DAG Set Up](#dag-set-up) above to get your Dev Container/Codespace running and connected to Airflow.
+
+1. Get connected to whichever Airflow environment you're validating:
+   - **During normal development**: follow [DAG Set Up](#dag-set-up) above for a Dev Container/Codespace.
+   - **After an infra/environment change has actually gone out** (e.g. a migration to MWAA, an Airflow upgrade): connect directly to the deployed `dev`/`prod` server. These DAGs should be triggered there too. 
 2. **Un-pause** the relevant integration test DAG(s) in the Airflow UI and trigger them manually.
 3. Check the result — refer to each DAG's own module docstring for exactly what it validates:
    - `test_synapse_hook.py` / `test_snowflake_hook.py` — succeed if the task completes without raising (each asserts on real data returned from the service).
