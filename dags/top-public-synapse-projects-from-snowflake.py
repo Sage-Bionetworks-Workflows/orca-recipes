@@ -29,6 +29,7 @@ dag_params = {
     "snowflake_developer_service_conn": Param(
         "SNOWFLAKE_DEVELOPER_SERVICE_RAW_CONN", type="string"),
     "synapse_conn_id": Param("SYNAPSE_ORCA_SERVICE_ACCOUNT_CONN", type="string"),
+    "slack_channel": Param("topcharts", type="string"),
     # hours_time_delta is the number of hours to subtract from the current date to get
     # the date for the query
     "hours_time_delta": Param("24", type="string"),
@@ -41,6 +42,7 @@ dag_params = {
     #           {"file_view_id": "789012", "group_name": "Group B"}]'
     "fileview_groups": Param(
         '[{"file_view_id": "20446927", "group_name": "HTAN1"},{"file_view_id": "51489960", "group_name": "ELITE"},{"file_view_id": "16858331", "group_name": "NF-OSI"},{"file_view_id": "27210848", "group_name": "MC2"},{"file_view_id": "52794526", "group_name": "GENIE"}]', type="string"),
+    "synapse_results_table": Param("syn53696951", type="string"),
 }
 
 dag_config = {
@@ -59,8 +61,6 @@ BYTE_STRING = "GiB"
 # 30 is the power of 2 for GiB, 40 is the power of 2 for TiB
 POWER_OF_TWO = 30
 
-# ID of the Synapse table where aggregated results will be stored for public viewing
-SYNAPSE_RESULTS_TABLE = "syn53696951"
 # ID of the Synapse homepage project, excluded from download stats
 SYNAPSE_HOMEPAGE_PROJECT_ID = 23593546
 
@@ -99,30 +99,30 @@ def top_public_synapse_projects_from_snowflake() -> None:
 
     DAG Parameters:
 
-    - `snowflake_developer_service_conn`: A JSON-formatted string containing the 
+    - `snowflake_developer_service_conn`: A JSON-formatted string containing the
         connection details required to authenticate and connect to Snowflake.
     - `synapse_conn_id`: The connection ID for the Synapse connection.
-    - `hours_time_delta`: The number of hours to subtract from the current date to 
+    - `hours_time_delta`: The number of hours to subtract from the current date to
         get the date for the query. Defaults to `24`.
-    - `backfill`: Whether to backfill the data. Defaults to `False`. When set to True, 
+    - `backfill`: Whether to backfill the data. Defaults to `False`. When set to True,
         the DAG will not post to Slack and will only update the Synapse table.
-    - `backfill_date`: The date to backfill the data from, in YYYY-MM-DD format. 
+    - `backfill_date`: The date to backfill the data from, in YYYY-MM-DD format.
         Will be ignored if `backfill` is `False`.
-        Note on backfill timing: Due to time zone differences between Synapse table UI 
-        (local time) and Snowflake queries (UTC), users in North America may need to set 
+        Note on backfill timing: Due to time zone differences between Synapse table UI
+        (local time) and Snowflake queries (UTC), users in North America may need to set
         the backfill_date to 2 days after the missing date in the Synapse table.
-        For example, if data is missing for "2025-01-03" in the Synapse table, set 
+        For example, if data is missing for "2025-01-03" in the Synapse table, set
         `backfill_date` to "2025-01-05".
-    - `fileview_groups`: A JSON string containing an array of objects with 
-        `file_view_id` and `group_name` properties. 
-        Projects from these fileviews will be grouped together under their group name 
+    - `fileview_groups`: A JSON string containing an array of objects with
+        `file_view_id` and `group_name` properties.
+        Projects from these fileviews will be grouped together under their group name
         in reports and excluded from Synapse table storage.
-        The implementation queries the SCOPE_IDS column of the fileview in the Snowflake 
-        warehouse to find all projects that are part of the fileview. Each fileview's 
+        The implementation queries the SCOPE_IDS column of the fileview in the Snowflake
+        warehouse to find all projects that are part of the fileview. Each fileview's
         project IDs are then grouped under the provided group_name in the reports.
-        Note: The `file_view_id` should be provided WITHOUT the 'syn' prefix as it's 
+        Note: The `file_view_id` should be provided WITHOUT the 'syn' prefix as it's
         used directly in Snowflake queries.
-        Example: `[{"file_view_id": "123456", "group_name": "Group A"}, 
+        Example: `[{"file_view_id": "123456", "group_name": "Group A"},
                     {"file_view_id": "789012", "group_name": "Group B"}]`
     """
 
@@ -130,7 +130,7 @@ def top_public_synapse_projects_from_snowflake() -> None:
     def get_public_downloads_from_snowflake(**context) -> List[DownloadMetric]:
         """Execute a query on Snowflake and return download metrics for public projects.
 
-        This function executes a query to get download statistics for all public Synapse 
+        This function executes a query to get download statistics for all public Synapse
         projects for the specified time period.
 
         Arguments:
@@ -309,27 +309,27 @@ def top_public_synapse_projects_from_snowflake() -> None:
         fileview_query = f"""
             WITH FILEVIEW_MAPPINGS AS (
                 -- Create a temporary table of file view IDs to group names
-                SELECT 
+                SELECT
                     column1::NUMBER as file_view_id,
                     column2::VARCHAR as group_name
                 FROM VALUES
                     {values_clause}
             ),
-            
+
             FILEVIEW_PROJECTS AS (
                 -- Get all projects that are part of each file view
                 SELECT
                     FILEVIEW_MAPPINGS.group_name,
                     FILEVIEW_MAPPINGS.file_view_id,
                     value::NUMBER as project_id
-                FROM 
+                FROM
                     synapse_data_warehouse.synapse.node_latest,
                     LATERAL FLATTEN(input => SCOPE_IDS) as flattened,
                     FILEVIEW_MAPPINGS
-                WHERE 
+                WHERE
                     node_latest.id = FILEVIEW_MAPPINGS.file_view_id
             ),
-            
+
             PROJECT_INFO AS (
                 -- Get project information for all projects in file views
                 SELECT
@@ -341,12 +341,12 @@ def top_public_synapse_projects_from_snowflake() -> None:
                     synapse_data_warehouse.synapse.node_latest
                 INNER JOIN
                     FILEVIEW_PROJECTS
-                ON 
+                ON
                     node_latest.project_id = FILEVIEW_PROJECTS.project_id
                 WHERE
                     node_latest.node_type = 'project'
             ),
-            
+
             PROJECT_COUNT AS (
                 -- Count total number of projects in each group
                 SELECT
@@ -358,7 +358,7 @@ def top_public_synapse_projects_from_snowflake() -> None:
                 GROUP BY
                     group_name, file_view_id
             ),
-            
+
             DEDUP_FILEHANDLE AS (
                 -- Get download information for files in projects from file views
                 SELECT
@@ -378,7 +378,7 @@ def top_public_synapse_projects_from_snowflake() -> None:
                 WHERE
                     objectdownload_event.record_date = {date_clause}
             ),
-            
+
             DOWNLOAD_STAT AS (
                 -- Aggregate download statistics by group
                 SELECT
@@ -392,7 +392,7 @@ def top_public_synapse_projects_from_snowflake() -> None:
                 FROM DEDUP_FILEHANDLE
                 GROUP BY group_name, file_view_id
             )
-            
+
             -- Return the final results
             SELECT
                 'syn' || DOWNLOAD_STAT.file_view_id as project,
@@ -553,18 +553,22 @@ def top_public_synapse_projects_from_snowflake() -> None:
         return message
 
     @task
-    def post_top_downloads_to_slack(message: str) -> bool:
+    def post_top_downloads_to_slack(message: str, **context) -> bool:
         """Post the top downloads to the Slack channel.
 
         Arguments:
             message: Formatted message containing top download information
+            context: Airflow context dictionary containing DAG parameters
+                - slack_channel: Slack channel to post the message to
 
         Returns:
             bool: True if message was successfully posted, False otherwise
         """
 
         client = WebClient(token=Variable.get("SLACK_DPE_TEAM_BOT_TOKEN"))
-        result = client.chat_postMessage(channel="topcharts", text=message)
+        result = client.chat_postMessage(
+            channel=context["params"]["slack_channel"], text=message
+        )
         print(f"Result of posting to slack: [{result}]")
         return result is not None
 
@@ -581,7 +585,7 @@ def top_public_synapse_projects_from_snowflake() -> None:
         3. Still filters out projects from fileview groups before storing data
 
         Note on timezone differences: The Synapse table UI displays dates in local time,
-        while Snowflake queries run in UTC. Users in North America may need to set 
+        while Snowflake queries run in UTC. Users in North America may need to set
         backfill_date 2 days after the missing date in the Synapse table.
 
         Arguments:
@@ -630,7 +634,7 @@ def top_public_synapse_projects_from_snowflake() -> None:
 
         syn_hook = SynapseHook(context["params"]["synapse_conn_id"])
         syn_hook.client.store(
-            synapseclient.Table(schema=SYNAPSE_RESULTS_TABLE, values=data)
+            synapseclient.Table(schema=context["params"]["synapse_results_table"], values=data)
         )
 
     public_downloads = get_public_downloads_from_snowflake()
@@ -652,4 +656,15 @@ def top_public_synapse_projects_from_snowflake() -> None:
     top_downloads >> push_to_synapse_table
 
 
-top_public_synapse_projects_from_snowflake()
+dag = top_public_synapse_projects_from_snowflake()
+
+if __name__ == "__main__":
+    # backfill=False so the Slack branch runs; slack_channel redirects the post
+    # to #dpe-prs for local testing (the DPE bot must be a member of that channel).
+    # This is a staging Synapse table
+    dag.test(run_conf={
+        "backfill": False,
+        "backfill_date": date.today().strftime("%Y-%m-%d"),
+        "slack_channel": "dpe-prs",
+        "synapse_results_table": "syn74496611",
+    })

@@ -1,4 +1,4 @@
-"""This script is used to execute a query on Snowflake and report the results to a 
+"""This script is used to execute a query on Snowflake and report the results to a
 Synapse table. This retrieves data describing the total amount of data hosted in Synapse at the time of execution,
 the number of active users in a month, and the number of downloads in a month."""
 
@@ -19,6 +19,7 @@ dag_params = {
     "synapse_conn_id": Param("SYNAPSE_ORCA_SERVICE_ACCOUNT_CONN", type="string"),
     # date string with the format: YYYY-MM-DD including the month that we want to run the queries for
     "month_to_run": Param((date.today() - relativedelta(months=1)).strftime("%Y-%m-%d"), type="string"),
+    "synapse_results_table": Param("syn61588123", type="string"),
 }
 
 dag_config = {
@@ -33,7 +34,6 @@ dag_config = {
     "params": dag_params,
 }
 
-SYNAPSE_RESULTS_TABLE = "syn61588123"
 
 
 @dataclass
@@ -91,9 +91,9 @@ def synapse_by_the_numbers_past_month() -> None:
                 FROM FILE_SIZES
             ),
             MONTHLY_ACTIVE_USERS AS (
-                SELECT 
+                SELECT
                     COUNT(DISTINCT user_id) AS DISTINCT_USER_COUNT
-                FROM 
+                FROM
                     synapse_data_warehouse.synapse_event.access_event
                 WHERE
                     DATE_TRUNC('MONTH', RECORD_DATE) = DATE_TRUNC('MONTH', DATE('{context["params"]["month_to_run"]}'))
@@ -102,7 +102,7 @@ def synapse_by_the_numbers_past_month() -> None:
                 SELECT
                     COUNT(*) AS DOWNLOADS_LAST_MONTH
                 FROM (
-                    SELECT 
+                    SELECT
                         user_id,
                         file_handle_id,
                         record_date
@@ -112,11 +112,11 @@ def synapse_by_the_numbers_past_month() -> None:
                         DATE_TRUNC('MONTH', RECORD_DATE) = DATE_TRUNC('MONTH', DATE('{context["params"]["month_to_run"]}'))
                 )
             )
-            SELECT 
+            SELECT
                 TOTAL_SIZE.SIZE_IN_PETABYTES,
                 MONTHLY_ACTIVE_USERS.DISTINCT_USER_COUNT,
                 MONTHLY_DOWNLOADS.DOWNLOADS_LAST_MONTH
-            FROM 
+            FROM
                 TOTAL_SIZE, MONTHLY_ACTIVE_USERS, MONTHLY_DOWNLOADS;
             """
         print(query)
@@ -151,7 +151,7 @@ def synapse_by_the_numbers_past_month() -> None:
 
         syn_hook = SynapseHook(context["params"]["synapse_conn_id"])
         syn_hook.client.store(
-            synapseclient.Table(schema=SYNAPSE_RESULTS_TABLE, values=data)
+            synapseclient.Table(schema=context["params"]["synapse_results_table"], values=data)
         )
 
     top_downloads = get_synapse_monthly_metrics()
@@ -160,4 +160,8 @@ def synapse_by_the_numbers_past_month() -> None:
     top_downloads >> push_to_synapse_table
 
 
-synapse_by_the_numbers_past_month()
+dag = synapse_by_the_numbers_past_month()
+
+if __name__ == "__main__":
+    # This is a staging Synapse table
+    dag.test(run_conf={"synapse_results_table": "syn74496297"})
