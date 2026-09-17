@@ -6,6 +6,10 @@
 #
 # Run manually across the whole repo:
 #   pre-commit run --all-files
+
+# Skip Markdown docs across all hooks below (prose, not code).
+exclude: '\.md$'
+
 repos:
   # Ruff — lints DAGs for Airflow 3.x deprecations/removals (same AIR3 ruleset
   # the CI "lint" job runs). See https://github.com/astral-sh/ruff-pre-commit

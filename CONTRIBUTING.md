@@ -16,7 +16,9 @@
     - [Integration Testing](#integration-testing)
       - [DAG Set Up](#dag-set-up)
       - [DAG Testing](#dag-testing)
+      - [Running Integration Test DAGs Before Infra Changes](#running-integration-test-dags-before-infra-changes)
     - [Testing DAGs Locally](#testing-dags-locally)
+      - [Running Integration Test DAGs Locally](#running-integration-test-dags-locally)
       - [Skip AWS Secrets Manager for Local Development](#skip-aws-secrets-manager-for-local-development)
       - [Handling Airflow Variables Locally](#handling-airflow-variables-locally)
       - [Passing Custom Config with `dag.test()`](#passing-custom-config-with-dagtest)
@@ -256,6 +258,36 @@ docker compose up --build --detach
 # docker compose up --no-cache --build --detach
 ```
 
+##### Running Integration Test DAGs Before Infra Changes
+
+You must run integration test DAGs IF you make changes to one of the following:
+- Airflow upgrades
+- Changing the secrets backend
+- Editing `airflow.cfg`
+- Adding dependencies to each DAG or to the requirements-airflow
+- Updating the codespaces environment
+
+And any other change that could affect *all* DAGs
+
+The DAGs under [`dags/integration_tests/`](./dags/integration_tests/) ([`test_synapse_hook.py`](./dags/integration_tests/test_synapse_hook.py), [`test_snowflake_hook.py`](./dags/integration_tests/test_snowflake_hook.py), [`test_nextflow_tower_hook.py`](./dags/integration_tests/test_nextflow_tower_hook.py), [`test_polling.py`](./dags/integration_tests/test_polling.py)) validate baseline Airflow functionality — hooks authenticate, a real pipeline can be launched, sensors poll correctly — independent of any specific production DAG. They matter less for a change scoped to a single non-integration-test DAG.
+
+Steps to Run:
+
+
+1. Get connected to whichever Airflow environment you're validating:
+   - **For development**: follow [DAG Set Up](#dag-set-up) above for a Dev Container/Codespace.
+   - **After an infra/environment change has actually gone out** (e.g. a migration to MWAA, an Airflow upgrade): connect directly to the deployed `dev`/`prod` server. These DAGs should be triggered there too. 
+
+2. **Un-pause** the relevant integration test DAG(s) in the Airflow UI and trigger them manually.
+3. Check the result — refer to each DAG's own module docstring for exactly what it validates:
+   - `test_synapse_hook.py` / `test_snowflake_hook.py` — succeed if the task completes without raising (each asserts on real data returned from the service).
+   - `test_nextflow_tower_hook.py` — succeeds once the sensor reports the launched `nextflow-io/hello` workflow reached a terminal state; check task logs for `Current workflow state: ...`. **Also open the run in Seqera Platform and confirm it actually `SUCCEEDED`**. 
+   - `test_polling.py` — succeeds once `RUN_DURATION_SECONDS` has elapsed since the DAG run started; confirm multiple `Elapsed: ...s / ...s` log lines appear roughly `poke_interval` apart across separate task-instance attempts, so the scheduler isn't being starved by other running DAGs.
+4. Once you've confirmed the result, **re-pause** the DAG so it doesn't keep running or getting triggered unintentionally.
+
+> [!NOTE]
+> You can also run these **locally** as plain scripts instead of triggering them through the Airflow UI — see [Running Integration Test DAGs Locally](#running-integration-test-dags-before-infra-changes) below, which covers the extra environment variable a local run needs.
+
 #### Testing DAGs Locally
 
 There are two distinct ways to test a DAG's task logic without deploying to Airflow:
@@ -263,6 +295,23 @@ There are two distinct ways to test a DAG's task logic without deploying to Airf
 - **Unit tests** — mock external dependencies (hooks like `NextflowTowerHook`/`SynapseHook`, `WebClient`, `Variable`, etc.) and call each task's `python_callable` directly. These are fast, require no credentials or network access, and run automatically in CI on every push. They validate your Python logic (parameter wiring, branching, string formatting), not whether the real external services behave as you assume. See `tests/` for examples.
 
 - **Local integration runs** via `dag.test()` — hit real external services using real credentials. Credentials can come from AWS Secrets Manager (matching production) or from a local `connections.yaml/AIRFLOW_VAR_*` configuration via `LocalFilesystemBackend`. These validate the real integration (e.g., actually launching a Nextflow Tower workflow or posting to Slack), but are slower, require AWS SSO access, and can have real side effects. Use this as a manual sanity check before/after changing integration behavior, not as an automated substitute for unit tests.
+
+##### Running Integration Test DAGs Locally
+
+The integration test DAGs under [`dags/integration_tests/`](./dags/integration_tests/) (see [Running Integration Test DAGs Before Infra Changes](#running-integration-test-dags-before-infra-changes) for what each one validates) can be run as plain scripts, without the Airflow UI:
+
+```console
+python3 dags/integration_tests/test_synapse_hook.py
+```
+
+These DAGs import shared helpers from this repo's `dags/src/` package (e.g. `from src.utils import validate_required_secrets`). Because they live in a *subfolder* of `dags/`, running them directly puts `dags/integration_tests/` on `sys.path` — not `dags/` — so `src` can't be found. Point `AIRFLOW__CORE__DAGS_FOLDER` at this repo's `dags/` folder and Airflow appends it to `sys.path` on import, which resolves them:
+
+```console
+export AIRFLOW__CORE__DAGS_FOLDER=/absolute/path/to/orca-recipes/dags
+```
+
+You'll also need credentials configured for whichever connections the DAG uses; see [Skip AWS Secrets Manager for Local Development](#skip-aws-secrets-manager-for-local-development) below.
+
 
 ##### Skip AWS Secrets Manager for Local Development
 
