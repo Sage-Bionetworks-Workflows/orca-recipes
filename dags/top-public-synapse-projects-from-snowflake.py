@@ -19,6 +19,7 @@ from airflow.decorators import dag, task
 from airflow.models import Variable
 from airflow.models.param import Param
 from airflow.providers.snowflake.hooks.snowflake import SnowflakeHook
+from src.synapse_alerts import synapse_failure_callback
 from slack_sdk import WebClient
 import json
 
@@ -30,6 +31,8 @@ dag_params = {
     "snowflake_developer_service_conn": Param(
         "SNOWFLAKE_DEVELOPER_SERVICE_RAW_CONN", type="string"),
     "synapse_conn_id": Param("SYNAPSE_ORCA_SERVICE_ACCOUNT_CONN", type="string"),
+    # who to alert on failure (comma-separated usernames or numeric ids)
+    "dev_user_list": Param("3485485", type="string"),  # DPE service team
     # hours_time_delta is the number of hours to subtract from the current date to get
     # the date for the query
     "hours_time_delta": Param("24", type="string"),
@@ -89,7 +92,18 @@ class DownloadMetric:
     data_download_size: float = 0
 
 
-@dag(**dag_config)
+
+@dag(
+    on_failure_callback=synapse_failure_callback(
+        message=(
+            "This may indicate the Snowflake query for download statistics "
+            "across all public Synapse projects returned no rows, or that "
+            "writing the results to the Synapse table failed. Please review "
+            "the task logs."
+        )
+    ),
+    **dag_config,
+)
 def top_public_synapse_projects_from_snowflake() -> None:
     """Execute a query on Snowflake retrieving the top most downloaded Synapse projects.
 
