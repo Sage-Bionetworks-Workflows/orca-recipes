@@ -1,6 +1,7 @@
 """Utility functions for various components of the Airflow DAGs."""
 import logging
-from typing import Optional
+from datetime import datetime, timedelta, timezone
+from typing import Optional, Sized
 
 from airflow.exceptions import AirflowNotFoundException
 from airflow.hooks.base import BaseHook
@@ -31,6 +32,9 @@ def get_logger(name: Optional[str] = None) -> logging.Logger:
         logger_name = f"{DEFAULT_LOGGER_PREFIX}.{name}"
 
     return logging.getLogger(logger_name)
+
+
+logger = get_logger(__name__)
 
 
 def validate_required_secrets(connection_ids: list[str], variable_names: list[str]) -> None:
@@ -64,3 +68,45 @@ def validate_required_secrets(connection_ids: list[str], variable_names: list[st
             "Missing required secrets before running locally:\n  "
             + "\n  ".join(missing)
         )
+
+
+def raise_if_empty(
+    results: Sized,
+    description: str,
+    backfill_date: Optional[str] = None,
+    hours_time_delta: Optional[str] = None,
+) -> None:
+    """Log and fail a task when a query or API call came back with nothing.
+
+    Use this where an empty result means something upstream is broken rather
+    than a legitimate "nothing happened" — otherwise the task succeeds and the
+    DAG quietly carries on with no data.
+
+    Args:
+        results: Any sized collection returned by a query or API call.
+        description: What was being fetched. Included verbatim in the message,
+            so make it specific enough to debug from, e.g. "public project
+            downloads from Snowflake".
+        backfill_date: For a backfill run, the date being backfilled, in
+            YYYY-MM-DD format. Defaults to today's UTC date when omitted.
+        hours_time_delta: Hours subtracted from backfill_date (or today) to get
+            the date the query actually asked for, appended to the message.
+            Omit for queries that aren't date-based.
+
+    Raises:
+        ValueError: If results is empty.
+    """
+    if results:
+        return
+
+    message = f"No results returned for {description}"
+
+    if hours_time_delta is not None:
+        base_date = (
+            datetime.strptime(backfill_date, "%Y-%m-%d").date()
+            if backfill_date
+            else datetime.now(timezone.utc).date()
+        )
+        message += f" for date {base_date - timedelta(hours=int(hours_time_delta))}"
+    logger.error(message)
+    raise ValueError(message)
