@@ -19,16 +19,20 @@ from airflow.decorators import dag, task
 from airflow.models import Variable
 from airflow.models.param import Param
 from airflow.providers.snowflake.hooks.snowflake import SnowflakeHook
+from src.synapse_alerts import synapse_failure_callback
 from slack_sdk import WebClient
 import json
 
 from src.synapse_hook import SynapseHook
+from src.utils import raise_if_empty
 
 
 dag_params = {
     "snowflake_developer_service_conn": Param(
         "SNOWFLAKE_DEVELOPER_SERVICE_RAW_CONN", type="string"),
     "synapse_conn_id": Param("SYNAPSE_ORCA_SERVICE_ACCOUNT_CONN", type="string"),
+    # who to alert on failure (comma-separated usernames or numeric ids)
+    "dev_user_list": Param("3485485", type="string"),  # DPE service team
     # hours_time_delta is the number of hours to subtract from the current date to get
     # the date for the query
     "hours_time_delta": Param("24", type="string"),
@@ -88,7 +92,22 @@ class DownloadMetric:
     data_download_size: float = 0
 
 
-@dag(**dag_config)
+
+@dag(
+    on_failure_callback=synapse_failure_callback(
+        message=(
+            "This may indicate the Snowflake query for download statistics "
+            "across all public Synapse projects returned no rows, or that "
+            "writing the results to the Synapse table failed. Please review "
+            "the task logs.\n\n"
+            "If the query came up empty, troubleshoot in Snowflake by checking "
+            "whether synapse_data_warehouse.synapse_event.objectdownload_event "
+            "has records in the past 'hours_time_delta' hours (24 by default). "
+            "That table can lag behind in updating."
+        )
+    ),
+    **dag_config,
+)
 def top_public_synapse_projects_from_snowflake() -> None:
     """Execute a query on Snowflake retrieving the top most downloaded Synapse projects.
 
@@ -99,30 +118,30 @@ def top_public_synapse_projects_from_snowflake() -> None:
 
     DAG Parameters:
 
-    - `snowflake_developer_service_conn`: A JSON-formatted string containing the 
+    - `snowflake_developer_service_conn`: A JSON-formatted string containing the
         connection details required to authenticate and connect to Snowflake.
     - `synapse_conn_id`: The connection ID for the Synapse connection.
-    - `hours_time_delta`: The number of hours to subtract from the current date to 
+    - `hours_time_delta`: The number of hours to subtract from the current date to
         get the date for the query. Defaults to `24`.
-    - `backfill`: Whether to backfill the data. Defaults to `False`. When set to True, 
+    - `backfill`: Whether to backfill the data. Defaults to `False`. When set to True,
         the DAG will not post to Slack and will only update the Synapse table.
-    - `backfill_date`: The date to backfill the data from, in YYYY-MM-DD format. 
+    - `backfill_date`: The date to backfill the data from, in YYYY-MM-DD format.
         Will be ignored if `backfill` is `False`.
-        Note on backfill timing: Due to time zone differences between Synapse table UI 
-        (local time) and Snowflake queries (UTC), users in North America may need to set 
+        Note on backfill timing: Due to time zone differences between Synapse table UI
+        (local time) and Snowflake queries (UTC), users in North America may need to set
         the backfill_date to 2 days after the missing date in the Synapse table.
-        For example, if data is missing for "2025-01-03" in the Synapse table, set 
+        For example, if data is missing for "2025-01-03" in the Synapse table, set
         `backfill_date` to "2025-01-05".
-    - `fileview_groups`: A JSON string containing an array of objects with 
-        `file_view_id` and `group_name` properties. 
-        Projects from these fileviews will be grouped together under their group name 
+    - `fileview_groups`: A JSON string containing an array of objects with
+        `file_view_id` and `group_name` properties.
+        Projects from these fileviews will be grouped together under their group name
         in reports and excluded from Synapse table storage.
-        The implementation queries the SCOPE_IDS column of the fileview in the Snowflake 
-        warehouse to find all projects that are part of the fileview. Each fileview's 
+        The implementation queries the SCOPE_IDS column of the fileview in the Snowflake
+        warehouse to find all projects that are part of the fileview. Each fileview's
         project IDs are then grouped under the provided group_name in the reports.
-        Note: The `file_view_id` should be provided WITHOUT the 'syn' prefix as it's 
+        Note: The `file_view_id` should be provided WITHOUT the 'syn' prefix as it's
         used directly in Snowflake queries.
-        Example: `[{"file_view_id": "123456", "group_name": "Group A"}, 
+        Example: `[{"file_view_id": "123456", "group_name": "Group A"},
                     {"file_view_id": "789012", "group_name": "Group B"}]`
     """
 
@@ -130,7 +149,7 @@ def top_public_synapse_projects_from_snowflake() -> None:
     def get_public_downloads_from_snowflake(**context) -> List[DownloadMetric]:
         """Execute a query on Snowflake and return download metrics for public projects.
 
-        This function executes a query to get download statistics for all public Synapse 
+        This function executes a query to get download statistics for all public Synapse
         projects for the specified time period.
 
         Arguments:
@@ -139,6 +158,9 @@ def top_public_synapse_projects_from_snowflake() -> None:
                 - backfill_date: Date string for backfill in YYYY-MM-DD format
                 - hours_time_delta: Hours to subtract from current/backfill date
                 - backfill: Boolean indicating whether this is a backfill run
+
+        Raises:
+            ValueError: If the query returns no rows.
 
         Returns:
             List[DownloadMetric]: A list of download metrics for public projects
@@ -247,6 +269,13 @@ def top_public_synapse_projects_from_snowflake() -> None:
         finally:
             cs.close()
 
+        raise_if_empty(
+            metrics,
+            "public project downloads from Snowflake",
+            backfill_date=backfill_date if is_backfill else None,
+            hours_time_delta=hours_time_delta,
+        )
+
         return metrics
 
     @task
@@ -309,27 +338,27 @@ def top_public_synapse_projects_from_snowflake() -> None:
         fileview_query = f"""
             WITH FILEVIEW_MAPPINGS AS (
                 -- Create a temporary table of file view IDs to group names
-                SELECT 
+                SELECT
                     column1::NUMBER as file_view_id,
                     column2::VARCHAR as group_name
                 FROM VALUES
                     {values_clause}
             ),
-            
+
             FILEVIEW_PROJECTS AS (
                 -- Get all projects that are part of each file view
                 SELECT
                     FILEVIEW_MAPPINGS.group_name,
                     FILEVIEW_MAPPINGS.file_view_id,
                     value::NUMBER as project_id
-                FROM 
+                FROM
                     synapse_data_warehouse.synapse.node_latest,
                     LATERAL FLATTEN(input => SCOPE_IDS) as flattened,
                     FILEVIEW_MAPPINGS
-                WHERE 
+                WHERE
                     node_latest.id = FILEVIEW_MAPPINGS.file_view_id
             ),
-            
+
             PROJECT_INFO AS (
                 -- Get project information for all projects in file views
                 SELECT
@@ -341,12 +370,12 @@ def top_public_synapse_projects_from_snowflake() -> None:
                     synapse_data_warehouse.synapse.node_latest
                 INNER JOIN
                     FILEVIEW_PROJECTS
-                ON 
+                ON
                     node_latest.project_id = FILEVIEW_PROJECTS.project_id
                 WHERE
                     node_latest.node_type = 'project'
             ),
-            
+
             PROJECT_COUNT AS (
                 -- Count total number of projects in each group
                 SELECT
@@ -358,7 +387,7 @@ def top_public_synapse_projects_from_snowflake() -> None:
                 GROUP BY
                     group_name, file_view_id
             ),
-            
+
             DEDUP_FILEHANDLE AS (
                 -- Get download information for files in projects from file views
                 SELECT
@@ -378,7 +407,7 @@ def top_public_synapse_projects_from_snowflake() -> None:
                 WHERE
                     objectdownload_event.record_date = {date_clause}
             ),
-            
+
             DOWNLOAD_STAT AS (
                 -- Aggregate download statistics by group
                 SELECT
@@ -392,7 +421,7 @@ def top_public_synapse_projects_from_snowflake() -> None:
                 FROM DEDUP_FILEHANDLE
                 GROUP BY group_name, file_view_id
             )
-            
+
             -- Return the final results
             SELECT
                 'syn' || DOWNLOAD_STAT.file_view_id as project,
@@ -581,7 +610,7 @@ def top_public_synapse_projects_from_snowflake() -> None:
         3. Still filters out projects from fileview groups before storing data
 
         Note on timezone differences: The Synapse table UI displays dates in local time,
-        while Snowflake queries run in UTC. Users in North America may need to set 
+        while Snowflake queries run in UTC. Users in North America may need to set
         backfill_date 2 days after the missing date in the Synapse table.
 
         Arguments:
