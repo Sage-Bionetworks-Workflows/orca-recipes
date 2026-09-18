@@ -99,7 +99,11 @@ class DownloadMetric:
             "This may indicate the Snowflake query for download statistics "
             "across all public Synapse projects returned no rows, or that "
             "writing the results to the Synapse table failed. Please review "
-            "the task logs."
+            "the task logs.\n\n"
+            "If the query came up empty, troubleshoot in Snowflake by checking "
+            "whether synapse_data_warehouse.synapse_event.objectdownload_event "
+            "has records in the past 'hours_time_delta' hours (24 by default). "
+            "That table can lag behind in updating."
         )
     ),
     **dag_config,
