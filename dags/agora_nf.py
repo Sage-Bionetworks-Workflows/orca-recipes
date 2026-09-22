@@ -69,6 +69,7 @@ dag_params = {
         "rna_de_individual,rna_de_aggregate", type=["null", "string"]
     ),
     "dataset": Param(None, type=["null", "string"]),
+    "slack_channel": Param("nf-agora-notifications", type="string"),
 }
 
 dag_config = {
@@ -218,4 +219,6 @@ if __name__ == "__main__":
         ],
         variable_names=["SLACK_DPE_TEAM_BOT_TOKEN"],
     )
-    dag.test(run_conf={"dataset": "model_details"})
+    dag.test(run_conf={"dataset": "model_details",
+                       "slack_channel": "test-agora-nextflow"
+                       })
