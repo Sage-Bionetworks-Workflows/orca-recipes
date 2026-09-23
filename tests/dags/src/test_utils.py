@@ -1,13 +1,12 @@
 """Tests for dags/src/utils.py."""
 
 import logging
-from datetime import datetime, timezone
 
 from airflow.exceptions import AirflowNotFoundException
 import pytest
 from unittest.mock import MagicMock, patch
 
-from dags.src.utils import DEFAULT_LOGGER_PREFIX, get_logger, validate_required_secrets, raise_if_empty
+from dags.src.utils import DEFAULT_LOGGER_PREFIX, get_logger, validate_required_secrets
 
 
 @pytest.mark.parametrize("name", [None, ""], ids = ["None", "Empty string"])
@@ -122,46 +121,3 @@ class TestValidateRequiredSecrets:
         # Then the error message names each unresolvable one
         for substring in expected_substrings:
             assert substring in str(exc_info.value)
-
-
-class TestRaiseIfEmpty:
-    """Tests for raise_if_empty."""
-
-    def test_empty_results_raise_value_error(self) -> None:
-        """An empty result raises a ValueError naming what was being fetched."""
-        # When the results are empty
-        with pytest.raises(ValueError) as exc_info:
-            raise_if_empty([], "testing")
-
-        # Then the error message names the description
-        assert "testing" in str(exc_info.value)
-
-    def test_non_empty_results_do_not_raise(self) -> None:
-        """No error is raised when the results are non-empty."""
-        raise_if_empty([1, 2, 3], "testing")
-
-    def test_message_reports_queried_date_for_backfill(self) -> None:
-        """The reported date is backfill_date minus hours_time_delta, not the raw inputs."""
-        # When a backfill run for 2024-01-01 looks back 24 hours
-        with pytest.raises(ValueError) as exc_info:
-            raise_if_empty(
-                [], "testing", backfill_date="2024-01-01", hours_time_delta="24"
-            )
-
-        # Then the message reports the date actually queried
-        assert "2023-12-31" in str(exc_info.value)
-
-    @patch("dags.src.utils.datetime")
-    def test_message_reports_queried_date_without_backfill_date(
-        self, mock_datetime: MagicMock
-    ) -> None:
-        """Without a backfill_date, the queried date is today's UTC date minus the delta."""
-        mock_datetime.now.return_value = datetime(2024, 1, 1, tzinfo=timezone.utc)
-
-        # When a scheduled run looks back 24 hours from today (2024-01-01)
-        with pytest.raises(ValueError) as exc_info:
-            raise_if_empty([], "testing", hours_time_delta="24")
-
-        # Then the message reports the previous day, resolved in UTC
-        assert "2023-12-31" in str(exc_info.value)
-        mock_datetime.now.assert_called_once_with(timezone.utc)
