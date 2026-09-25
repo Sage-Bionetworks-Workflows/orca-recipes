@@ -103,7 +103,7 @@ dag_params = {
     "synapse_export_folder_id": Param("syn76890261", type="string"),
     # Comma-separated Synapse usernames of collaborator(s) to notify when the
     # monthly report is available. (No support for python lists in Params.)
-    "collaborator_user_list": Param("3409149", type="string"), # Model-AD collaborators
+    "collaborator_user_list": Param("3409149,3598645", type="string"), # Model-AD collaborators
     # Comma-separated Synapse usernames or IDs of DPE/developers to
     # alert on failure.
     "dev_user_list": Param("3485485", type="string"), # DPE service team

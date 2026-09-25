@@ -16,7 +16,9 @@
     - [Integration Testing](#integration-testing)
       - [DAG Set Up](#dag-set-up)
       - [DAG Testing](#dag-testing)
+      - [Running Integration Test DAGs Before Infra Changes](#running-integration-test-dags-before-infra-changes)
     - [Testing DAGs Locally](#testing-dags-locally)
+      - [Running Integration Test DAGs Locally](#running-integration-test-dags-locally)
       - [Skip AWS Secrets Manager for Local Development](#skip-aws-secrets-manager-for-local-development)
       - [Handling Airflow Variables Locally](#handling-airflow-variables-locally)
       - [Passing Custom Config with `dag.test()`](#passing-custom-config-with-dagtest)
@@ -34,15 +36,18 @@
 - [Secrets](#secrets)
   - [Creating a New Secret](#creating-a-new-secret)
   - [Configuring a SynapseHook Connection Secret](#configuring-a-synapsehook-connection-secret)
+  - [Configuring a NextflowTowerHook Connection Secret](#configuring-a-nextflowtowerhook-connection-secret)
   - [Configuring a SnowflakeHook Connection Secret](#configuring-a-snowflakehook-connection-secret)
 - [Contributing a Challenge DAG](#contributing-a-challenge-dag)
   - [TL;DR](#tldr)
   - [Overview](#overview)
+  - [Local Development](#local-development)
   - [Creating Your Challenge DAG Config](#creating-your-challenge-dag-config)
     - [Parameters](#parameters)
   - [Contributing a New Challenge DAG](#contributing-a-new-challenge-dag)
   - [Troubleshooting](#troubleshooting)
-    - [Airflow Provider Hooks Failing to Connect — Outdated Codespace Secrets](#airflow-provider-hooks-failing-to-connect--outdated-codespace-secrets)
+    - [Airflow Provider Hooks Failing to Connect — Expired SSO Credentials](#airflow-provider-hooks-failing-to-connect--expired-sso-credentials)
+  - [Refreshing the `AWS_TOWER_PROD_S3_CONN` - Expired AWS Credentials](#refreshing-the-aws_tower_prod_s3_conn---expired-aws-credentials)
 
 ## Development
 
@@ -253,6 +258,36 @@ docker compose up --build --detach
 # docker compose up --no-cache --build --detach
 ```
 
+##### Running Integration Test DAGs Before Infra Changes
+
+You must run integration test DAGs IF you make changes to one of the following:
+- Airflow upgrades
+- Changing the secrets backend
+- Editing `airflow.cfg`
+- Adding dependencies to each DAG or to the requirements-airflow
+- Updating the codespaces environment
+
+And any other change that could affect *all* DAGs
+
+The DAGs under [`dags/integration_tests/`](./dags/integration_tests/) ([`test_synapse_hook.py`](./dags/integration_tests/test_synapse_hook.py), [`test_snowflake_hook.py`](./dags/integration_tests/test_snowflake_hook.py), [`test_nextflow_tower_hook.py`](./dags/integration_tests/test_nextflow_tower_hook.py), [`test_polling.py`](./dags/integration_tests/test_polling.py)) validate baseline Airflow functionality — hooks authenticate, a real pipeline can be launched, sensors poll correctly — independent of any specific production DAG. They matter less for a change scoped to a single non-integration-test DAG.
+
+Steps to Run:
+
+
+1. Get connected to whichever Airflow environment you're validating:
+   - **For development**: follow [DAG Set Up](#dag-set-up) above for a Dev Container/Codespace.
+   - **After an infra/environment change has actually gone out** (e.g. a migration to MWAA, an Airflow upgrade): connect directly to the deployed `dev`/`prod` server. These DAGs should be triggered there too. 
+
+2. **Un-pause** the relevant integration test DAG(s) in the Airflow UI and trigger them manually.
+3. Check the result — refer to each DAG's own module docstring for exactly what it validates:
+   - `test_synapse_hook.py` / `test_snowflake_hook.py` — succeed if the task completes without raising (each asserts on real data returned from the service).
+   - `test_nextflow_tower_hook.py` — succeeds once the sensor reports the launched `nextflow-io/hello` workflow reached a terminal state; check task logs for `Current workflow state: ...`. **Also open the run in Seqera Platform and confirm it actually `SUCCEEDED`**. 
+   - `test_polling.py` — succeeds once `RUN_DURATION_SECONDS` has elapsed since the DAG run started; confirm multiple `Elapsed: ...s / ...s` log lines appear roughly `poke_interval` apart across separate task-instance attempts, so the scheduler isn't being starved by other running DAGs.
+4. Once you've confirmed the result, **re-pause** the DAG so it doesn't keep running or getting triggered unintentionally.
+
+> [!NOTE]
+> You can also run these **locally** as plain scripts instead of triggering them through the Airflow UI — see [Running Integration Test DAGs Locally](#running-integration-test-dags-before-infra-changes) below, which covers the extra environment variable a local run needs.
+
 #### Testing DAGs Locally
 
 There are two distinct ways to test a DAG's task logic without deploying to Airflow:
@@ -260,6 +295,23 @@ There are two distinct ways to test a DAG's task logic without deploying to Airf
 - **Unit tests** — mock external dependencies (hooks like `NextflowTowerHook`/`SynapseHook`, `WebClient`, `Variable`, etc.) and call each task's `python_callable` directly. These are fast, require no credentials or network access, and run automatically in CI on every push. They validate your Python logic (parameter wiring, branching, string formatting), not whether the real external services behave as you assume. See `tests/` for examples.
 
 - **Local integration runs** via `dag.test()` — hit real external services using real credentials. Credentials can come from AWS Secrets Manager (matching production) or from a local `connections.yaml/AIRFLOW_VAR_*` configuration via `LocalFilesystemBackend`. These validate the real integration (e.g., actually launching a Nextflow Tower workflow or posting to Slack), but are slower, require AWS SSO access, and can have real side effects. Use this as a manual sanity check before/after changing integration behavior, not as an automated substitute for unit tests.
+
+##### Running Integration Test DAGs Locally
+
+The integration test DAGs under [`dags/integration_tests/`](./dags/integration_tests/) (see [Running Integration Test DAGs Before Infra Changes](#running-integration-test-dags-before-infra-changes) for what each one validates) can be run as plain scripts, without the Airflow UI:
+
+```console
+python3 dags/integration_tests/test_synapse_hook.py
+```
+
+These DAGs import shared helpers from this repo's `dags/src/` package (e.g. `from src.utils import validate_required_secrets`). Because they live in a *subfolder* of `dags/`, running them directly puts `dags/integration_tests/` on `sys.path` — not `dags/` — so `src` can't be found. Point `AIRFLOW__CORE__DAGS_FOLDER` at this repo's `dags/` folder and Airflow appends it to `sys.path` on import, which resolves them:
+
+```console
+export AIRFLOW__CORE__DAGS_FOLDER=/absolute/path/to/orca-recipes/dags
+```
+
+You'll also need credentials configured for whichever connections the DAG uses; see [Skip AWS Secrets Manager for Local Development](#skip-aws-secrets-manager-for-local-development) below.
+
 
 ##### Skip AWS Secrets Manager for Local Development
 
@@ -567,7 +619,8 @@ Airflow secrets (_e.g._ connections and variables) are stored in Secrets Manager
 1. `synapse_conn_id`: `"SYNAPSE_ORCA_SERVICE_ACCOUNT_CONN"`
    - The Airflow connection ID used to connect to the Synapse service. Use  to run Synapse commands. This connection was created under the Synapse orca service account.
 1. `aws_conn_id`: `"AWS_TOWER_PROD_S3_CONN"`
-   - The Airflow connection ID used to connect to AWS service.
+   - The Airflow connection ID used to connect to AWS service (the Nextflow Tower S3 bucket).
+   - **Its credentials are temporary and expire** — when they do, S3 operations start failing (`ExpiredToken`, or `AccessDenied` on `kms:GenerateDataKey`). See [Refreshing the `AWS_TOWER_PROD_S3_CONN` credentials](#refreshing-the-aws_tower_prod_s3_conn---expired-aws-credentials) to rotate the token.
 1. `snowflake_conn_id`: `"SNOWFLAKE_DEVELOPER_SERVICE_RAW_CONN"`
    - The Airflow connection ID used to connect to the Snowflake service. Use this to run Snowflake commands as `DEVELOPER_SERVICE` in the `DATA_ENGINEER` role.
 
@@ -588,6 +641,10 @@ New secrets must be created in AWS Secrets Manager in the `dpe-prod` account.
 ### Configuring a SynapseHook connection secret
 
 See [Synapse credentials section in the py-orca's env.example](https://github.com/Sage-Bionetworks-Workflows/py-orca/blob/main/.env.example) for the expected format of your custom `SYNAPSE_CONNECTION_URI`.
+
+### Configuring a NextflowTowerHook connection secret
+
+See [Nextflow Tower credentials section in the py-orca's env.example](https://github.com/Sage-Bionetworks-Workflows/py-orca/blob/main/.env.example) for the expected format of your custom `NEXTFLOWTOWER_CONNECTION_URI`.
 
 ### Configuring a SnowflakeHook connection secret
 
@@ -776,3 +833,86 @@ If it still fails, confirm your profile is configured and you are assigned the `
 ```console
 aws sts get-caller-identity --profile <your-sso-profile>
 ```
+
+#### Codespaces: AWS Credentials Not Reaching the Airflow Containers
+
+In Codespaces, authenticate via the **short-lived keys path**, not `AWS_PROFILE`.
+There is no host `~/.aws` to mount, so an SSO profile can't be resolved inside the
+containers — `scripts/aws-sso-to-env.sh` exports temporary keys into `.env` instead.
+Two failure modes:
+
+- **`botocore.exceptions.ProfileNotFound: The config profile () could not be found`**
+  — `AWS_PROFILE` is set to an empty string. Make sure `AWS_PROFILE` is **not** set
+  in your Codespace `.env` at all (it's for the local profile path, not Codespaces).
+- **`UnrecognizedClientException` / `InvalidClientTokenId: The security token
+  included in the request is invalid`** — the containers are running with stale,
+  incomplete, or mismatched temporary credentials.
+
+Fix, in order:
+
+1. Confirm your SSO session is valid at the source:
+   ```console
+   aws sts get-caller-identity --profile dpe-airflow
+   ```
+   If it fails, re-run `aws sso login --profile dpe-airflow` and finish the browser flow.
+1. Re-export a fresh, matched credential set into `.env` (clear stale/duplicate lines first):
+   ```console
+   sed -i '/^AWS_ACCESS_KEY_ID=/d;/^AWS_SECRET_ACCESS_KEY=/d;/^AWS_SESSION_TOKEN=/d' .env
+   bash scripts/aws-sso-to-env.sh dpe-airflow
+   ```
+1. **Recreate the containers.** Containers only read `.env` at (re)creation, so a
+   plain `restart` won't pick up new credentials — and it must reach the **worker**
+   (where tasks run), so recreate the whole stack:
+   ```console
+   docker compose up -d --force-recreate
+   ```
+1. Verify the **worker** has a complete, valid set (access key starts with `ASIA`,
+   session token present):
+   ```console
+   docker compose exec airflow-worker env | grep AWS_
+   docker compose exec airflow-worker python -c \
+     "import boto3; print(boto3.client('sts', region_name='us-east-1').get_caller_identity())"
+   ```
+1. A task that already failed keeps its old error — clear it (or trigger a fresh run)
+   so it re-executes with the refreshed credentials:
+   ```console
+   docker compose exec airflow-scheduler airflow tasks clear <dag_id> -y
+   ```
+
+> [!NOTE]
+> These exported keys are **short-lived (~1 hour)**. A long-waiting sensor (e.g. a
+> RecordSet/CurationTask poll) can outlive them, so the step that finally runs may
+> fail with `ExpiredToken`. Re-run steps 2–3 shortly before the pipeline needs to
+> run. For long runs, use the local `AWS_PROFILE` + mounted `~/.aws` path (which
+> auto-refreshes) rather than Codespaces.
+
+### Refreshing the `AWS_TOWER_PROD_S3_CONN` - Expired AWS credentials
+
+`AWS_TOWER_PROD_S3_CONN` carries **temporary** AWS credentials for the Nextflow Tower S3 bucket (which lives in a different AWS account and is SSE-KMS encrypted). Those credentials expire, so periodically S3 operations, for example a DAG staging a samplesheet start failing with errors like:
+
+- `botocore.exceptions ... (ExpiredToken) ... The provided token has expired`
+- `(AccessDenied) ... not authorized to perform: kms:GenerateDataKey ...` — this happens when the connection's credentials are stale/empty and Airflow silently falls back to your own SSO role, which isn't authorized on the bucket's KMS key.
+
+When that happens, generate a fresh token and update the secret:
+
+1. **Generate a new IAM token in Nextflow Tower.** In Seqera Platform (Nextflow Tower), go to your workspace's workflows / cloud credentials and generate a new set of temporary AWS credentials (IAM token) for the Tower bucket account.
+1. **Update the secret** `airflow/connections/AWS_TOWER_PROD_S3_CONN` in AWS Secrets Manager (`dpe-prod` account, region **us-east-1**). The secret is JSON, and the AWS fields **must be nested under `extra`** — the Secrets Manager backend only keeps the `login`, `password`, `host`, `port`, `schema`, `conn_type`, and `extra` keys and silently drops any other top-level keys (so top-level `aws_access_key_id`/`region_name`/etc. are lost, leaving an empty connection):
+
+   ```json
+   {
+     "conn_type": "aws",
+     "login": "<aws_access_key_id>",
+     "password": "<aws_secret_access_key>",
+     "extra": {
+       "aws_session_token": "<aws_session_token>",
+       "region_name": "us-east-1"
+     }
+   }
+   ```
+
+   If you use a role instead of static keys, put `"role_arn"` in `extra` (and drop the keys/token).
+1. **Verify** the connection resolves _with_ credentials (not empty) and the S3 operation succeeds again:
+
+   ```console
+   airflow connections get AWS_TOWER_PROD_S3_CONN -o json
+   ```

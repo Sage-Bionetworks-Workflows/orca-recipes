@@ -11,18 +11,67 @@ and approved private projects are eligible for Slack reporting.
 """
 
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta
-from typing import List
+from datetime import date, datetime, timedelta, timezone
+from typing import List, Optional, Sized
 
 import synapseclient
 from airflow.decorators import dag, task
 from airflow.models import Variable
 from airflow.models.param import Param
 from airflow.providers.snowflake.hooks.snowflake import SnowflakeHook
+from src.synapse_alerts import synapse_failure_callback
 from slack_sdk import WebClient
 import json
 
 from src.synapse_hook import SynapseHook
+from src.utils import get_logger
+
+
+logger = get_logger(__name__)
+
+
+def raise_if_empty(
+    results: Sized,
+    description: str,
+    backfill_date: Optional[str] = None,
+    hours_time_delta: Optional[str] = None,
+) -> None:
+    """Log and fail a task when a Snowflake query came back with no rows.
+
+    An empty result here usually means
+    synapse_data_warehouse.synapse_event.objectdownload_event hasn't been
+    updated yet for the queried window, rather than a legitimate "no
+    downloads happened" — so we fail loudly instead of quietly posting an
+    empty report to Slack and the Synapse results table.
+
+    Args:
+        results: The rows or metrics returned by the Snowflake query.
+        description: What was being queried. Included verbatim in the
+            message, so make it specific enough to debug from, e.g. "public
+            project downloads from Snowflake".
+        backfill_date: The DAG's `backfill_date` param, for a backfill run,
+            in YYYY-MM-DD format. Defaults to today's UTC date when omitted.
+        hours_time_delta: The DAG's `hours_time_delta` param — hours
+            subtracted from backfill_date (or today) to get the date the
+            query actually asked for, appended to the message.
+
+    Raises:
+        ValueError: If results is empty.
+    """
+    if results:
+        return
+
+    message = f"No results returned for {description}"
+
+    if hours_time_delta is not None:
+        base_date = (
+            datetime.strptime(backfill_date, "%Y-%m-%d").date()
+            if backfill_date
+            else datetime.now(timezone.utc).date()
+        )
+        message += f" for date {base_date - timedelta(hours=int(hours_time_delta))}"
+    logger.error(message)
+    raise ValueError(message)
 
 
 dag_params = {
@@ -30,6 +79,8 @@ dag_params = {
         "SNOWFLAKE_DEVELOPER_SERVICE_RAW_CONN", type="string"),
     "synapse_conn_id": Param("SYNAPSE_ORCA_SERVICE_ACCOUNT_CONN", type="string"),
     "slack_channel": Param("topcharts", type="string"),
+    # who to alert on failure (comma-separated usernames or numeric ids)
+    "dev_user_list": Param("3485485", type="string"),  # DPE service team
     # hours_time_delta is the number of hours to subtract from the current date to get
     # the date for the query
     "hours_time_delta": Param("24", type="string"),
@@ -88,7 +139,22 @@ class DownloadMetric:
     data_download_size: float = 0
 
 
-@dag(**dag_config)
+
+@dag(
+    on_failure_callback=synapse_failure_callback(
+        message=(
+            "This may indicate the Snowflake query for download statistics "
+            "across all public Synapse projects returned no rows, or that "
+            "writing the results to the Synapse table failed. Please review "
+            "the task logs.\n\n"
+            "If the query came up empty, troubleshoot in Snowflake by checking "
+            "whether synapse_data_warehouse.synapse_event.objectdownload_event "
+            "has records in the past 'hours_time_delta' hours (24 by default). "
+            "That table can lag behind in updating."
+        )
+    ),
+    **dag_config,
+)
 def top_public_synapse_projects_from_snowflake() -> None:
     """Execute a query on Snowflake retrieving the top most downloaded Synapse projects.
 
@@ -139,6 +205,9 @@ def top_public_synapse_projects_from_snowflake() -> None:
                 - backfill_date: Date string for backfill in YYYY-MM-DD format
                 - hours_time_delta: Hours to subtract from current/backfill date
                 - backfill: Boolean indicating whether this is a backfill run
+
+        Raises:
+            ValueError: If the query returns no rows.
 
         Returns:
             List[DownloadMetric]: A list of download metrics for public projects
@@ -246,6 +315,13 @@ def top_public_synapse_projects_from_snowflake() -> None:
                 )
         finally:
             cs.close()
+
+        raise_if_empty(
+            metrics,
+            "public project downloads from Snowflake",
+            backfill_date=backfill_date if is_backfill else None,
+            hours_time_delta=hours_time_delta,
+        )
 
         return metrics
 

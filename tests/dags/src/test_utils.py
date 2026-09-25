@@ -1,4 +1,4 @@
-# tests/src/test_utils.py
+"""Tests for dags/src/utils.py."""
 
 import logging
 
@@ -55,7 +55,6 @@ def test_logger_propagates_to_parent_logging_configuration():
     logger = get_logger("src.synapse_alerts")
 
     assert logger.propagate is True
-"""Tests for dags/src/utils.py."""
 
 
 class TestValidateRequiredSecrets:

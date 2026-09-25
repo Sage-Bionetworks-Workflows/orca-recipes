@@ -33,6 +33,9 @@ def get_logger(name: Optional[str] = None) -> logging.Logger:
     return logging.getLogger(logger_name)
 
 
+logger = get_logger(__name__)
+
+
 def validate_required_secrets(connection_ids: list[str], variable_names: list[str]) -> None:
     """Fail fast if any Connection/Variable this DAG needs isn't resolvable.
 
