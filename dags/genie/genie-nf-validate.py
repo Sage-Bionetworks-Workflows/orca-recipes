@@ -39,6 +39,11 @@ def genie_nf_validate_dag():
         """
         Launches tower workflow
 
+        NOTE: Sets pre_run_script for Nextflow to use
+        the v1 parser so that the workflow is compatible with the older syntax
+        instead of the stricter v2 parser that comes by default with Nextflow
+        26+ versions.
+
         Args:
             workspace_id (str): Workspace ID for tower run
         """
@@ -50,6 +55,11 @@ def genie_nf_validate_dag():
             work_dir=context["params"]["work_dir"],
             profiles=[context["params"]["profile"]],
             workspace_secrets=["SYNAPSE_AUTH_TOKEN"],
+            pre_run_script=(
+                "export NXF_OPTS='-Xms4g -Xmx12g'\n"
+                "export NXF_SYNTAX_PARSER=v1\n"
+                'echo "NXF_SYNTAX_PARSER=$NXF_SYNTAX_PARSER"'
+            ),
             params={
                 "process_type": context["params"]["process_type"],
                 "release": context["params"]["release"]

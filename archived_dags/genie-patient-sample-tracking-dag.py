@@ -137,7 +137,7 @@ def build_patient_sample_tracking_table() -> None:
     """
     Main DAG function. The DAG builds the patient sample
     tracking table through the following steps:
-    
+
     1. Queries snowflake for the data to go into the Patient Sample Tracking Table
     2. Validates the query
     2. Deletes current Patient Sample Tracking Table data
@@ -256,7 +256,7 @@ def build_patient_sample_tracking_table() -> None:
             - Each new SP project will need to be added here as each SP project's table
             data can be vastly different
         ---------------------------------------------------------------------------*/
-        
+
         /* --------------
           AKT1 SP project
         ----------------*/
@@ -325,7 +325,7 @@ def build_patient_sample_tracking_table() -> None:
         ),
         /* -------------------
           FGFE SP project
-        ---------------------*/        
+        ---------------------*/
         sp_fgfe_pairs AS (
         SELECT DISTINCT
             s.SAMPLE_ID,
@@ -348,7 +348,7 @@ def build_patient_sample_tracking_table() -> None:
 
         /* -------------------
           KRAS SP project
-        ---------------------*/   
+        ---------------------*/
         sp_kras_pairs AS (
         SELECT DISTINCT
             s.SAMPLE_ID,
@@ -371,7 +371,7 @@ def build_patient_sample_tracking_table() -> None:
 
         /* -------------------
           NTRK SP project
-        ---------------------*/   
+        ---------------------*/
         sp_ntrk_pairs AS (
         SELECT DISTINCT
             s.CPT_GENIE_SAMPLE_ID as SAMPLE_ID,
@@ -478,7 +478,7 @@ def build_patient_sample_tracking_table() -> None:
             f'SELECT ROW_ID, ROW_VERSION FROM { table_id}'
         ).asDataFrame()
         syn.delete(synapseclient.Table(table_id, to_delete))
-        
+
         # batch upload for memory reduction
         CHUNK = 50000
         for start in range(0, len(df), CHUNK):
