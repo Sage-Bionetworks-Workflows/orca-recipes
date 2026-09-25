@@ -29,6 +29,7 @@ DAG Parameters:
   `large_memory_gb` instead of `default_memory_gb`.
 - `dataset`: Optional single dataset to process; if unset, all datasets are
   processed.
+- `slack_channel`: Slack channel where the workflow completion message is posted.
 """
 
 import os
@@ -49,7 +50,6 @@ from src.utils import validate_required_secrets
 TOWER_HOST = "https://tower.sagebionetworks.org"
 TOWER_ORG_NAME = "Sage-Bionetworks"
 TOWER_WORKSPACE_NAME = "agora-project"
-SLACK_CHANNEL = os.environ.get("SLACK_CHANNEL", "nf-agora-notifications") # Slack channel for ADT Airflow Notifications
 SYNAPSE_TEAM_ID = os.environ.get("SYNAPSE_TEAM_ID", "3600443") # ADT Airflow Notifications team ID
 
 dag_params = {
@@ -69,6 +69,7 @@ dag_params = {
         "rna_de_individual,rna_de_aggregate", type=["null", "string"]
     ),
     "dataset": Param(None, type=["null", "string"]),
+    "slack_channel": Param("nf-agora-notifications", type="string"),
 }
 
 dag_config = {
@@ -169,17 +170,18 @@ def agora_nf_run_dag() -> DAG:
         return message
 
     @task
-    def post_slack_messages(message: str) -> bool:
+    def post_slack_messages(message: str, **context: Any) -> bool:
         """Post the workflow summary message to the configured Slack channel.
 
         Args:
             message: Summary message produced by generate_message.
+            context: Airflow task context; used to read the slack_channel param.
 
         Returns:
             True if the Slack API call returned a result, False otherwise.
         """
         client = WebClient(token=Variable.get("SLACK_DPE_TEAM_BOT_TOKEN"))
-        result = client.chat_postMessage(channel=SLACK_CHANNEL, text=message)
+        result = client.chat_postMessage(channel=context["params"]["slack_channel"], text=message)
         print(f"Result of posting to slack: [{result}]")
         return result is not None
 
@@ -218,4 +220,6 @@ if __name__ == "__main__":
         ],
         variable_names=["SLACK_DPE_TEAM_BOT_TOKEN"],
     )
-    dag.test(run_conf={"dataset": "model_details"})
+    dag.test(run_conf={"dataset": "model_details",
+                       "slack_channel": "test-agora-nextflow"
+                       })

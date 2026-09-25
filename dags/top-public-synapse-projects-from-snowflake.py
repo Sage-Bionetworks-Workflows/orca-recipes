@@ -78,6 +78,7 @@ dag_params = {
     "snowflake_developer_service_conn": Param(
         "SNOWFLAKE_DEVELOPER_SERVICE_RAW_CONN", type="string"),
     "synapse_conn_id": Param("SYNAPSE_ORCA_SERVICE_ACCOUNT_CONN", type="string"),
+    "slack_channel": Param("topcharts", type="string"),
     # who to alert on failure (comma-separated usernames or numeric ids)
     "dev_user_list": Param("3485485", type="string"),  # DPE service team
     # hours_time_delta is the number of hours to subtract from the current date to get
@@ -92,6 +93,7 @@ dag_params = {
     #           {"file_view_id": "789012", "group_name": "Group B"}]'
     "fileview_groups": Param(
         '[{"file_view_id": "20446927", "group_name": "HTAN1"},{"file_view_id": "51489960", "group_name": "ELITE"},{"file_view_id": "16858331", "group_name": "NF-OSI"},{"file_view_id": "27210848", "group_name": "MC2"},{"file_view_id": "52794526", "group_name": "GENIE"}]', type="string"),
+    "synapse_results_table": Param("syn53696951", type="string"),
 }
 
 dag_config = {
@@ -110,8 +112,6 @@ BYTE_STRING = "GiB"
 # 30 is the power of 2 for GiB, 40 is the power of 2 for TiB
 POWER_OF_TWO = 30
 
-# ID of the Synapse table where aggregated results will be stored for public viewing
-SYNAPSE_RESULTS_TABLE = "syn53696951"
 # ID of the Synapse homepage project, excluded from download stats
 SYNAPSE_HOMEPAGE_PROJECT_ID = 23593546
 
@@ -629,18 +629,22 @@ def top_public_synapse_projects_from_snowflake() -> None:
         return message
 
     @task
-    def post_top_downloads_to_slack(message: str) -> bool:
+    def post_top_downloads_to_slack(message: str, **context) -> bool:
         """Post the top downloads to the Slack channel.
 
         Arguments:
             message: Formatted message containing top download information
+            context: Airflow context dictionary containing DAG parameters
+                - slack_channel: Slack channel to post the message to
 
         Returns:
             bool: True if message was successfully posted, False otherwise
         """
 
         client = WebClient(token=Variable.get("SLACK_DPE_TEAM_BOT_TOKEN"))
-        result = client.chat_postMessage(channel="topcharts", text=message)
+        result = client.chat_postMessage(
+            channel=context["params"]["slack_channel"], text=message
+        )
         print(f"Result of posting to slack: [{result}]")
         return result is not None
 
@@ -706,7 +710,7 @@ def top_public_synapse_projects_from_snowflake() -> None:
 
         syn_hook = SynapseHook(context["params"]["synapse_conn_id"])
         syn_hook.client.store(
-            synapseclient.Table(schema=SYNAPSE_RESULTS_TABLE, values=data)
+            synapseclient.Table(schema=context["params"]["synapse_results_table"], values=data)
         )
 
     public_downloads = get_public_downloads_from_snowflake()
@@ -728,4 +732,15 @@ def top_public_synapse_projects_from_snowflake() -> None:
     top_downloads >> push_to_synapse_table
 
 
-top_public_synapse_projects_from_snowflake()
+dag = top_public_synapse_projects_from_snowflake()
+
+if __name__ == "__main__":
+    # backfill=False so the Slack branch runs; slack_channel redirects the post
+    # to #dpe-prs for local testing (the DPE bot must be a member of that channel).
+    # This is a staging Synapse table
+    dag.test(run_conf={
+        "backfill": False,
+        "backfill_date": date.today().strftime("%Y-%m-%d"),
+        "slack_channel": "dpe-prs",
+        "synapse_results_table": "syn74496611",
+    })

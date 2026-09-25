@@ -598,4 +598,11 @@ def zenodo_tep_metrics_dag() -> AirflowDAG:
 dag = zenodo_tep_metrics_dag()
 
 if __name__ == "__main__":
-    dag.test()
+    dag.test(
+        run_conf={
+            # TREAT-AD zenodo metrics testing folder
+            "synapse_export_folder_id": "syn77470158",
+            # Use DPE or your own user when testing
+            "collaborator_user_list":"3485485"
+            }
+    )
