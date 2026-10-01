@@ -71,4 +71,12 @@ def genie_nf_validate_dag():
     monitor_nf_genie_workflow(run_id=run_id)
 
 
-genie_nf_validate_dag = genie_nf_validate_dag()
+dag = genie_nf_validate_dag()
+
+if __name__ == "__main__":
+    dag.test(
+        run_conf={
+            # run on test project
+            "release": "TEST.consortium",
+            }
+    )

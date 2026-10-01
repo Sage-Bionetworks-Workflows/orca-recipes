@@ -1,5 +1,5 @@
 """
-This script is used to execute a query on Snowflake and report the results to a 
+This script is used to execute a query on Snowflake and report the results to a
 Synapse table. This DAG updates the Trending Projects Snapshots Synapse table
 (https://www.synapse.org/Synapse:syn61597055/tables/) every X number of days with the following metrics:
 
@@ -25,14 +25,14 @@ from airflow.providers.snowflake.hooks.snowflake import SnowflakeHook
 from src.synapse_hook import SynapseHook
 
 
-SYNAPSE_RESULTS_TABLE = "syn61597055"
 SYNAPSE_HOMEPAGE_PROJECT_ID = 23593546
 
 dag_params = {
     "snowflake_developer_service_conn": Param("SNOWFLAKE_DEVELOPER_SERVICE_RAW_CONN", type="string"),
     "synapse_conn_id": Param("SYNAPSE_ORCA_SERVICE_ACCOUNT_CONN", type="string"),
     "current_date": Param(date.today().strftime("%Y-%m-%d"), type="string"),
-    "month_to_run": Param((date.today() - relativedelta(months=1)).strftime("%Y-%m-%d"), type="string")
+    "month_to_run": Param((date.today() - relativedelta(months=1)).strftime("%Y-%m-%d"), type="string"),
+    "synapse_results_table": Param("syn61597055", type="string"),
     }
 
 dag_config = {
@@ -69,7 +69,7 @@ class SnapshotMetrics:
 @dag(**dag_config)
 def trending_projects_snapshot() -> None:
     """
-    This DAG executes a query on Snowflake to retrieve information about trending public projects and 
+    This DAG executes a query on Snowflake to retrieve information about trending public projects and
     reports the results to a Synapse table.
 
     The main steps performed in this DAG are:
@@ -127,12 +127,12 @@ def trending_projects_snapshot() -> None:
                     GROUP BY LATEST_FILE_HANDLES.PROJECT_ID
                 )
 
-                SELECT 
+                SELECT
                     TOP_10_PUBLIC_PROJECTS.PROJECT_ID,
                     TOP_10_PUBLIC_PROJECTS.N_UNIQUE_USERS,
                     COALESCE(TO_CHAR(MAX(RECENT_DOWNLOADS.RECORD_DATE), 'YYYY-MM-DD'), 'N/A') AS LAST_DOWNLOAD_DATE,
                     ROUND(FILE_SIZES.ESTIMATED_PROJECT_SIZE_IN_GIB, 3) AS ESTIMATED_PROJECT_SIZE_IN_GIB
-                FROM 
+                FROM
                     TOP_10_PUBLIC_PROJECTS
 
                 LEFT JOIN RECENT_DOWNLOADS
@@ -146,7 +146,7 @@ def trending_projects_snapshot() -> None:
                     TOP_10_PUBLIC_PROJECTS.N_UNIQUE_USERS,
                     FILE_SIZES.ESTIMATED_PROJECT_SIZE_IN_GIB
 
-                ORDER BY 
+                ORDER BY
                     TOP_10_PUBLIC_PROJECTS.N_UNIQUE_USERS DESC
             """
 
@@ -183,7 +183,7 @@ def trending_projects_snapshot() -> None:
 
         syn_hook = SynapseHook(context["params"]["synapse_conn_id"])
         syn_hook.client.store(
-            synapseclient.Table(schema=SYNAPSE_RESULTS_TABLE, values=data)
+            synapseclient.Table(schema=context["params"]["synapse_results_table"], values=data)
         )
 
     project_snapshot = get_trending_project_snapshot()
@@ -192,4 +192,8 @@ def trending_projects_snapshot() -> None:
     project_snapshot >> push_to_synapse_table
 
 
-trending_projects_snapshot()
+dag = trending_projects_snapshot()
+
+if __name__ == "__main__":
+    # This is a staging Synapse table
+    dag.test(run_conf={"synapse_results_table": "syn74496614"})
