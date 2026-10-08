@@ -23,6 +23,7 @@ import json
 from jsonata import jsonata
 from jsonschema import validate, ValidationError
 
+from synapseclient import Wiki
 from synapseclient.models import Dataset, DatasetCollection, File
 from orca.services.synapse import SynapseHook
 
@@ -31,7 +32,7 @@ from airflow.models import Variable, Param
 
 
 dag_params = {
-    "project_id": Param("syn64892175", type="string"),
+    "project_id": Param("syn76514511", type="string"),
     "mapping_url": Param(
         "https://raw.githubusercontent.com/amp-als/data-model/refs/heads/main/mapping/cpath.jsonata",
         type="string",
@@ -252,6 +253,34 @@ def clean_dataset_name(name: str) -> str:
     return cleaned
 
 
+def upsert_dataset_wiki(synapse_client, dataset_id: str, title: str, description: str) -> None:
+    """Create or update the root wiki page for a Synapse dataset.
+
+    Args:
+        synapse_client: Authenticated Synapse client.
+        dataset_id: Synapse ID of the dataset entity.
+        title: Wiki page title.
+        description: Markdown content to write to the wiki.
+    """
+    markdown = description or "No description provided by C-Path."
+
+    wiki_headers = synapse_client.getWikiHeaders(dataset_id) or []
+    root_wiki_header = next(
+        (header for header in wiki_headers if header.get("parentId") is None),
+        None,
+    )
+
+    if root_wiki_header:
+        wiki = synapse_client.getWiki(dataset_id, root_wiki_header["id"])
+        wiki.title = title
+        wiki.markdown = markdown
+    else:
+        wiki = Wiki(owner=dataset_id, title=title, markdown=markdown)
+
+    synapse_client.store(wiki)
+    print(f"Updated dataset wiki for {dataset_id}")
+
+
 def select_latest_versions(datasets: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """Select unique datasets by type_dataset_id combination.
 
@@ -466,6 +495,7 @@ def update_existing_datasets(
     """Create new versions of existing datasets with updated annotations."""
 
     syn_hook = SynapseHook(context["params"]["synapse_conn_id"])
+    synapse_client = syn_hook.client
     updated_dataset_ids = []
 
     for update_info in datasets_to_update:
@@ -506,6 +536,12 @@ def update_existing_datasets(
 
         # Store as new version
         existing_dataset.store()
+        upsert_dataset_wiki(
+            synapse_client,
+            existing_dataset.id,
+            clean_dataset_name(item["title"]),
+            item.get("description", ""),
+        )
         updated_dataset_ids.append(existing_dataset.id)
 
         print(f"{upgrade_type.title()} update for {item['title']}: new version {existing_dataset.version_number}")
@@ -519,6 +555,7 @@ def create_new_datasets(
 ) -> str:
     """Create brand new datasets for ALS numbers that don't exist yet."""
     syn_hook = SynapseHook(context["params"]["synapse_conn_id"])
+    synapse_client = syn_hook.client
     dataset_collection = DatasetCollection(id=context["params"]["collection_id"]).get()
     created_dataset_ids = []
     for item in datasets_to_create:
@@ -553,6 +590,12 @@ def create_new_datasets(
             name=clean_dataset_name(item["title"]),
             annotations=dataset_annotations,
             description=dataset_description).store()
+        upsert_dataset_wiki(
+            synapse_client,
+            dataset.id,
+            clean_dataset_name(item["title"]),
+            item.get("description", ""),
+        )
         dataset_collection.add_item(dataset)
         created_dataset_ids.append(dataset.id)
         #Storing annotations using synapseclient rather than models method cause it would not store with models method for some reason. 
