@@ -81,6 +81,10 @@ from src.synapse_hook import SynapseHook
 dag_params = {
     "snowflake_developer_service_conn": Param("SNOWFLAKE_DEVELOPER_SERVICE_RAW_CONN", type="string"),
     "synapse_conn_id": Param("SYNAPSE_ORCA_SERVICE_ACCOUNT_CONN", type="string"),
+    # Synapse table holding the links to the croissant files in S3
+    "synapse_table_for_croissant_links": Param("syn65903895", type="string"),
+    # Public S3 bucket the croissant files are written to
+    "bucket_name": Param("synapse-croissant-metadata", type="string"),
     "dataset_collections": Param(["syn50913342", "syn68939725", "syn71493541", "syn74529385", "syn77025587"], type="array"),
     "push_results_to_s3": Param(True, type="boolean"),
     "push_links_to_synapse": Param(True, type="boolean"),
@@ -105,7 +109,6 @@ dag_config = {
 tracer = trace.get_tracer(__name__)
 
 REGION_NAME = "us-east-1"
-BUCKET_NAME = "synapse-croissant-metadata"
 MY_SERVICE_VERSION = "1.0.0"
 MY_SERVICE_NAME = "airflow-synapse-dataset-to-croissant"
 # Used to set `deployment.environment` in the telemetry data.
@@ -113,8 +116,6 @@ MY_SERVICE_NAME = "airflow-synapse-dataset-to-croissant"
 # the deployment environment here.
 MY_DEPLOYMENT_ENVIRONMENT = "prod"
 # MY_DEPLOYMENT_ENVIRONMENT = "local"
-
-SYNAPSE_TABLE_FOR_CROISSANT_LINKS = "syn65903895"
 
 # Regular expression to match `_{dataset_id}.{dataset_version}_`
 DATASET_ID_VERSION_PATTERN = r"_syn\d+\.\d+_"
@@ -533,7 +534,7 @@ def execute_push_to_s3(dataset: Entity, dataset_id: str, dataset_version: str, s
             f"Uploading croissant file to S3: {s3_key}")
         s3_hook.load_file_obj(file_obj=metadata_file,
                               key=s3_key,
-                              bucket_name=BUCKET_NAME,
+                              bucket_name=context["params"]["bucket_name"],
                               replace=True,
                               )
     except Exception as ex:
@@ -572,8 +573,10 @@ def execute_push_to_synapse(push_to_synapse: bool, dataset: Entity, dataset_id: 
                 f"Croissant file link for [dataset: {dataset.name}, id: {dataset_id}.{dataset_version}]: {s3_url}")
             return
 
+        links_table = context["params"]["synapse_table_for_croissant_links"]
+
         otel_logger.info(
-            f"Uploading croissant file link to Synapse table {SYNAPSE_TABLE_FOR_CROISSANT_LINKS}"
+            f"Uploading croissant file link to Synapse table {links_table}"
         )
 
         # TODO: When 4.8.0 of the SYNPY client is released this may be
@@ -586,7 +589,7 @@ def execute_push_to_synapse(push_to_synapse: bool, dataset: Entity, dataset_id: 
         authenticated_syn_client._rest_call = MethodType(
             _rest_call_replacement, authenticated_syn_client)
         existing_row = authenticated_syn_client.tableQuery(
-            query=f"SELECT * FROM {SYNAPSE_TABLE_FOR_CROISSANT_LINKS} WHERE dataset = '{dataset_id}' AND dataset_version = {dataset_version} AND dataset_collection = '{dataset_collection}'", resultsAs="csv")
+            query=f"SELECT * FROM {links_table} WHERE dataset = '{dataset_id}' AND dataset_version = {dataset_version} AND dataset_collection = '{dataset_collection}'", resultsAs="csv")
 
         try:
             existing_row_df = existing_row.asDataFrame()
@@ -594,7 +597,7 @@ def execute_push_to_synapse(push_to_synapse: bool, dataset: Entity, dataset_id: 
             os.remove(existing_row.filepath)
         if not existing_row_df.empty and existing_row_df["croissant_file_s3_object"].values[0] == s3_url:
             otel_logger.info(
-                f"Croissant file link already exists in Synapse table {SYNAPSE_TABLE_FOR_CROISSANT_LINKS}. Skipping.")
+                f"Croissant file link already exists in Synapse table {links_table}. Skipping.")
             return
 
         df = DataFrame(
@@ -608,8 +611,7 @@ def execute_push_to_synapse(push_to_synapse: bool, dataset: Entity, dataset_id: 
         temp_dir = tempfile.mkdtemp()
         filepath = os.path.join(temp_dir, "table.csv")
 
-        schema = authenticated_syn_client.get(
-            SYNAPSE_TABLE_FOR_CROISSANT_LINKS)
+        schema = authenticated_syn_client.get(links_table)
         if existing_row_df.empty:
             # If the row does not exist, create a new row
             authenticated_syn_client.store(
@@ -640,8 +642,8 @@ def dataset_to_croissant() -> None:
     - `dataset_collections`: The dataset collections to query for datasets.
     - `push_results_to_s3`: A boolean to indicate if the results should be pushed to S3.
                             When set to `False`, the results will be printed to the logs.
-    - `delete_out_of_date_from_s3`: A boolean to indicate if the old files should be 
-                            deleted from S3. When set to `False`, the old files will not 
+    - `delete_out_of_date_from_s3`: A boolean to indicate if the old files should be
+                            deleted from S3. When set to `False`, the old files will not
                             be deleted, but a message will be logged to indicate that
                             the files will be deleted when set to `True`.
     - `push_links_to_synapse`: A boolean to indicate if the links should be pushed to
@@ -791,8 +793,8 @@ def dataset_to_croissant() -> None:
         root_carrier_context: Dict, combined_dataset_collection_and_datasets: List[Dict[str, str]], **context
     ) -> None:
         """
-        Delete the non-current croissant files from S3. 
-        This is used to remove the old files from S3 that are no longer needed. 
+        Delete the non-current croissant files from S3.
+        This is used to remove the old files from S3 that are no longer needed.
         A "non-current" file is defined as a croissant JSON LD file which is no longer
         present in any Dataset collection.
 
@@ -810,9 +812,10 @@ def dataset_to_croissant() -> None:
             None
         """
         with otel_tracer.start_as_current_span("delete_non_current_files_from_s3", context=TraceContextTextMapPropagator().extract(root_carrier_context)) as span:
+            bucket_name = context["params"]["bucket_name"]
             s3_hook = S3Hook(
                 aws_conn_id=None, region_name=REGION_NAME)
-            bucket_objects = s3_hook.list_keys(bucket_name=BUCKET_NAME)
+            bucket_objects = s3_hook.list_keys(bucket_name=bucket_name)
 
             objects_to_delete = extract_s3_objects_to_delete(
                 bucket_objects=bucket_objects,
@@ -827,7 +830,7 @@ def dataset_to_croissant() -> None:
                     otel_logger.info(
                         f"Deleting the following objects from S3: {objects_to_delete}")
                     s3_hook.delete_objects(
-                        bucket=BUCKET_NAME, keys=objects_to_delete)
+                        bucket=bucket_name, keys=objects_to_delete)
                 else:
                     otel_logger.info(
                         f"Found objects to delete from S3, but not deleting due to `delete_out_of_date_from_s3` param: {objects_to_delete}")
@@ -843,8 +846,8 @@ def dataset_to_croissant() -> None:
         root_carrier_context: Dict, combined_dataset_collection_and_datasets: List[Dict[str, str]], **context
     ) -> None:
         """
-        Delete the non-current croissant files from the Synapse table. 
-        This is used to remove the old files from Synapse that are no longer needed. 
+        Delete the non-current croissant files from the Synapse table.
+        This is used to remove the old files from Synapse that are no longer needed.
         A "non-current" file is defined as a croissant JSON LD file which is no longer
         present in any Dataset collection.
 
@@ -869,7 +872,8 @@ def dataset_to_croissant() -> None:
                 _rest_call_replacement, syn_client)
             dataset_collections_to_consider_for_deletion = [f"'{ds}'" for ds in context[
                 "params"]["dataset_collections_for_cleanup"]]
-            query = f"SELECT * FROM {SYNAPSE_TABLE_FOR_CROISSANT_LINKS} WHERE dataset_collection in ({','.join(dataset_collections_to_consider_for_deletion)})"
+            links_table = context["params"]["synapse_table_for_croissant_links"]
+            query = f"SELECT * FROM {links_table} WHERE dataset_collection in ({','.join(dataset_collections_to_consider_for_deletion)})"
             table_results = syn_client.tableQuery(
                 query=query, resultsAs="csv")
             table_dataframe = table_results.asDataFrame(
@@ -886,7 +890,7 @@ def dataset_to_croissant() -> None:
                     otel_logger.info(
                         f"Deleting the following rows from Synapse: {rows_to_delete}")
                     results_from_synapse = syn_client.tableQuery(
-                        query=f"SELECT ROW_ID, ROW_VERSION FROM {SYNAPSE_TABLE_FOR_CROISSANT_LINKS} WHERE ROW_ID in ({','.join(rows_to_delete)})", resultsAs="csv")
+                        query=f"SELECT ROW_ID, ROW_VERSION FROM {links_table} WHERE ROW_ID in ({','.join(rows_to_delete)})", resultsAs="csv")
                     syn_client.delete(results_from_synapse)
                     os.remove(results_from_synapse.filepath)
                 else:
@@ -997,7 +1001,7 @@ def dataset_to_croissant() -> None:
             execute_push_to_s3(dataset=dataset, dataset_id=dataset_id, dataset_version=dataset_version,
                                s3_key=s3_key, croissant_file=croissant_file, push_to_s3=push_to_s3, **context)
 
-            s3_url = f"https://{BUCKET_NAME}.s3.us-east-1.amazonaws.com/{quote_plus(s3_key)}"
+            s3_url = f"https://{context['params']['bucket_name']}.s3.us-east-1.amazonaws.com/{quote_plus(s3_key)}"
             execute_push_to_synapse(push_to_synapse=push_to_synapse, dataset=dataset, dataset_id=dataset_id,
                                     dataset_version=dataset_version, dataset_collection=dataset_collection, s3_url=s3_url, **context)
 
@@ -1022,4 +1026,15 @@ def dataset_to_croissant() -> None:
                                                  combined_dataset_collection_and_datasets=combined_dataset_lists)
 
 
-dataset_to_croissant()
+dag = dataset_to_croissant()
+
+if __name__ == "__main__":
+    # Staging Synapse table and test S3 bucket. The test bucket lives in the same
+    # `org-sagebase-dpe-prod` account as the production bucket, so the ambient AWS
+    # credentials are unchanged.
+    dag.test(
+        run_conf={
+            "synapse_table_for_croissant_links": "syn77524795",
+            "bucket_name": "test-synapse-croissant-metadata",
+        }
+    )
