@@ -47,6 +47,7 @@ def fake_context() -> dict[str, dict[str, Any]]:
             "large_memory_gb": 20,
             "large_memory_datasets": "dataset_a,dataset_b",
             "dataset": DATASET,
+            "slack_channel": "test-agora-nextflow",
         }
     }
 
@@ -137,7 +138,7 @@ def test_generate_message(
     assert f"Duration (submission to completion): {complete - submit}" in message
     assert f"Dataset: {expected_dataset}" in message
 
-def test_post_slack_messages() -> None:
+def test_post_slack_messages(fake_context: dict[str, dict[str, Any]]) -> None:
     """Tests that post_slack_messages returns True when the Slack API call succeeds."""
     with (
         patch("dags.agora_nf.WebClient") as mock_web_client,
@@ -146,10 +147,12 @@ def test_post_slack_messages() -> None:
         mock_web_client.return_value.chat_postMessage.return_value = {"ok": True}
 
         raw_python_function = dag.get_task("post_slack_messages").python_callable
-        result = raw_python_function(message="Test message")
+        result = raw_python_function(message="Test message", **fake_context)
 
         assert result is True
-        mock_web_client.return_value.chat_postMessage.assert_called_once()
+        mock_web_client.return_value.chat_postMessage.assert_called_once_with(
+            channel=fake_context["params"]["slack_channel"], text="Test message"
+        )
 
 
 def test_post_email_messages(fake_context: dict[str, dict[str, Any]]) -> None:
