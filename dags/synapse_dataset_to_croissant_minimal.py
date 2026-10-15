@@ -12,7 +12,7 @@ This DAG interacts with a few different services to accomplish the following:
 - (Synapse, Authenticated) Delete non-current croissant file links from the Synapse table that no longer correspond to datasets in the data catalog
 
 
-This DAG addresses the issue where Google has difficulty indexing Croissant JSON embedded in portal pages. 
+This DAG addresses the issue where Google has difficulty indexing Croissant JSON embedded in portal pages.
 
 The workflow for making datasets discoverable to Google:
 1. This DAG generates minimal JSON-LD files and uploads them to a publicly accessible S3 bucket
@@ -21,7 +21,7 @@ The workflow for making datasets discoverable to Google:
 4. If a croissant file link exists for that dataset, the Synapse Web Client injects it into the HTML of the page
 5. Google crawler reads the JSON-LD from the HTML and indexes the dataset for Google Datasets search
 
-See synapse-dataset-to-croissant.py for additional note on the pushing to S3. 
+See synapse-dataset-to-croissant.py for additional note on the pushing to S3.
 
 DAG Parameters:
 - Review the DAG Parameters under the `@dag` decorated function
@@ -64,6 +64,11 @@ from src.synapse_hook import SynapseHook
 
 dag_params = {
     "synapse_conn_id": Param("SYNAPSE_ORCA_SERVICE_ACCOUNT_CONN", type="string"),
+    # Synapse table holding the links to the minimal croissant files in S3. The
+    # Synapse Web Client reads this table to inject the JSON-LD into dataset pages.
+    "synapse_table_for_croissant_links": Param("syn72041138", type="string"),
+    # Public S3 bucket the minimal croissant files are written to
+    "bucket_name": Param("synapse-croissant-metadata-minimal", type="string"),
     "push_results_to_s3": Param(True, type="boolean"),
     "push_links_to_synapse": Param(True, type="boolean"),
     "delete_out_of_date_from_s3": Param(True, type="boolean"),
@@ -83,7 +88,6 @@ dag_config = {
 SYNAPSE_DATA_CATALOG = "syn61609402"
 # AWS related constants
 REGION_NAME = "us-east-1"
-BUCKET_NAME="synapse-croissant-metadata-minimal"
 # Open telemetry related constants
 # Used to set `deployment.environment` in the telemetry data.
 # Since tracing and logging is getting set up outside of the DAG, we need to set
@@ -91,7 +95,6 @@ BUCKET_NAME="synapse-croissant-metadata-minimal"
 MY_SERVICE_NAME = "airflow-synapse-dataset-to-minimal-croissant"
 MY_DEPLOYMENT_ENVIRONMENT = "prod"
 MY_SERVICE_VERSION = "1.0.0"
-SYNAPSE_TABLE_FOR_CROISSANT_LINKS = "syn72041138"
 
 def set_up_tracing() -> Tracer:
     """
@@ -261,7 +264,7 @@ def execute_push_to_s3(dataset: Entity, dataset_id: str, s3_key: str, croissant_
             f"Uploading croissant file to S3: {s3_key}")
         s3_hook.load_file_obj(file_obj=metadata_file,
                               key=s3_key,
-                              bucket_name=BUCKET_NAME,
+                              bucket_name=context["params"]["bucket_name"],
                               replace=True,
                               )
     except Exception as ex:
@@ -302,8 +305,10 @@ def save_minimal_jsonld_to_s3() -> None:
                     f"Croissant file link for [dataset: {dataset.name}, id: {dataset_id}]: {s3_url}")
                 return
 
+            links_table = context["params"]["synapse_table_for_croissant_links"]
+
             otel_logger.info(
-                f"Uploading croissant file link to Synapse table {SYNAPSE_TABLE_FOR_CROISSANT_LINKS}"
+                f"Uploading croissant file link to Synapse table {links_table}"
             )
 
             # Warning: Using an authenticated Synapse Client during this section of code
@@ -312,11 +317,11 @@ def save_minimal_jsonld_to_s3() -> None:
             authenticated_syn_client: Synapse = syn_hook.client
             authenticated_syn_client._rest_call = MethodType(
                 _rest_call_replacement, authenticated_syn_client)
-            existing_row_df = query(query=f"SELECT * FROM {SYNAPSE_TABLE_FOR_CROISSANT_LINKS} WHERE dataset = '{dataset_id}'", synapse_client=authenticated_syn_client)
+            existing_row_df = query(query=f"SELECT * FROM {links_table} WHERE dataset = '{dataset_id}'", synapse_client=authenticated_syn_client)
 
             if not existing_row_df.empty and existing_row_df["minimal_croissant_file_s3_object"].values[0] == s3_url:
                 otel_logger.info(
-                    f"Croissant file link already exists in Synapse table {SYNAPSE_TABLE_FOR_CROISSANT_LINKS}. Skipping.")
+                    f"Croissant file link already exists in Synapse table {links_table}. Skipping.")
                 return
 
             df = DataFrame(
@@ -328,13 +333,13 @@ def save_minimal_jsonld_to_s3() -> None:
             if existing_row_df.empty:
                 # If the row does not exist, create a new row
                 print("Creating new row in Synapse table")
-                Table(id=SYNAPSE_TABLE_FOR_CROISSANT_LINKS).store_rows(values=df)
-                
+                Table(id=links_table).store_rows(values=df)
+
             else:
                 # Update the existing row with the new value
                 print("Updating existing row in Synapse table")
                 existing_row_df["minimal_croissant_file_s3_object"] = [s3_url]
-                Table(id=SYNAPSE_TABLE_FOR_CROISSANT_LINKS).store_rows(values=existing_row_df)
+                Table(id=links_table).store_rows(values=existing_row_df)
 
         except Exception as ex:
             otel_logger.exception(
@@ -342,7 +347,7 @@ def save_minimal_jsonld_to_s3() -> None:
             otel_tracer.span_processor.force_flush()
             otel_logger.handlers[0].flush()
             raise ex
-        
+
     def create_root_span(**context) -> Dict:
         """
         Create a root span that all other spans will be children of. This also will
@@ -372,7 +377,7 @@ def save_minimal_jsonld_to_s3() -> None:
         carrier = {}
         TraceContextTextMapPropagator().inject(carrier)
         return carrier
-    
+
     def extract_s3_objects_to_delete(bucket_objects: List[str], combined_dataset_name_and_id: List[Dict[str, str]]) -> List[str]:
         """
         Extract the S3 objects to delete from the bucket. This is done by comparing
@@ -397,37 +402,37 @@ def save_minimal_jsonld_to_s3() -> None:
             if obj_key.endswith(".minimal_croissant.jsonld"):
                 # Remove the extension
                 obj_without_ext = obj_key.replace(".minimal_croissant.jsonld", "")
-                
+
                 # Split on the last underscore to get name and ID
                 parts = obj_without_ext.rsplit("_", 1)
                 if len(parts) < 2:
                     otel_logger.info(f"Object {obj_key} does not match expected pattern. Skipping.")
                     continue
-                
+
                 dataset_name = parts[0]
                 dataset_id = parts[1]
 
                 # Check if this dataset_name and dataset_id combo exists in current datasets
                 match_found = False
                 for current_dataset in combined_dataset_name_and_id:
-                    if (current_dataset["dataset_id"] == dataset_id and 
+                    if (current_dataset["dataset_id"] == dataset_id and
                         current_dataset["dataset_name"] == dataset_name):
                         match_found = True
                         break
-                
+
                 if not match_found:
                     objects_to_delete.append(obj_key)
 
         return objects_to_delete
 
-    
+
     @task
     def delete_non_current_croissant_file_in_s3(
         root_carrier_context: Dict, combined_dataset_name_and_id: List[Dict[str, str]], **context
     ) -> None:
         """
-        Delete the non-current croissant files from S3. 
-        This is used to remove the old files from S3 that are no longer needed. 
+        Delete the non-current croissant files from S3.
+        This is used to remove the old files from S3 that are no longer needed.
         A "non-current" file is defined as a croissant JSON LD file which is no longer
         present in the data catalog.
 
@@ -442,9 +447,10 @@ def save_minimal_jsonld_to_s3() -> None:
             None
         """
         with otel_tracer.start_as_current_span("delete_non_current_files_from_s3", context=TraceContextTextMapPropagator().extract(root_carrier_context)) as span:
+            bucket_name = context["params"]["bucket_name"]
             s3_hook = S3Hook(
                 aws_conn_id=None, region_name=REGION_NAME)
-            bucket_objects = s3_hook.list_keys(bucket_name=BUCKET_NAME)
+            bucket_objects = s3_hook.list_keys(bucket_name=bucket_name)
 
             objects_to_delete = extract_s3_objects_to_delete(
                 bucket_objects=bucket_objects,
@@ -457,7 +463,7 @@ def save_minimal_jsonld_to_s3() -> None:
                     otel_logger.info(
                         f"Deleting the following objects from S3: {objects_to_delete}")
                     s3_hook.delete_objects(
-                        bucket=BUCKET_NAME, keys=objects_to_delete)
+                        bucket=bucket_name, keys=objects_to_delete)
                 else:
                     otel_logger.info(
                         f"Found objects to delete from S3, but not deleting due to `delete_out_of_date_from_s3` param: {objects_to_delete}")
@@ -467,7 +473,7 @@ def save_minimal_jsonld_to_s3() -> None:
             otel_tracer.span_processor.force_flush()
             otel_logger.handlers[0].flush()
             return None
-        
+
     def extract_synapse_rows_to_delete(synapse_rows: DataFrame, combined_dataset_name_and_id: List[Dict[str, str]]) -> DataFrame:
         """
         Extract the Synapse table rows to delete. This is done by comparing
@@ -502,7 +508,7 @@ def save_minimal_jsonld_to_s3() -> None:
                 )
 
         return pd.DataFrame(rows_to_delete, columns=["ROW_ID", "ROW_VERSION"])
-        
+
     @task
     def delete_non_current_croissant_file_in_synapse(
         root_carrier_context: Dict, combined_dataset_name_and_id: List[Dict[str, str]], **context
@@ -525,12 +531,13 @@ def save_minimal_jsonld_to_s3() -> None:
         # Warning: Using an authenticated Synapse Client during this section of code
         with otel_tracer.start_as_current_span("delete_non_current_files_from_s3", context=TraceContextTextMapPropagator().extract(root_carrier_context)) as span:
             syn_hook = SynapseHook(context["params"]["synapse_conn_id"])
-            
+
             authenticated_syn_client: Synapse = syn_hook.client
             authenticated_syn_client._rest_call = MethodType(
                 _rest_call_replacement, authenticated_syn_client)
-            
-            query_string = f"SELECT * FROM {SYNAPSE_TABLE_FOR_CROISSANT_LINKS}"
+
+            links_table = context["params"]["synapse_table_for_croissant_links"]
+            query_string = f"SELECT * FROM {links_table}"
             table_dataframe= query(query=query_string, synapse_client=authenticated_syn_client)
 
             row_version_to_delete = extract_synapse_rows_to_delete(
@@ -545,7 +552,7 @@ def save_minimal_jsonld_to_s3() -> None:
                     otel_logger.info(
                         f"Deleting the following rows from Synapse: {rows_to_delete_records}")
                     # Delete rows from the Synapse table
-                    table_to_delete_from = Table(id=SYNAPSE_TABLE_FOR_CROISSANT_LINKS)
+                    table_to_delete_from = Table(id=links_table)
                     table_to_delete_from.delete_rows(df=row_version_to_delete)
                 else:
                     otel_logger.info(
@@ -573,7 +580,7 @@ def save_minimal_jsonld_to_s3() -> None:
         syn_client: Synapse = syn_hook.client
 
         table = query(f"select * from {SYNAPSE_DATA_CATALOG}", synapse_client=syn_client)
-        
+
         push_to_s3 = context["params"]["push_results_to_s3"]
         push_to_synapse = context["params"]["push_links_to_synapse"]
 
@@ -584,7 +591,7 @@ def save_minimal_jsonld_to_s3() -> None:
 
             dataset_id = row["id"]
             dataset_name = row["name"]
-            
+
             # save all the active dataset ids and names to prepare for cleanup later
             combined_dataset_name_and_id.append({
                 "dataset_id": dataset_id,
@@ -610,8 +617,8 @@ def save_minimal_jsonld_to_s3() -> None:
 
             s3_key = f"{dataset_name}_{dataset_id}.minimal_croissant.jsonld"
             execute_push_to_s3(dataset=dataset,dataset_id=row["id"],s3_key=s3_key, croissant_file=minimal_croissant_file, push_to_s3=push_to_s3, **context)
-            
-            s3_url = f"https://{BUCKET_NAME}.s3.us-east-1.amazonaws.com/{quote_plus(s3_key)}"
+
+            s3_url = f"https://{context['params']['bucket_name']}.s3.us-east-1.amazonaws.com/{quote_plus(s3_key)}"
             execute_push_to_synapse(push_to_synapse=push_to_synapse, dataset=dataset, dataset_id=dataset_id, s3_url=s3_url, **context)
 
         return combined_dataset_name_and_id
@@ -624,9 +631,22 @@ def save_minimal_jsonld_to_s3() -> None:
         combined_dataset_name_and_id=combined_dataset_name_and_id,
     )
 
-    delete_non_current_croissant_file_in_synapse(root_carrier_context=root_carrier_context, 
+    delete_non_current_croissant_file_in_synapse(root_carrier_context=root_carrier_context,
         combined_dataset_name_and_id=combined_dataset_name_and_id,
     )
 
 
-save_minimal_jsonld_to_s3()
+dag = save_minimal_jsonld_to_s3()
+
+if __name__ == "__main__":
+    # Staging Synapse table and test S3 bucket. The test bucket lives in the same
+    # `org-sagebase-dpe-prod` account as the production bucket, so the ambient AWS
+    # credentials are unchanged. Sharing one test bucket with the full croissant DAG
+    # is safe: each DAG's S3 cleanup only considers keys matching its own naming
+    # pattern and ignores everything else.
+    dag.test(
+        run_conf={
+            "synapse_table_for_croissant_links": "syn77524779",
+            "bucket_name": "test-synapse-croissant-metadata-minimal",
+        }
+    )

@@ -44,6 +44,8 @@ def genie_nf_validate_dag():
         instead of the stricter v2 parser that comes by default with Nextflow
         26+ versions.
 
+        Also adds the default memory settings for Nextflow in the pre_run_script.
+
         Args:
             workspace_id (str): Workspace ID for tower run
         """
