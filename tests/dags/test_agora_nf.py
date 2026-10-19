@@ -109,20 +109,24 @@ def test_monitor_agora_workflow_state(
 )
 @pytest.mark.parametrize(
     "dataset_param, expected_dataset",
-    [(DATASET, DATASET), (None, "all datasets"), ("", "all datasets")],
+    [({"dataset": DATASET}, DATASET), ({"dataset": None}, "all datasets"), ({"dataset": ""}, "all datasets"), (None, "all datasets"), ({}, "all datasets")],
 )
 def test_generate_message(
     fake_context: dict[str, dict[str, Any]],
     mock_tower: MagicMock,
     state: WorkflowState,
-    dataset_param: str | None,
+    dataset_param: dict[str, str | None] | None,
     expected_dataset: str,
 ) -> None:
-    """Tests that generate_message returns a string containing the run_id."""
+    """Tests that generate_message reports the run name, ID, state, duration and dataset.
+
+    The dataset falls back to "all datasets" when the workflow's params are missing
+    (None or empty), as happens when a Tower run fails before Nextflow starts.
+    """
     mock_tower.get_workflow.return_value.status = WorkflowStatus(state=state)
     mock_tower.get_workflow.return_value.run_name = RUN_NAME
     mock_tower.get_workflow.return_value.id = RUN_ID
-    mock_tower.get_workflow.return_value.params = {"dataset": dataset_param}
+    mock_tower.get_workflow.return_value.params = dataset_param
 
     # Both submit and complete must be set for generate_message to compute a duration
     # instead of falling back to "unknown"
