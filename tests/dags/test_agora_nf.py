@@ -1,13 +1,18 @@
 """Tests for dags/agora_nf.py."""
 
-from datetime import datetime
+from datetime import timedelta
 from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 from dags.agora_nf import dag
-from src.nextflow_tower_hook import NextflowTowerHook, WorkflowState, WorkflowStatus
+from src.nextflow_tower_hook import (
+    NextflowTowerHook,
+    Workflow,
+    WorkflowState,
+    WorkflowStatus,
+)
 
 
 RUN_ID = "tw-run"
@@ -108,38 +113,48 @@ def test_monitor_agora_workflow_state(
     [WorkflowState.SUCCEEDED, WorkflowState.FAILED, WorkflowState.CANCELLED, WorkflowState.UNKNOWN],
 )
 @pytest.mark.parametrize(
-    "dataset_param, expected_dataset",
-    [({"dataset": DATASET}, DATASET), ({"dataset": None}, "all datasets"), ({"dataset": ""}, "all datasets"), (None, "all datasets"), ({}, "all datasets")],
+    "params_payload, expected_dataset",
+    [
+        pytest.param({"params": {"dataset": DATASET}}, DATASET, id="dataset-set"),
+        pytest.param({"params": {"dataset": None}}, "all datasets", id="dataset-null"),
+        pytest.param({"params": {"dataset": ""}}, "all datasets", id="dataset-empty"),
+        pytest.param({"params": {}}, "all datasets", id="params-empty"),
+        # Tower returns params as null when the run failed before Nextflow started
+        pytest.param({"params": None}, "all datasets", id="params-null"),
+        pytest.param({}, "all datasets", id="params-absent"),
+    ],
 )
 def test_generate_message(
     fake_context: dict[str, dict[str, Any]],
     mock_tower: MagicMock,
     state: WorkflowState,
-    dataset_param: dict[str, str | None] | None,
+    params_payload: dict[str, Any],
     expected_dataset: str,
 ) -> None:
     """Tests that generate_message reports the run name, ID, state, duration and dataset.
 
-    The dataset falls back to "all datasets" when the workflow's params are missing
-    (None or empty), as happens when a Tower run fails before Nextflow starts.
+    The workflow is a real Workflow built from an API-shaped JSON payload, so its
+    shape matches what Tower returns. The dataset falls back to "all datasets" when
+    the workflow's params are missing (null, empty or absent), as happens when a
+    Tower run fails before Nextflow starts.
     """
-    mock_tower.get_workflow.return_value.status = WorkflowStatus(state=state)
-    mock_tower.get_workflow.return_value.run_name = RUN_NAME
-    mock_tower.get_workflow.return_value.id = RUN_ID
-    mock_tower.get_workflow.return_value.params = dataset_param
-
     # Both submit and complete must be set for generate_message to compute a duration
     # instead of falling back to "unknown"
-    submit = datetime(2026, 1, 1, 0, 0, 0)
-    complete = datetime(2026, 1, 1, 1, 30, 0)
-    mock_tower.get_workflow.return_value.submit = submit
-    mock_tower.get_workflow.return_value.complete = complete
+    payload = {
+        "id": RUN_ID,
+        "runName": RUN_NAME,
+        "status": state.value,
+        "submit": "2026-01-01T00:00:00Z",
+        "complete": "2026-01-01T01:30:00Z",
+        **params_payload,
+    }
+    mock_tower.get_workflow.return_value = Workflow.from_json(payload)
 
     raw_python_function = dag.get_task("generate_message").python_callable
     message = raw_python_function(run_id=RUN_ID, **fake_context)
 
     assert f"Tower workflow (Name: {RUN_NAME}, Id: {RUN_ID}) has completed with state: {state.value}" in message
-    assert f"Duration (submission to completion): {complete - submit}" in message
+    assert f"Duration (submission to completion): {timedelta(hours=1, minutes=30)}" in message
     assert f"Dataset: {expected_dataset}" in message
 
 def test_post_slack_messages(fake_context: dict[str, dict[str, Any]]) -> None:
