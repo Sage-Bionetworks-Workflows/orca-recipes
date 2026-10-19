@@ -150,10 +150,7 @@ def agora_nf_run_dag() -> DAG:
 
         emoji = "🎉" if workflow.status.is_successful else "❌"
 
-        if not workflow.params:
-            workflow.params = {}
-
-        dataset = workflow.params.get("dataset") or "all datasets"
+        dataset = (workflow.params or {}).get("dataset") or "all datasets"
 
         duration = "unknown"
         if workflow.submit and workflow.complete:
