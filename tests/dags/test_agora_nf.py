@@ -7,6 +7,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from dags.agora_nf import dag
+from src import synapse_alerts
 from src.nextflow_tower_hook import (
     NextflowTowerHook,
     Workflow,
@@ -195,3 +196,42 @@ def test_post_email_messages(fake_context: dict[str, dict[str, Any]]) -> None:
         mock_synapse_client.sendMessage.assert_called_once_with(
             ["1234567"], "Tower workflow completed", "Test message"
         )
+
+
+def test_every_task_alerts_on_failure() -> None:
+    """Tests that a failure in any task, including the notification tasks, sends an alert."""
+    for task in dag.tasks:
+        assert task.on_failure_callback, f"{task.task_id} has no on_failure_callback"
+
+
+def test_task_failure_alerts_dev_user_list(
+    fake_context: dict[str, dict[str, Any]], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Tests that a failing task emails the dev_user_list with the task and exception."""
+    sent: dict[str, Any] = {}
+
+    def mock_send(conn_id: str, usernames: list[str], subject: str, body: str) -> None:
+        sent.update(conn_id=conn_id, usernames=usernames, subject=subject, body=body)
+
+    monkeypatch.setattr(synapse_alerts, "send_synapse_message", mock_send)
+
+    class FailedTaskInstance:
+        task_id = "generate_message"
+        dag_id = dag.dag_id
+        run_id = "manual__2026-10-19"
+        log_url = "https://airflow.example.org/log"
+
+    callback = dag.get_task("generate_message").on_failure_callback
+    callback = callback[0] if isinstance(callback, list) else callback
+    callback(
+        {
+            "params": {**fake_context["params"], "dev_user_list": "alice,bob"},
+            "task_instance": FailedTaskInstance(),
+            "exception": AttributeError("'NoneType' object has no attribute 'get'"),
+        }
+    )
+
+    assert sent["conn_id"] == fake_context["params"]["synapse_conn_id"]
+    assert sent["usernames"] == ["alice", "bob"]
+    assert "generate_message" in sent["body"]
+    assert "'NoneType' object has no attribute 'get'" in sent["body"]

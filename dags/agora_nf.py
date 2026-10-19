@@ -32,6 +32,8 @@ DAG Parameters:
 - `slack_channel`: Slack channel where the workflow completion message is posted.
 - `synapse_team_id`: Synapse team ID that receives the completion email (defaults to
   the ADT Airflow Notifications team).
+- `dev_user_list`: Comma-separated Synapse usernames or numeric IDs emailed when any
+  task fails (defaults to the DPE service team).
 """
 
 from datetime import datetime
@@ -44,6 +46,7 @@ from airflow.models.param import Param
 from slack_sdk import WebClient
 
 from src.nextflow_tower_hook import LaunchInfo, NextflowTowerHook
+from src.synapse_alerts import synapse_failure_callback
 from src.synapse_hook import SynapseHook
 from src.utils import validate_required_secrets
 
@@ -72,6 +75,8 @@ dag_params = {
     "slack_channel": Param("nf-agora-notifications", type="string"),
     # ADT Airflow Notifications team
     "synapse_team_id": Param("3600443", type="string"),
+    # who to alert if any task fails (comma-separated usernames or numeric ids)
+    "dev_user_list": Param("3485485", type="string"),  # DPE service team
 }
 
 dag_config = {
@@ -81,6 +86,16 @@ dag_config = {
     "catchup": False,
     "default_args": {
         "retries": 1,
+        # Set per task (not on the DAG) so that a failure in any task, including
+        # generate_message and the Slack/email tasks, still alerts someone with the
+        # failing task and exception. Slack and email can't be relied on for that.
+        "on_failure_callback": synapse_failure_callback(
+            message=(
+                "The Agora Tower workflow or its completion notification may not "
+                "have finished. Please review the task logs and check the run in "
+                "Tower."
+            )
+        ),
     },
     "tags": ["nextflow_tower"],
     "params": dag_params,
@@ -232,5 +247,6 @@ if __name__ == "__main__":
     dag.test(run_conf={"dataset": "",
                        "slack_channel": "test-agora-nextflow",
                        "tower_run_name": "test_airflow-agora-model-ad",
-                       "synapse_team_id": "3600433" # test-team-linglp
+                       "synapse_team_id": "3600433", # test-team-linglp
+                       "dev_user_list": "3443707" # linglp
                        })
