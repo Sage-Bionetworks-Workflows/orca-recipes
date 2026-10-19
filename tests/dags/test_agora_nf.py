@@ -108,47 +108,52 @@ def test_monitor_agora_workflow_state(
     mock_tower.get_workflow.assert_called_once_with(RUN_ID)
 
 
-@pytest.mark.parametrize(
-    "state",
-    [WorkflowState.SUCCEEDED, WorkflowState.FAILED, WorkflowState.CANCELLED, WorkflowState.UNKNOWN],
-)
-@pytest.mark.parametrize(
-    "params_payload, expected_dataset",
-    [
-        pytest.param({"params": {"dataset": DATASET}}, DATASET, id="dataset-set"),
-        pytest.param({"params": {"dataset": None}}, "all datasets", id="dataset-null"),
-        pytest.param({"params": {"dataset": ""}}, "all datasets", id="dataset-empty"),
-        pytest.param({"params": {}}, "all datasets", id="params-empty"),
-        # Tower returns params as null when the run failed before Nextflow started
-        pytest.param({"params": None}, "all datasets", id="params-null"),
-        pytest.param({}, "all datasets", id="params-absent"),
-    ],
-)
-def test_generate_message(
-    fake_context: dict[str, dict[str, Any]],
-    mock_tower: MagicMock,
-    state: WorkflowState,
-    params_payload: dict[str, Any],
-    expected_dataset: str,
-) -> None:
-    """Tests that generate_message reports the run name, ID, state, duration and dataset.
+def make_workflow(state: WorkflowState, **overrides: Any) -> Workflow:
+    """Build a real Workflow from an API-shaped JSON payload, as Tower returns it.
 
-    The workflow is a real Workflow built from an API-shaped JSON payload, so its
-    shape matches what Tower returns. The dataset falls back to "all datasets" when
-    the workflow's params are missing (null, empty or absent), as happens when a
-    Tower run fails before Nextflow starts.
+    Both submit and complete are set, so generate_message can compute a duration
+    instead of falling back to "unknown".
     """
-    # Both submit and complete must be set for generate_message to compute a duration
-    # instead of falling back to "unknown"
     payload = {
         "id": RUN_ID,
         "runName": RUN_NAME,
         "status": state.value,
         "submit": "2026-01-01T00:00:00Z",
         "complete": "2026-01-01T01:30:00Z",
-        **params_payload,
+        **overrides,
     }
-    mock_tower.get_workflow.return_value = Workflow.from_json(payload)
+    return Workflow.from_json(payload)
+
+
+@pytest.mark.parametrize(
+    "state",
+    [WorkflowState.SUCCEEDED, WorkflowState.FAILED, WorkflowState.CANCELLED, WorkflowState.UNKNOWN],
+)
+@pytest.mark.parametrize(
+    "dag_params, expected_dataset",
+    [
+        pytest.param({"dataset": DATASET}, DATASET, id="dataset-set"),
+        pytest.param({"dataset": None}, "all datasets", id="dataset-null"),
+        pytest.param({"dataset": ""}, "all datasets", id="dataset-empty"),
+        pytest.param({}, "all datasets", id="dataset-absent"),
+    ],
+)
+def test_generate_message(
+    fake_context: dict[str, dict[str, Any]],
+    mock_tower: MagicMock,
+    state: WorkflowState,
+    dag_params: dict[str, Any],
+    expected_dataset: str,
+) -> None:
+    """Tests that generate_message reports the run name, ID, state, duration and dataset.
+
+    The dataset comes from the DAG params and falls back to "all datasets" when unset.
+    The workflow's own params are null here, as Tower returns them when a run fails
+    before Nextflow starts, so the message must not depend on them.
+    """
+    fake_context["params"].pop("dataset")
+    fake_context["params"].update(dag_params)
+    mock_tower.get_workflow.return_value = make_workflow(state, params=None)
 
     raw_python_function = dag.get_task("generate_message").python_callable
     message = raw_python_function(run_id=RUN_ID, **fake_context)
@@ -156,6 +161,7 @@ def test_generate_message(
     assert f"Tower workflow (Name: {RUN_NAME}, Id: {RUN_ID}) has completed with state: {state.value}" in message
     assert f"Duration (submission to completion): {timedelta(hours=1, minutes=30)}" in message
     assert f"Dataset: {expected_dataset}" in message
+
 
 def test_post_slack_messages(fake_context: dict[str, dict[str, Any]]) -> None:
     """Tests that post_slack_messages returns True when the Slack API call succeeds."""

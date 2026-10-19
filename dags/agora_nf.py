@@ -139,7 +139,8 @@ def agora_nf_run_dag() -> DAG:
 
         Args:
             run_id: Tower run ID returned by launch_agora_on_tower.
-            context: Airflow task context; used to read the tower_conn_id param.
+            context: Airflow task context; used to read the tower_conn_id and
+                dataset params.
 
         Returns:
             A message reporting the workflow's dataset, terminal state,
@@ -150,7 +151,9 @@ def agora_nf_run_dag() -> DAG:
 
         emoji = "🎉" if workflow.status.is_successful else "❌"
 
-        dataset = (workflow.params or {}).get("dataset") or "all datasets"
+        # Read the dataset from the DAG params rather than workflow.params: Tower leaves
+        # the latter null when the run fails before Nextflow starts.
+        dataset = context["params"].get("dataset") or "all datasets"
 
         duration = "unknown"
         if workflow.submit and workflow.complete:
