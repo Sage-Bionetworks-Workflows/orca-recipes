@@ -30,9 +30,10 @@ DAG Parameters:
 - `dataset`: Optional single dataset to process; if unset, all datasets are
   processed.
 - `slack_channel`: Slack channel where the workflow completion message is posted.
+- `synapse_team_id`: Synapse team ID that receives the completion email (defaults to
+  the ADT Airflow Notifications team).
 """
 
-import os
 from datetime import datetime
 from typing import Any
 
@@ -50,7 +51,6 @@ from src.utils import validate_required_secrets
 TOWER_HOST = "https://tower.sagebionetworks.org"
 TOWER_ORG_NAME = "Sage-Bionetworks"
 TOWER_WORKSPACE_NAME = "agora-project"
-SYNAPSE_TEAM_ID = os.environ.get("SYNAPSE_TEAM_ID", "3600443") # ADT Airflow Notifications team ID
 
 dag_params = {
     "synapse_conn_id": Param("SYNAPSE_ORCA_SERVICE_ACCOUNT_CONN", type="string"),
@@ -70,6 +70,8 @@ dag_params = {
     ),
     "dataset": Param(None, type=["null", "string"]),
     "slack_channel": Param("nf-agora-notifications", type="string"),
+    # ADT Airflow Notifications team
+    "synapse_team_id": Param("3600443", type="string"),
 }
 
 dag_config = {
@@ -195,13 +197,16 @@ def agora_nf_run_dag() -> DAG:
 
         Args:
             message: Summary message produced by generate_message.
-            context: Airflow task context; used to read the synapse_conn_id param.
+            context: Airflow task context; used to read the synapse_conn_id and
+                synapse_team_id params.
 
         Returns:
             True once the Synapse message has been sent.
         """
         syn_client = SynapseHook(context["params"]["synapse_conn_id"]).client
-        syn_client.sendMessage([SYNAPSE_TEAM_ID], "Tower workflow completed", message)
+        syn_client.sendMessage(
+            [context["params"]["synapse_team_id"]], "Tower workflow completed", message
+        )
         print(f"Result of posting to email: [{message}]")
         return True
 
@@ -224,6 +229,8 @@ if __name__ == "__main__":
         ],
         variable_names=["SLACK_DPE_TEAM_BOT_TOKEN"],
     )
-    dag.test(run_conf={"dataset": "model_details",
-                       "slack_channel": "test-agora-nextflow"
+    dag.test(run_conf={"dataset": "",
+                       "slack_channel": "test-agora-nextflow",
+                       "tower_run_name": "test_airflow-agora-model-ad",
+                       "synapse_team_id": "3600433" # test-team-linglp
                        })

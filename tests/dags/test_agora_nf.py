@@ -53,6 +53,7 @@ def fake_context() -> dict[str, dict[str, Any]]:
             "large_memory_datasets": "dataset_a,dataset_b",
             "dataset": DATASET,
             "slack_channel": "test-agora-nextflow",
+            "synapse_team_id": "1234567",
         }
     }
 
@@ -190,4 +191,7 @@ def test_post_email_messages(fake_context: dict[str, dict[str, Any]]) -> None:
         result = raw_python_function(message="Test message", **fake_context)
 
         assert result is True
-        mock_synapse_client.sendMessage.assert_called_once()
+        # The recipient comes from the synapse_team_id param, not a hard-coded ID
+        mock_synapse_client.sendMessage.assert_called_once_with(
+            ["1234567"], "Tower workflow completed", "Test message"
+        )
