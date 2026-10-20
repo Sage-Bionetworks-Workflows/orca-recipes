@@ -70,9 +70,10 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
 
       - name: Install the MWAA Airflow version and requirements
+        # python-nvd3 (an Airflow dependency) is only published as an sdist
         run: |
-          python -m pip install --upgrade pip
-          pip install "apache-airflow[amazon,celery,snowflake]==${AIRFLOW_VERSION}" \
+          pip install --only-binary :all: --no-binary python-nvd3 \
+            "apache-airflow[amazon,celery,snowflake]==${AIRFLOW_VERSION}" \
             -r requirements-airflow.txt pytest pytest-mock \
             -c mwaa/constraints.txt
 
