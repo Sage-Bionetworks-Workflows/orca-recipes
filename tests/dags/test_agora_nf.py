@@ -19,6 +19,8 @@ from src.nextflow_tower_hook import (
 RUN_ID = "tw-run"
 RUN_NAME = "test_run"
 DATASET = "test_dataset1, test_dataset2"
+# A dataset Tower may have recorded for the run, which must never reach the message
+TOWER_DATASET = "tower-recorded-workflow-dataset"
 
 @pytest.fixture
 def mock_tower(monkeypatch: pytest.MonkeyPatch) -> MagicMock:
@@ -140,22 +142,33 @@ def make_workflow(state: WorkflowState, **overrides: Any) -> Workflow:
         pytest.param({}, "all datasets", id="dataset-absent"),
     ],
 )
+@pytest.mark.parametrize(
+    "tower_params",
+    [
+        # Tower returns params as null when a run fails before Nextflow starts
+        pytest.param(None, id="tower-params-null"),
+        # Once Nextflow has started, Tower reports the params the run was given
+        pytest.param({"dataset": TOWER_DATASET}, id="tower-params-set"),
+    ],
+)
 def test_generate_message(
     fake_context: dict[str, dict[str, Any]],
     mock_tower: MagicMock,
     state: WorkflowState,
     dag_params: dict[str, Any],
     expected_dataset: str,
+    tower_params: dict[str, Any] | None,
 ) -> None:
     """Tests that generate_message reports the run name, ID, state, duration and dataset.
 
     The dataset comes from the DAG params and falls back to "all datasets" when unset.
-    The workflow's own params are null here, as Tower returns them when a run fails
-    before Nextflow starts, so the message must not depend on them.
+    It never comes from the params Tower recorded for the run (tower_params), which are
+    null if the run failed before Nextflow started. The message is therefore the same
+    whether those params are null or set, for every terminal state.
     """
     fake_context["params"].pop("dataset")
     fake_context["params"].update(dag_params)
-    mock_tower.get_workflow.return_value = make_workflow(state, params=None)
+    mock_tower.get_workflow.return_value = make_workflow(state, params=tower_params)
 
     raw_python_function = dag.get_task("generate_message").python_callable
     message = raw_python_function(run_id=RUN_ID, **fake_context)
@@ -163,6 +176,7 @@ def test_generate_message(
     assert f"Tower workflow (Name: {RUN_NAME}, Id: {RUN_ID}) has completed with state: {state.value}" in message
     assert f"Duration (submission to completion): {timedelta(hours=1, minutes=30)}" in message
     assert f"Dataset: {expected_dataset}" in message
+    assert TOWER_DATASET not in message
 
 
 def test_post_slack_messages(fake_context: dict[str, dict[str, Any]]) -> None:
