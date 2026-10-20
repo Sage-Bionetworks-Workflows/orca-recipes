@@ -4,6 +4,27 @@ Files used by the Amazon MWAA (Managed Airflow) environments. The environments a
 created by [eks-stack](https://github.com/Sage-Bionetworks-Workflows/eks-stack)
 (`modules/mwaa`).
 
+## Deploying DAGs
+
+`.github/workflows/mwaa-dags.yml` copies `dags/` to the `dags/` prefix of the MWAA
+bucket with `aws s3 sync --delete`, so the bucket matches the deployed commit exactly.
+
+- **Prod**: every push to `main` deploys to MWAA prod.
+- **Dev**: run the workflow from the Actions tab ("Deploy DAGs to MWAA" > Run workflow)
+  and enter a branch, tag or commit SHA of this repo. Leave "Use workflow from" on
+  `main`. Dev is shared and keeps whatever was deployed last, so run it with `main` when
+  you are done testing.
+
+Before anything is copied, every DAG must import under the MWAA Airflow and Python
+versions (`tests/dags/test_all_dags.py`). The deployed ref, commit, and who deployed it
+are written to `dags/.deployed-ref` in the bucket and to the run summary.
+
+Each GitHub environment, `mwaa-dev` and `mwaa-prod`, holds two variables, copied from
+the eks-stack MWAA stack outputs: `MWAA_BUCKET` and `MWAA_ROLE_ARN`. The deploy is
+skipped while either is empty.
+
+New DAGs are paused when MWAA first sees them. Unpause them in the Airflow UI.
+
 ## How dependencies are installed
 
 MWAA installs `requirements-airflow.txt` from the root of this repo, the same file used

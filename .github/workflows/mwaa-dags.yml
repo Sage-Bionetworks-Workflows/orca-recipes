@@ -1,0 +1,137 @@
+name: Deploy DAGs to MWAA
+
+# Pushes to main deploy to MWAA prod. Running the workflow manually deploys any branch,
+# tag or commit of this repo to MWAA dev. The workflow file itself always comes from
+# main: the mwaa-dev and mwaa-prod environments only allow main, and the AWS roles only
+# trust jobs running in those environments.
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Branch, tag or commit SHA of this repo to deploy to MWAA dev
+        required: true
+        default: main
+
+concurrency:
+  group: mwaa-${{ github.event_name == 'push' && 'prod' || 'dev' }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  PYTHON_VERSION: "3.12"
+  AIRFLOW_VERSION: "2.11.2"
+
+jobs:
+  resolve:
+    runs-on: ubuntu-latest
+    outputs:
+      sha: ${{ steps.resolve.outputs.sha }}
+    steps:
+      # fetch-depth 0 fetches every branch and tag of this repo, but no pull request
+      # refs, so commits that only exist in a fork cannot be resolved
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Resolve the ref to a commit on a branch of this repo
+        id: resolve
+        env:
+          REF: ${{ github.event_name == 'push' && github.sha || inputs.ref }}
+        run: |
+          sha=$(git rev-parse --verify --quiet --end-of-options "origin/${REF}^{commit}" \
+            || git rev-parse --verify --quiet --end-of-options "${REF}^{commit}") || {
+            echo "::error::'${REF}' is not a branch, tag or commit of this repo"
+            exit 1
+          }
+          if [ -z "$(git branch -r --contains "$sha")" ]; then
+            echo "::error::${sha} is not on any branch of this repo"
+            exit 1
+          fi
+          echo "sha=${sha}" >> "$GITHUB_OUTPUT"
+
+  test:
+    needs: resolve
+    runs-on: ubuntu-latest
+    # Runs code from the deployed ref, so it must not be able to get AWS credentials
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.resolve.outputs.sha }}
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install the MWAA Airflow version and requirements
+        run: |
+          python -m pip install --upgrade pip
+          pip install "apache-airflow[amazon,celery,snowflake]==${AIRFLOW_VERSION}" \
+            -r requirements-airflow.txt pytest pytest-mock \
+            -c mwaa/constraints.txt
+
+      - name: Check every DAG imports
+        env:
+          CONFIG_URL: >-
+            https://raw.githubusercontent.com/${{ github.repository }}/${{ needs.resolve.outputs.sha }}/dags/challenge_configs.yaml
+        run: python -m pytest tests/dags/test_all_dags.py -v --tb=short
+
+  deploy:
+    needs: [resolve, test]
+    runs-on: ubuntu-latest
+    environment: ${{ github.event_name == 'push' && 'mwaa-prod' || 'mwaa-dev' }}
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      BUCKET: ${{ vars.MWAA_BUCKET }}
+      ROLE_ARN: ${{ vars.MWAA_ROLE_ARN }}
+      REF: ${{ github.event_name == 'push' && github.ref_name || inputs.ref }}
+      SHA: ${{ needs.resolve.outputs.sha }}
+    steps:
+      - name: Skip when the environment is not configured
+        id: configured
+        run: |
+          if [ -z "$BUCKET" ] || [ -z "$ROLE_ARN" ]; then
+            echo "::notice::MWAA_BUCKET or MWAA_ROLE_ARN is not set on the ${{ github.event_name == 'push' && 'mwaa-prod' || 'mwaa-dev' }} environment, nothing deployed"
+            echo "deploy=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "deploy=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - if: steps.configured.outputs.deploy == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.resolve.outputs.sha }}
+
+      - if: steps.configured.outputs.deploy == 'true'
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: ${{ env.ROLE_ARN }}
+          aws-region: us-east-1
+
+      - name: Sync dags/ to the MWAA bucket
+        if: steps.configured.outputs.deploy == 'true'
+        run: |
+          echo "Previously deployed:"
+          aws s3 cp "s3://${BUCKET}/dags/.deployed-ref" - || echo "(nothing)"
+
+          # --delete makes the bucket an exact copy of dags/ at this commit, so DAGs
+          # removed from git stop running
+          aws s3 sync dags/ "s3://${BUCKET}/dags/" --delete \
+            --exclude "*__pycache__*" --exclude ".deployed-ref"
+
+          deployed=$(printf 'ref: %s\nsha: %s\nby: %s\nrun: %s\n' "$REF" "$SHA" "$GITHUB_ACTOR" \
+            "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}")
+          echo "$deployed" | aws s3 cp - "s3://${BUCKET}/dags/.deployed-ref"
+          {
+            echo "### Deployed to ${BUCKET}"
+            echo
+            while IFS= read -r line; do echo "    ${line}"; done <<< "$deployed"
+          } >> "$GITHUB_STEP_SUMMARY"
