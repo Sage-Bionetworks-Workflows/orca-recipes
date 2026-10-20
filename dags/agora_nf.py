@@ -247,6 +247,6 @@ if __name__ == "__main__":
     dag.test(run_conf={"dataset": "",
                        "slack_channel": "test-agora-nextflow",
                        "tower_run_name": "test_airflow-agora-model-ad",
-                       "synapse_team_id": "3600433", # test-team-linglp
+                       "synapse_team_id": "3622772", # Orca airflow dags testing team
                        "dev_user_list": "3443707" # linglp
                        })
