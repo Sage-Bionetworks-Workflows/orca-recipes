@@ -25,6 +25,43 @@ skipped while either is empty.
 
 New DAGs are paused when MWAA first sees them. Unpause them in the Airflow UI.
 
+### Before you deploy to dev
+
+Dev has one copy of `dags/`. Each deploy replaces all of it, including the DAGs of a
+branch that another developer is testing.
+
+1. In the Actions tab, open the most recent "Deploy DAGs to MWAA" run on dev and read
+   its summary. It shows the ref that is on dev and who deployed it.
+2. If the ref is not `main` or your branch, ask in the team channel before you deploy.
+
+The challenge DAGs read `dags/challenge_configs.yaml` from `main` on GitHub, not from
+the bucket. Changes to that file on a branch do not show on dev until they merge.
+
+### Rolling back
+
+To remove a bad change from prod, revert its pull request. The push to `main` deploys
+the reverted DAGs. To roll back dependencies, revert the SHA bump in eks-stack.
+
+## Changing dependencies
+
+A DAG that needs a new or changed package must not merge before MWAA has the package.
+The DAG deploy is immediate, but MWAA installs dependencies only from the commit that
+eks-stack pins. Put the dependency change in its own pull request:
+
+1. Open a pull request in this repo that changes `requirements-airflow.txt` (and
+   `mwaa/constraints.txt` if needed). Check it as described in
+   [Changing a dependency](#changing-a-dependency-in-requirements-airflowtxt).
+2. In eks-stack, set `mwaa_orca_recipes_sha` in `deployments/main.tf` to the latest
+   commit of the pull request branch, and merge it.
+3. In Spacelift, confirm the dev MWAA stack run only. The update takes 20–30 minutes.
+   Check the `requirements_install_*` log stream in the dev Scheduler log group.
+4. Deploy your branch to dev and test the DAGs that use the change.
+5. Merge the pull request. A squash or rebase merge makes a new commit, so set
+   `mwaa_orca_recipes_sha` to the new commit on `main`, merge it, and confirm the dev
+   run again.
+6. Confirm the prod MWAA stack run. The prod plan fails while the SHA is not on `main`.
+7. Merge the pull request with the DAG changes that use the new dependency.
+
 ## How dependencies are installed
 
 MWAA installs `requirements-airflow.txt` from the root of this repo, the same file used
