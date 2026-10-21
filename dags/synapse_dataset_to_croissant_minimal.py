@@ -25,6 +25,20 @@ See synapse-dataset-to-croissant.py for additional note on the pushing to S3.
 
 DAG Parameters:
 - Review the DAG Parameters under the `@dag` decorated function
+
+Running locally (`python dags/synapse_dataset_to_croissant_minimal.py`):
+Follow the README first: "AWS credentials (required for all options)" and "Local
+Development (without Dev Container)", steps 3 and 4. In short, in the same terminal:
+
+    aws sso login --profile <your-profile>
+    export AIRFLOW__SECRETS__BACKEND=airflow.providers.amazon.aws.secrets.secrets_manager.SecretsManagerBackend
+    export AIRFLOW__SECRETS__BACKEND_KWARGS='{"connections_prefix": "airflow/connections", "variables_prefix": "airflow/variables", "profile_name": "<your-profile>"}'
+    export AWS_PROFILE=<your-profile>
+    python dags/synapse_dataset_to_croissant_minimal.py
+
+The `AIRFLOW__SECRETS__*` lines supply the Synapse connection and the SigNoz variable.
+The S3 upload needs `AWS_PROFILE` separately. The script checks all of these first and
+stops with a message if any is missing or expired.
 """
 from airflow.decorators import dag, task
 from datetime import datetime
@@ -61,6 +75,7 @@ from airflow.providers.amazon.aws.hooks.s3 import S3Hook
 from synapseclient.core.retry import with_retry
 
 from src.synapse_hook import SynapseHook
+from src.utils import validate_aws_credentials, validate_required_secrets
 
 dag_params = {
     "synapse_conn_id": Param("SYNAPSE_ORCA_SERVICE_ACCOUNT_CONN", type="string"),
@@ -174,6 +189,18 @@ def set_up_logging() -> Logger:
     logger = getLogger()
     logger.addHandler(handler)
     return logger
+
+# When run locally as a script, fail fast with a clear message if the Synapse
+# connection or the SigNoz variable can't be resolved. This has to run before the two
+# lines below: they read the variable at import time, so a check in the __main__
+# block at the bottom of the file would never be reached.
+if __name__ == "__main__":
+    validate_required_secrets(
+        connection_ids=[dag_params["synapse_conn_id"].value],
+        variable_names=["SIGNOZ_INGESTION_KEY"],
+    )
+    # The S3 upload uses ambient AWS credentials (see S3Hook(aws_conn_id=None) below)
+    validate_aws_credentials(region_name=REGION_NAME)
 
 otel_tracer = set_up_tracing()
 otel_logger = set_up_logging()

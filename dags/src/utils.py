@@ -67,3 +67,41 @@ def validate_required_secrets(connection_ids: list[str], variable_names: list[st
             "Missing required secrets before running locally:\n  "
             + "\n  ".join(missing)
         )
+
+
+def validate_aws_credentials(region_name: str = "us-east-1") -> str:
+    """Fail fast if AWS credentials aren't available or have expired.
+
+    Asks AWS STS who the caller is, using the credentials boto3 finds on its own
+    (the `AWS_PROFILE` profile, `AWS_*` environment variables, or a default
+    profile). This is the same lookup a hook with no Airflow connection does, such as
+    `S3Hook(aws_conn_id=None)`, so a pass here means those calls can sign requests.
+    `aws sso login` alone isn't enough: a profile must also be selected.
+
+    Args:
+        region_name: Region for the STS client. Passed explicitly so the check doesn't
+            depend on a region being configured locally.
+
+    Returns:
+        The ARN of the AWS identity the credentials belong to.
+
+    Raises:
+        ValueError: If no credentials are found, or they are expired or invalid. The
+            message says how to log in, and includes the original error.
+    """
+    # Imported here so that other modules importing src.utils don't need boto3
+    import boto3
+    from botocore.exceptions import BotoCoreError, ClientError
+
+    try:
+        identity = boto3.client("sts", region_name=region_name).get_caller_identity()
+    except (BotoCoreError, ClientError) as error:
+        raise ValueError(
+            "AWS credentials are missing or invalid before running locally. "
+            "Log in with `aws sso login --profile <your-profile>`, then select the "
+            "profile with `export AWS_PROFILE=<your-profile>` in the same terminal.\n"
+            f"Original error: {error}"
+        ) from error
+
+    logger.info(f"Using AWS identity: {identity['Arn']}")
+    return identity["Arn"]
