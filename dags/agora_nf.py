@@ -30,9 +30,12 @@ DAG Parameters:
 - `dataset`: Optional single dataset to process; if unset, all datasets are
   processed.
 - `slack_channel`: Slack channel where the workflow completion message is posted.
+- `synapse_team_id`: Synapse team ID that receives the completion email (defaults to
+  the ADT Airflow Notifications team).
+- `dev_user_list`: Comma-separated Synapse usernames or numeric IDs emailed when any
+  task fails (defaults to the DPE service team).
 """
 
-import os
 from datetime import datetime
 from typing import Any
 
@@ -43,6 +46,7 @@ from airflow.models.param import Param
 from slack_sdk import WebClient
 
 from src.nextflow_tower_hook import LaunchInfo, NextflowTowerHook
+from src.synapse_alerts import synapse_failure_callback
 from src.synapse_hook import SynapseHook
 from src.utils import validate_required_secrets
 
@@ -50,7 +54,6 @@ from src.utils import validate_required_secrets
 TOWER_HOST = "https://tower.sagebionetworks.org"
 TOWER_ORG_NAME = "Sage-Bionetworks"
 TOWER_WORKSPACE_NAME = "agora-project"
-SYNAPSE_TEAM_ID = os.environ.get("SYNAPSE_TEAM_ID", "3600443") # ADT Airflow Notifications team ID
 
 dag_params = {
     "synapse_conn_id": Param("SYNAPSE_ORCA_SERVICE_ACCOUNT_CONN", type="string"),
@@ -70,6 +73,10 @@ dag_params = {
     ),
     "dataset": Param(None, type=["null", "string"]),
     "slack_channel": Param("nf-agora-notifications", type="string"),
+    # ADT Airflow Notifications team
+    "synapse_team_id": Param("3600443", type="string"),
+    # who to alert if any task fails (comma-separated usernames or numeric ids)
+    "dev_user_list": Param("3485485", type="string"),  # DPE service team
 }
 
 dag_config = {
@@ -79,6 +86,16 @@ dag_config = {
     "catchup": False,
     "default_args": {
         "retries": 1,
+        # Set per task (not on the DAG) so that a failure in any task, including
+        # generate_message and the Slack/email tasks, still alerts someone with the
+        # failing task and exception. Slack and email can't be relied on for that.
+        "on_failure_callback": synapse_failure_callback(
+            message=(
+                "The Agora Tower workflow or its completion notification may not "
+                "have finished. Please review the task logs and check the run in "
+                "Tower."
+            )
+        ),
     },
     "tags": ["nextflow_tower"],
     "params": dag_params,
@@ -139,7 +156,8 @@ def agora_nf_run_dag() -> DAG:
 
         Args:
             run_id: Tower run ID returned by launch_agora_on_tower.
-            context: Airflow task context; used to read the tower_conn_id param.
+            context: Airflow task context; used to read the tower_conn_id and
+                dataset params.
 
         Returns:
             A message reporting the workflow's dataset, terminal state,
@@ -149,7 +167,10 @@ def agora_nf_run_dag() -> DAG:
         workflow = hook.get_workflow(run_id)
 
         emoji = "🎉" if workflow.status.is_successful else "❌"
-        dataset = workflow.params.get("dataset") or "all datasets"
+
+        # Read the dataset from the DAG params rather than workflow.params: Tower leaves
+        # the latter null when the run fails before Nextflow starts.
+        dataset = context["params"].get("dataset") or "all datasets"
 
         duration = "unknown"
         if workflow.submit and workflow.complete:
@@ -191,13 +212,16 @@ def agora_nf_run_dag() -> DAG:
 
         Args:
             message: Summary message produced by generate_message.
-            context: Airflow task context; used to read the synapse_conn_id param.
+            context: Airflow task context; used to read the synapse_conn_id and
+                synapse_team_id params.
 
         Returns:
             True once the Synapse message has been sent.
         """
         syn_client = SynapseHook(context["params"]["synapse_conn_id"]).client
-        syn_client.sendMessage([SYNAPSE_TEAM_ID], "Tower workflow completed", message)
+        syn_client.sendMessage(
+            [context["params"]["synapse_team_id"]], "Tower workflow completed", message
+        )
         print(f"Result of posting to email: [{message}]")
         return True
 
@@ -220,6 +244,9 @@ if __name__ == "__main__":
         ],
         variable_names=["SLACK_DPE_TEAM_BOT_TOKEN"],
     )
-    dag.test(run_conf={"dataset": "model_details",
-                       "slack_channel": "test-agora-nextflow"
+    dag.test(run_conf={"dataset": "",
+                       "slack_channel": "test-agora-nextflow",
+                       "tower_run_name": "test_airflow-agora-model-ad",
+                       "synapse_team_id": "3622772", # Orca airflow dags testing team
+                       "dev_user_list": "3443707" # linglp
                        })

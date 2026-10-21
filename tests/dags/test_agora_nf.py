@@ -1,18 +1,26 @@
 """Tests for dags/agora_nf.py."""
 
-from datetime import datetime
+from datetime import timedelta
 from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 from dags.agora_nf import dag
-from src.nextflow_tower_hook import NextflowTowerHook, WorkflowState, WorkflowStatus
+from src import synapse_alerts
+from src.nextflow_tower_hook import (
+    NextflowTowerHook,
+    Workflow,
+    WorkflowState,
+    WorkflowStatus,
+)
 
 
 RUN_ID = "tw-run"
 RUN_NAME = "test_run"
 DATASET = "test_dataset1, test_dataset2"
+# A dataset Tower may have recorded for the run, which must never reach the message
+TOWER_DATASET = "tower-recorded-workflow-dataset"
 
 @pytest.fixture
 def mock_tower(monkeypatch: pytest.MonkeyPatch) -> MagicMock:
@@ -48,6 +56,7 @@ def fake_context() -> dict[str, dict[str, Any]]:
             "large_memory_datasets": "dataset_a,dataset_b",
             "dataset": DATASET,
             "slack_channel": "test-agora-nextflow",
+            "synapse_team_id": "1234567",
         }
     }
 
@@ -103,40 +112,72 @@ def test_monitor_agora_workflow_state(
     mock_tower.get_workflow.assert_called_once_with(RUN_ID)
 
 
+def make_workflow(state: WorkflowState, **overrides: Any) -> Workflow:
+    """Build a real Workflow from an API-shaped JSON payload, as Tower returns it.
+
+    Both submit and complete are set, so generate_message can compute a duration
+    instead of falling back to "unknown".
+    """
+    payload = {
+        "id": RUN_ID,
+        "runName": RUN_NAME,
+        "status": state.value,
+        "submit": "2026-01-01T00:00:00Z",
+        "complete": "2026-01-01T01:30:00Z",
+        **overrides,
+    }
+    return Workflow.from_json(payload)
+
+
 @pytest.mark.parametrize(
     "state",
     [WorkflowState.SUCCEEDED, WorkflowState.FAILED, WorkflowState.CANCELLED, WorkflowState.UNKNOWN],
 )
 @pytest.mark.parametrize(
-    "dataset_param, expected_dataset",
-    [(DATASET, DATASET), (None, "all datasets"), ("", "all datasets")],
+    "dag_params, expected_dataset",
+    [
+        pytest.param({"dataset": DATASET}, DATASET, id="dataset-set"),
+        pytest.param({"dataset": None}, "all datasets", id="dataset-null"),
+        pytest.param({"dataset": ""}, "all datasets", id="dataset-empty"),
+        pytest.param({}, "all datasets", id="dataset-absent"),
+    ],
+)
+@pytest.mark.parametrize(
+    "tower_params",
+    [
+        # Tower returns params as null when a run fails before Nextflow starts
+        pytest.param(None, id="tower-params-null"),
+        # Once Nextflow has started, Tower reports the params the run was given
+        pytest.param({"dataset": TOWER_DATASET}, id="tower-params-set"),
+    ],
 )
 def test_generate_message(
     fake_context: dict[str, dict[str, Any]],
     mock_tower: MagicMock,
     state: WorkflowState,
-    dataset_param: str | None,
+    dag_params: dict[str, Any],
     expected_dataset: str,
+    tower_params: dict[str, Any] | None,
 ) -> None:
-    """Tests that generate_message returns a string containing the run_id."""
-    mock_tower.get_workflow.return_value.status = WorkflowStatus(state=state)
-    mock_tower.get_workflow.return_value.run_name = RUN_NAME
-    mock_tower.get_workflow.return_value.id = RUN_ID
-    mock_tower.get_workflow.return_value.params = {"dataset": dataset_param}
+    """Tests that generate_message reports the run name, ID, state, duration and dataset.
 
-    # Both submit and complete must be set for generate_message to compute a duration
-    # instead of falling back to "unknown"
-    submit = datetime(2026, 1, 1, 0, 0, 0)
-    complete = datetime(2026, 1, 1, 1, 30, 0)
-    mock_tower.get_workflow.return_value.submit = submit
-    mock_tower.get_workflow.return_value.complete = complete
+    The dataset comes from the DAG params and falls back to "all datasets" when unset.
+    It never comes from the params Tower recorded for the run (tower_params), which are
+    null if the run failed before Nextflow started. The message is therefore the same
+    whether those params are null or set, for every terminal state.
+    """
+    fake_context["params"].pop("dataset")
+    fake_context["params"].update(dag_params)
+    mock_tower.get_workflow.return_value = make_workflow(state, params=tower_params)
 
     raw_python_function = dag.get_task("generate_message").python_callable
     message = raw_python_function(run_id=RUN_ID, **fake_context)
 
     assert f"Tower workflow (Name: {RUN_NAME}, Id: {RUN_ID}) has completed with state: {state.value}" in message
-    assert f"Duration (submission to completion): {complete - submit}" in message
+    assert f"Duration (submission to completion): {timedelta(hours=1, minutes=30)}" in message
     assert f"Dataset: {expected_dataset}" in message
+    assert TOWER_DATASET not in message
+
 
 def test_post_slack_messages(fake_context: dict[str, dict[str, Any]]) -> None:
     """Tests that post_slack_messages returns True when the Slack API call succeeds."""
@@ -165,4 +206,46 @@ def test_post_email_messages(fake_context: dict[str, dict[str, Any]]) -> None:
         result = raw_python_function(message="Test message", **fake_context)
 
         assert result is True
-        mock_synapse_client.sendMessage.assert_called_once()
+        # The recipient comes from the synapse_team_id param, not a hard-coded ID
+        mock_synapse_client.sendMessage.assert_called_once_with(
+            ["1234567"], "Tower workflow completed", "Test message"
+        )
+
+
+def test_every_task_alerts_on_failure() -> None:
+    """Tests that a failure in any task, including the notification tasks, sends an alert."""
+    for task in dag.tasks:
+        assert task.on_failure_callback, f"{task.task_id} has no on_failure_callback"
+
+
+def test_task_failure_alerts_dev_user_list(
+    fake_context: dict[str, dict[str, Any]], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Tests that a failing task emails the dev_user_list with the task and exception."""
+    sent: dict[str, Any] = {}
+
+    def mock_send(conn_id: str, usernames: list[str], subject: str, body: str) -> None:
+        sent.update(conn_id=conn_id, usernames=usernames, subject=subject, body=body)
+
+    monkeypatch.setattr(synapse_alerts, "send_synapse_message", mock_send)
+
+    class FailedTaskInstance:
+        task_id = "generate_message"
+        dag_id = dag.dag_id
+        run_id = "manual__2026-10-19"
+        log_url = "https://airflow.example.org/log"
+
+    callback = dag.get_task("generate_message").on_failure_callback
+    callback = callback[0] if isinstance(callback, list) else callback
+    callback(
+        {
+            "params": {**fake_context["params"], "dev_user_list": "alice,bob"},
+            "task_instance": FailedTaskInstance(),
+            "exception": AttributeError("'NoneType' object has no attribute 'get'"),
+        }
+    )
+
+    assert sent["conn_id"] == fake_context["params"]["synapse_conn_id"]
+    assert sent["usernames"] == ["alice", "bob"]
+    assert "generate_message" in sent["body"]
+    assert "'NoneType' object has no attribute 'get'" in sent["body"]
