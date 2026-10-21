@@ -225,6 +225,9 @@ def set_up_logging() -> Logger:
 # the two lines below: they read the variable at import time, so a check in the
 # __main__ block at the bottom of the file would never be reached.
 if __name__ == "__main__":
+    # The S3 upload uses ambient AWS credentials (see S3Hook(aws_conn_id=None) below)
+    validate_aws_credentials(region_name=REGION_NAME)
+
     validate_required_secrets(
         connection_ids=[
             dag_params["snowflake_developer_service_conn"].value,
@@ -232,8 +235,6 @@ if __name__ == "__main__":
         ],
         variable_names=["SIGNOZ_INGESTION_KEY"],
     )
-    # The S3 upload uses ambient AWS credentials (see S3Hook(aws_conn_id=None) below)
-    validate_aws_credentials(region_name=REGION_NAME)
 
 otel_tracer = set_up_tracing()
 otel_logger = set_up_logging()
