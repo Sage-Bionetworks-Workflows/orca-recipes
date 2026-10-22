@@ -20,7 +20,7 @@ is why this repo ships its own.
 ## `constraints.txt`
 
 The upstream Airflow constraints for the MWAA Airflow and Python versions, with a small
-number of pins overridden. The header of the file lists every override with the
+number of pins overridden. The header of the file contains a table that lists every override with the
 upstream version, the version used here, and why. Every overridden line ends in
 `# override`:
 
@@ -30,10 +30,16 @@ grep override mwaa/constraints.txt
 
 ### Changing a dependency in `requirements-airflow.txt`
 
-1. Make the change. Version ranges must resolve under both the EKS image
-   (Airflow 2.10.5, Python 3.10, no constraints) and MWAA (Airflow 2.11.2,
-   Python 3.12, `mwaa/constraints.txt`). Do not pin `apache-airflow`.
-2. Check it resolves against MWAA's constraints:
+1. Make the change. Until the migration to MWAA is complete, version ranges must
+   resolve under both the EKS image (Airflow 2.10.5, Python 3.10, no constraints) and
+   MWAA (Airflow 2.11.2, Python 3.12, `mwaa/constraints.txt`). Do not pin
+   `apache-airflow`.
+2. Find the package in `mwaa/constraints.txt`:
+   - Not listed, or listed at a version inside your new range: leave
+     `mwaa/constraints.txt` unchanged.
+   - Listed at a version outside your new range: override that pin as described in
+     [Overriding a pin](#overriding-a-pin).
+3. Check it resolves against our custom MWAA constraints file:
 
    ```bash
    uv venv -p 3.12 /tmp/mwaa-check
@@ -44,23 +50,27 @@ grep override mwaa/constraints.txt
    /tmp/mwaa-check/bin/python -m pip check
    ```
 
-3. If pip reports a conflict with a constraint, override that pin as described
-   below. Prefer the lowest version that resolves the conflict.
+4. If pip reports a conflict with another constraint, override that pin too. Prefer
+   the lowest version that resolves the conflict.
 
 ### Overriding a pin
 
 1. Change the version on the package's line and append `  # override`.
-2. Add a row to the table in the header: package, upstream version, new version,
-   and the requirement that forces it.
-3. Re-run the check above.
+2. Add a row to the Overrides table in the header: package, upstream version, new
+   version, and the requirement that forces it.
+3. Re-run the [check](#changing-a-dependency-in-requirements-airflowtxt).
 
 ### Upgrading the MWAA Airflow version
 
-1. Download the new upstream file:
+1. Pick the Airflow version and its Python version from the
+   [MWAA supported versions](https://docs.aws.amazon.com/mwaa/latest/userguide/airflow-versions.html).
+2. Download the new upstream file:
    `https://raw.githubusercontent.com/apache/airflow/constraints-<airflow>/constraints-<python>.txt`
-2. Replace everything below the header with it, and update the `Source:` URL and
-   versions in the header.
-3. Re-apply each override in the header table. Drop any whose upstream version now
-   satisfies the reason given, and remove its row.
-4. Re-run the check above with the new Airflow and Python versions.
-5. Bump the airflow version and the pinned SHA of this repo together in eks-stack.
+3. Replace everything below the `Upstream Airflow constraints file below` line with it,
+   and update the `Source:` URL and versions in the header.
+4. For each row in the Overrides table, set the package's line to the version in the
+   `Here` column and append `  # override`. If the new upstream version already
+   satisfies the `Reason`, keep the upstream version and remove the row.
+5. Re-run the [check](#changing-a-dependency-in-requirements-airflowtxt) with the new
+   Airflow and Python versions.
+6. Bump the airflow version and the pinned SHA of this repo together in eks-stack.
