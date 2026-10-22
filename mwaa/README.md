@@ -41,9 +41,6 @@ branch that another developer is testing.
 2. If the ref is not `main` or your branch, ask in the team channel before you deploy
    or add the label.
 
-The challenge DAGs read `dags/challenge_configs.yaml` from `main` on GitHub, not from
-the bucket. Changes to that file on a branch do not show on dev until they merge.
-
 ### Rolling back
 
 To remove a bad change from prod,

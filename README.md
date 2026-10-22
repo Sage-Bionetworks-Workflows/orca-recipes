@@ -26,7 +26,6 @@ This repository contains Airflow recipes (DAGs) for data processing and engineer
 
 ## Example Workflows
 
-- **Challenge Automation** - Automatically evaluate challenge submissions by fetching entries from Synapse and orchestrating Nextflow workflows via Seqera Platform.
 - **Dataset Discovery** - Generate Croissant-format metadata for Synapse datasets and publish to public S3 for improved discoverability.
 - **Analytics Pipelines** - Sync Synapse Portal data to Snowflake and generate platform usage reports tracking downloads, users, and storage.
 - **Bioinformatics QC** - Launch and monitor data quality control workflows for genomics projects (GENIE, HTAN).

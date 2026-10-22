@@ -86,9 +86,6 @@ jobs:
             -c mwaa/constraints.txt
 
       - name: Check every DAG imports
-        env:
-          CONFIG_URL: >-
-            https://raw.githubusercontent.com/${{ github.repository }}/${{ needs.resolve.outputs.sha }}/dags/challenge_configs.yaml
         run: python -m pytest tests/dags/test_all_dags.py -v --tb=short
 
   deploy:
