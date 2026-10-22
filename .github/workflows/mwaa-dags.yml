@@ -1,11 +1,10 @@
 name: Deploy DAGs to MWAA
 
 # Pushes to main deploy to MWAA prod. Running the workflow manually deploys any branch,
-# tag or commit of this repo to MWAA dev. A pull request into main with the deploy-to-dev
-# label deploys its head commit to MWAA dev when labeled and on every later push. The
-# workflow file itself always comes from main (pull_request_target runs main's copy): the
-# mwaa-dev and mwaa-prod environments only allow main, and the AWS roles only trust jobs
-# running in those environments.
+# tag or commit of this repo to MWAA dev. mwaa-dags-dev-label.yml runs it for pull
+# requests with the deploy-to-dev label. The workflow file itself always comes from
+# main: the mwaa-dev and mwaa-prod environments only allow main, and the AWS roles only
+# trust jobs running in those environments.
 on:
   push:
     branches:
@@ -16,21 +15,9 @@ on:
         description: Branch, tag or commit SHA of this repo to deploy to MWAA dev
         required: true
         default: main
-  pull_request_target:
-    types: [labeled, synchronize]
-    branches:
-      - main
 
-# Pull request events that do not deploy get a group of their own, so they cannot replace
-# a pending deploy
 concurrency:
-  group: >-
-    ${{ github.event_name == 'push' && 'mwaa-prod'
-      || (github.event_name == 'workflow_dispatch'
-          || contains(github.event.pull_request.labels.*.name, 'deploy-to-dev')
-             && (github.event.action == 'synchronize' || github.event.label.name == 'deploy-to-dev'))
-         && 'mwaa-dev'
-      || github.run_id }}
+  group: mwaa-${{ github.event_name == 'push' && 'prod' || 'dev' }}
   cancel-in-progress: false
 
 permissions:
@@ -43,15 +30,10 @@ env:
 jobs:
   # Determine the exact commit to test and deploy.
   # If push to main: use the commit that triggered the workflow.
-  # If pull request: use its head commit, only while it has the deploy-to-dev label.
   # If manual run: resolve the requested branch, tag, or SHA to a commit.
   # The commit must belong to a branch in this repository.
   # All later jobs use this resolved SHA so the same code is tested and deployed.
   resolve:
-    if: >-
-      github.event_name != 'pull_request_target'
-      || contains(github.event.pull_request.labels.*.name, 'deploy-to-dev')
-         && (github.event.action == 'synchronize' || github.event.label.name == 'deploy-to-dev')
     runs-on: ubuntu-latest
     outputs:
       sha: ${{ steps.resolve.outputs.sha }}
@@ -65,7 +47,7 @@ jobs:
       - name: Resolve the ref to a commit on a branch of this repo
         id: resolve
         env:
-          REF: ${{ github.event_name == 'push' && github.sha || github.event.pull_request.head.sha || inputs.ref }}
+          REF: ${{ github.event_name == 'push' && github.sha || inputs.ref }}
         run: |
           sha=$(git rev-parse --verify --quiet --end-of-options "origin/${REF}^{commit}" \
             || git rev-parse --verify --quiet --end-of-options "${REF}^{commit}") || {
@@ -88,7 +70,6 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ needs.resolve.outputs.sha }}
-          persist-credentials: false
 
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
@@ -120,7 +101,7 @@ jobs:
     env:
       BUCKET: ${{ vars.MWAA_BUCKET }}
       ROLE_ARN: ${{ vars.MWAA_ROLE_ARN }}
-      REF: ${{ github.event_name == 'push' && github.ref_name || github.head_ref || inputs.ref }}
+      REF: ${{ github.event_name == 'push' && github.ref_name || inputs.ref }}
       SHA: ${{ needs.resolve.outputs.sha }}
     steps:
       - name: Skip when the environment is not configured
@@ -137,7 +118,6 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ needs.resolve.outputs.sha }}
-          persist-credentials: false
 
       - if: steps.configured.outputs.deploy == 'true'
         uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
