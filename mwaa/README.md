@@ -14,6 +14,10 @@ bucket with `aws s3 sync --delete`, so the bucket matches the deployed commit ex
   and enter a branch, tag or commit SHA of this repo. Leave "Use workflow from" on
   `main`. Dev is shared and keeps whatever was deployed last, so run it with `main` when
   you are done testing.
+- **Dev from a pull request**: add the `deploy-to-dev` label to a pull request into
+  `main`. Its head commit deploys to dev, and so does every later push while the label is
+  on. When you are done testing, remove the label and run the workflow with `main`. Pull
+  requests from forks are not deployed.
 
 Before anything is copied, every DAG must import under the MWAA Airflow and Python
 versions (`tests/dags/test_all_dags.py`). The deployed ref, commit, and who deployed it
@@ -23,7 +27,9 @@ Each GitHub environment, `mwaa-dev` and `mwaa-prod`, holds two variables, copied
 the eks-stack MWAA stack outputs: `MWAA_BUCKET` and `MWAA_ROLE_ARN`. The deploy is
 skipped while either is empty.
 
-New DAGs are paused when MWAA first sees them. Unpause them in the Airflow UI.
+New DAGs are paused when MWAA first sees them. Unpause them in the Airflow UI, opened
+as described in eks-stack's
+[Accessing the Airflow UI](https://github.com/Sage-Bionetworks-Workflows/eks-stack/blob/main/modules/mwaa/README.md#accessing-the-airflow-ui).
 
 ### Before you deploy to dev
 
@@ -32,35 +38,48 @@ branch that another developer is testing.
 
 1. In the Actions tab, open the most recent "Deploy DAGs to MWAA" run on dev and read
    its summary. It shows the ref that is on dev and who deployed it.
-2. If the ref is not `main` or your branch, ask in the team channel before you deploy.
+2. If the ref is not `main` or your branch, ask in the team channel before you deploy
+   or add the label.
 
 The challenge DAGs read `dags/challenge_configs.yaml` from `main` on GitHub, not from
 the bucket. Changes to that file on a branch do not show on dev until they merge.
 
 ### Rolling back
 
-To remove a bad change from prod, revert its pull request. The push to `main` deploys
-the reverted DAGs. To roll back dependencies, revert the SHA bump in eks-stack.
+To remove a bad change from prod,
+[revert its pull request](https://docs.github.com/en/pull-requests/how-tos/merge-and-close-pull-requests/reverting-a-pull-request).
+The push to `main` deploys the reverted DAGs. To roll back dependencies, revert the SHA
+bump (PR or commit) in eks-stack.
 
 ## Changing dependencies
 
 A DAG that needs a new or changed package must not merge before MWAA has the package.
 The DAG deploy is immediate, but MWAA installs dependencies only from the commit that
-eks-stack pins. Put the dependency change in its own pull request:
+eks-stack pins. You need two pull requests in this repo: a dependency pull request with
+only the dependency change, and a DAG pull request with the DAG changes. The DAG pull
+request must also contain the dependency change, because the deploy workflow checks DAG
+imports with the `requirements-airflow.txt` of the deployed commit.
 
-1. Open a pull request in this repo that changes `requirements-airflow.txt` (and
+Before you start, make sure the DAG pull request has been reviewed and its DAGs run
+locally with the new dependency. Each pass through these steps waits for a 20–30 minute
+MWAA update, so a wrong dependency is slow to fix.
+
+1. Open the dependency pull request that changes `requirements-airflow.txt` (and
    `mwaa/constraints.txt` if needed). Check it as described in
    [Changing a dependency](#changing-a-dependency-in-requirements-airflowtxt).
-2. In eks-stack, set `mwaa_orca_recipes_sha` in `deployments/main.tf` to the latest
-   commit of the pull request branch, and merge it.
+2. In the [eks-stack repo](https://github.com/Sage-Bionetworks-Workflows/eks-stack), open
+   a pull request that sets `mwaa_orca_recipes_sha` in `deployments/main.tf` to the latest
+   commit of the dependency pull request branch, and merge it. The MWAA stacks only get
+   the SHA from eks-stack `main`.
 3. In Spacelift, confirm the dev MWAA stack run only. The update takes 20–30 minutes.
    Check the `requirements_install_*` log stream in the dev Scheduler log group.
-4. Deploy your branch to dev and test the DAGs that use the change.
-5. Merge the pull request. A squash or rebase merge makes a new commit, so set
-   `mwaa_orca_recipes_sha` to the new commit on `main`, merge it, and confirm the dev
-   run again.
+4. Deploy the DAG pull request to dev and test the DAGs that use the change.
+5. Merge the dependency pull request with a merge commit. Its commit is then on `main`,
+   so the pinned SHA stays valid. If you squash or rebase instead, the merged commit is
+   new: set `mwaa_orca_recipes_sha` to it through another eks-stack pull request and
+   confirm the dev run again.
 6. Confirm the prod MWAA stack run. The prod plan fails while the SHA is not on `main`.
-7. Merge the pull request with the DAG changes that use the new dependency.
+7. Merge the DAG pull request.
 
 ## How dependencies are installed
 
@@ -110,6 +129,9 @@ grep override mwaa/constraints.txt
 
 4. If pip reports a conflict with another constraint, override that pin too. Prefer
    the lowest version that resolves the conflict.
+
+Once this resolves cleanly, continue with the deployment steps in
+[Changing dependencies](#changing-dependencies).
 
 ### Overriding a pin
 
