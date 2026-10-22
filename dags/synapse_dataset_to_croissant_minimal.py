@@ -30,15 +30,18 @@ Running locally (`python dags/synapse_dataset_to_croissant_minimal.py`):
 Follow the README first: "AWS credentials (required for all options)" and "Local
 Development (without Dev Container)", steps 3 and 4. In short, in the same terminal:
 
-    aws sso login --profile <your-profile>
-    export AIRFLOW__SECRETS__BACKEND=airflow.providers.amazon.aws.secrets.secrets_manager.SecretsManagerBackend
-    export AIRFLOW__SECRETS__BACKEND_KWARGS='{"connections_prefix": "airflow/connections", "variables_prefix": "airflow/variables", "profile_name": "<your-profile>"}'
     export AWS_PROFILE=<your-profile>
+    aws sso login
+    export AIRFLOW__SECRETS__BACKEND=airflow.providers.amazon.aws.secrets.secrets_manager.SecretsManagerBackend
+    export AIRFLOW__SECRETS__BACKEND_KWARGS="{\"connections_prefix\": \"airflow/connections\", \"variables_prefix\": \"airflow/variables\", \"profile_name\": \"$AWS_PROFILE\"}"
     python dags/synapse_dataset_to_croissant_minimal.py
 
+Exporting `AWS_PROFILE` first means you only fill in your profile name once: `aws sso
+login` and the S3 upload both pick it up from the environment, and the backend kwargs
+reference it as `$AWS_PROFILE` (note the double quotes there, so the shell expands it).
 The `AIRFLOW__SECRETS__*` lines supply the Synapse connection and the SigNoz variable.
-The S3 upload needs `AWS_PROFILE` separately. The script checks all of these first and
-stops with a message if any is missing or expired.
+The script checks all of these first and stops with a message if any is missing or
+expired.
 """
 from airflow.decorators import dag, task
 from datetime import datetime

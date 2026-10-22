@@ -40,10 +40,10 @@ Running locally (`python dags/synapse-dataset-to-croissant.py`):
 Follow the README first: "AWS credentials (required for all options)" and "Local
 Development (without Dev Container)", steps 3 and 4. In short, in the same terminal:
 
-    aws sso login --profile <your-profile>
-    export AIRFLOW__SECRETS__BACKEND=airflow.providers.amazon.aws.secrets.secrets_manager.SecretsManagerBackend
-    export AIRFLOW__SECRETS__BACKEND_KWARGS='{"connections_prefix": "airflow/connections", "variables_prefix": "airflow/variables", "profile_name": "<your-profile>"}'
     export AWS_PROFILE=<your-profile>
+    aws sso login
+    export AIRFLOW__SECRETS__BACKEND=airflow.providers.amazon.aws.secrets.secrets_manager.SecretsManagerBackend
+    export AIRFLOW__SECRETS__BACKEND_KWARGS="{\"connections_prefix\": \"airflow/connections\", \"variables_prefix\": \"airflow/variables\", \"profile_name\": \"$AWS_PROFILE\"}"
     export AIRFLOW__CORE__MAX_MAP_LENGTH=2000
     python dags/synapse-dataset-to-croissant.py
 
