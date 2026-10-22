@@ -105,6 +105,14 @@ upstream version, the version used here, and why. Every overridden line ends in
 grep override mwaa/constraints.txt
 ```
 
+### Vulnerability alerts
+
+Dependabot does not read `constraints.txt`. On every push to `main` that changes it or
+`requirements-airflow.txt`, `.github/workflows/mwaa-dependency-submission.yml` resolves
+the packages MWAA installs and submits them to the dependency graph, so Dependabot
+raises alerts for them under `mwaa/constraints.txt`. Fix an alert by overriding the pin
+as described in [Overriding a pin](#overriding-a-pin).
+
 ### Changing a dependency in `requirements-airflow.txt`
 
 1. Make the change. Until the migration to MWAA is complete, version ranges must
@@ -153,4 +161,6 @@ Once this resolves cleanly, continue with the deployment steps in
    satisfies the `Reason`, keep the upstream version and remove the row.
 5. Re-run the [check](#changing-a-dependency-in-requirements-airflowtxt) with the new
    Airflow and Python versions.
-6. Bump the airflow version and the pinned SHA of this repo together in eks-stack.
+6. Update `AIRFLOW_VERSION` and `PYTHON_VERSION` in the MWAA workflows in
+   `.github/workflows/`.
+7. Bump the airflow version and the pinned SHA of this repo together in eks-stack.
