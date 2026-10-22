@@ -1,0 +1,82 @@
+name: Submit MWAA dependencies
+
+# Dependabot does not read mwaa/constraints.txt. This resolves the packages MWAA installs,
+# the Airflow version plus requirements-airflow.txt constrained by mwaa/constraints.txt,
+# and submits them to the dependency graph so Dependabot raises alerts for them.
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - requirements-airflow.txt
+      - mwaa/constraints.txt
+      - .github/workflows/mwaa-dependency-submission.yml
+  workflow_dispatch:
+
+permissions: {}
+
+env:
+  PYTHON_VERSION: "3.12"
+  AIRFLOW_VERSION: "2.11.2"
+
+jobs:
+  submit:
+    runs-on: ubuntu-latest
+    permissions:
+      # Required by the dependency submission API
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Resolve the packages MWAA installs
+        # python-nvd3 (an Airflow dependency) is only published as an sdist
+        run: |
+          pip install --dry-run --ignore-installed --quiet --report report.json \
+            --only-binary :all: --no-binary python-nvd3 \
+            "apache-airflow[amazon,celery,snowflake]==${AIRFLOW_VERSION}" \
+            -r requirements-airflow.txt -c mwaa/constraints.txt
+
+      - name: Submit them to the dependency graph
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python - <<'EOF' > snapshot.json
+          import json, os, re, time
+
+          resolved = {}
+          for item in json.load(open("report.json"))["install"]:
+              name = re.sub(r"[-_.]+", "-", item["metadata"]["name"]).lower()
+              purl = f"pkg:pypi/{name}@{item['metadata']['version']}"
+              resolved[purl] = {
+                  "package_url": purl,
+                  "relationship": "direct" if item["requested"] else "indirect",
+                  "scope": "runtime",
+              }
+
+          print(json.dumps({
+              "version": 0,
+              "sha": os.environ["GITHUB_SHA"],
+              "ref": os.environ["GITHUB_REF"],
+              "job": {"correlator": os.environ["GITHUB_WORKFLOW"], "id": os.environ["GITHUB_RUN_ID"]},
+              "detector": {
+                  "name": "pip install --report",
+                  "version": "1",
+                  "url": "https://pip.pypa.io/en/stable/reference/installation-report/",
+              },
+              "scanned": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+              "manifests": {
+                  "mwaa/constraints.txt": {
+                      "name": "mwaa/constraints.txt",
+                      "file": {"source_location": "mwaa/constraints.txt"},
+                      "resolved": resolved,
+                  },
+              },
+          }))
+          EOF
+          gh api "repos/${GITHUB_REPOSITORY}/dependency-graph/snapshots" --input snapshot.json
