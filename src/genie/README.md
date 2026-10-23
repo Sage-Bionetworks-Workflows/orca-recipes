@@ -71,7 +71,7 @@ Please note that everything here is for how to setup your environment and run th
 - Create a python environment using a env manager of your choice (e.g: `python -m venv <virtual environment name>`) and install the requirements into it
 
     ```bash
-    pip install -r requirements-airflow.txt
+    pip install "apache-airflow==2.10.5" -r requirements-airflow.txt
     pip install -r requirements-dev.txt
     ```
 

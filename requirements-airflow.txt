@@ -1,11 +1,15 @@
-apache-airflow-providers-amazon ~=9.2.0
+# Installed on both the EKS Airflow image (Airflow 2.10.5, Python 3.10) and MWAA
+# (Airflow 2.11.2, Python 3.12, constrained by mwaa/constraints.txt). Ranges must
+# resolve under both until the migration to MWAA is complete. Do not pin
+# apache-airflow here, MWAA would try to change it.
+apache-airflow-providers-amazon >=9.2.0,<10
 apache-airflow-providers-celery >=3.10.0
-apache-airflow-providers-snowflake ~=6.0.0
-snowflake-connector-python ~=3.15.0
-py-orca[all] == 1.5.2
+apache-airflow-providers-snowflake >=6.0.0,<7
+snowflake-connector-python >=4.4.0,<5
+synapseclient[pandas] ~=4.14
 pandas <3.0.0
 slack-sdk >=3.27
-pendulum~=3.0.0
+pendulum >=3.0.0,<4
 jsonata-python ~=0.5.3
 boto3 >=1.7.0,<2.0
 requests ~=2.31
