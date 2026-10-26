@@ -35,6 +35,27 @@ that we also set up the production Airflow server to support OTEL.
 
 DAG Parameters:
 - Review the DAG Parameters under the `@dag` decorated function
+
+Running locally (`python dags/synapse-dataset-to-croissant.py`):
+Follow the README's local development steps, which cover AWS credentials and the Airflow secrets backend:
+https://github.com/Sage-Bionetworks-Workflows/orca-recipes/blob/main/README.md#local-development-without-dev-container
+
+This DAG also needs one setting of its own, in the same terminal:
+
+    export AIRFLOW__CORE__MAX_MAP_LENGTH=2000
+
+It maps tasks over every dataset in the collection, which is now longer than Airflow's
+default `max_map_length` of 1024 (1277 datasets at the time of writing). Without the
+export, a local run fails with `UnmappableXComLengthPushed: unmappable return value
+length: 1277 > 1024`.
+
+TODO: Revisit once https://github.com/Sage-Bionetworks-Workflows/eks-stack/pull/90 is
+deployed to prod. It raises the deployed limit from 1024 to 8192 but is held up by the
+ongoing migration work. A local run uses its own Airflow config rather than the
+deployed one, so check whether this export is still needed locally at that point.
+
+The script checks credentials and secrets first and stops with a message if any is
+missing or expired.
 """
 
 import json
@@ -77,6 +98,7 @@ from synapseclient.models import File
 from src.croissant_utils import build_croissant_metadata
 
 from src.synapse_hook import SynapseHook
+from src.utils import validate_aws_credentials, validate_required_secrets
 
 dag_params = {
     "snowflake_developer_service_conn": Param("SNOWFLAKE_DEVELOPER_SERVICE_RAW_CONN", type="string"),
@@ -203,6 +225,22 @@ def set_up_logging() -> Logger:
     logger.addHandler(handler)
     return logger
 
+
+# When run locally as a script, fail fast with a clear message if the Synapse or
+# Snowflake connection or the SigNoz variable can't be resolved. This has to run before
+# the two lines below: they read the variable at import time, so a check in the
+# __main__ block at the bottom of the file would never be reached.
+if __name__ == "__main__":
+    # The S3 upload uses ambient AWS credentials (see S3Hook(aws_conn_id=None) below)
+    validate_aws_credentials(region_name=REGION_NAME)
+
+    validate_required_secrets(
+        connection_ids=[
+            dag_params["snowflake_developer_service_conn"].value,
+            dag_params["synapse_conn_id"].value,
+        ],
+        variable_names=["SIGNOZ_INGESTION_KEY"],
+    )
 
 otel_tracer = set_up_tracing()
 otel_logger = set_up_logging()

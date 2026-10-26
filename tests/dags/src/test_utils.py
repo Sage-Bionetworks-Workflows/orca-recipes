@@ -3,10 +3,16 @@
 import logging
 
 from airflow.exceptions import AirflowNotFoundException
+from botocore.exceptions import ClientError, NoCredentialsError, TokenRetrievalError
 import pytest
 from unittest.mock import MagicMock, patch
 
-from dags.src.utils import DEFAULT_LOGGER_PREFIX, get_logger, validate_required_secrets
+from dags.src.utils import (
+    DEFAULT_LOGGER_PREFIX,
+    get_logger,
+    validate_aws_credentials,
+    validate_required_secrets,
+)
 
 
 @pytest.mark.parametrize("name", [None, ""], ids = ["None", "Empty string"])
@@ -121,3 +127,60 @@ class TestValidateRequiredSecrets:
         # Then the error message names each unresolvable one
         for substring in expected_substrings:
             assert substring in str(exc_info.value)
+
+
+class TestValidateAwsCredentials:
+    """Tests for validate_aws_credentials."""
+
+    ARN = "arn:aws:sts::123456789012:assumed-role/Developer/someone"
+
+    @patch("boto3.client")
+    def test_valid_credentials_return_the_caller_arn(self, mock_client: MagicMock) -> None:
+        """The ARN of the caller is returned when STS accepts the credentials."""
+        mock_client.return_value.get_caller_identity.return_value = {"Arn": self.ARN}
+
+        # When the credentials are valid
+        arn = validate_aws_credentials()
+
+        # Then the identity is returned, from an STS client in the default region
+        assert arn == self.ARN
+        mock_client.assert_called_once_with("sts", region_name="us-east-1")
+
+    @patch("boto3.client")
+    def test_region_name_is_passed_to_the_client(self, mock_client: MagicMock) -> None:
+        """The check doesn't depend on a region being configured locally."""
+        mock_client.return_value.get_caller_identity.return_value = {"Arn": self.ARN}
+
+        validate_aws_credentials(region_name="eu-west-1")
+
+        mock_client.assert_called_once_with("sts", region_name="eu-west-1")
+
+    @pytest.mark.parametrize(
+        "error",
+        [
+            NoCredentialsError(),
+            TokenRetrievalError(provider="sso", error_msg="The SSO session has expired"),
+            ClientError(
+                {"Error": {"Code": "ExpiredToken", "Message": "The token is expired"}},
+                "GetCallerIdentity",
+            ),
+        ],
+        ids=["no_credentials", "expired_sso_session", "expired_token"],
+    )
+    @patch("boto3.client")
+    def test_unusable_credentials_raise_value_error(
+        self, mock_client: MagicMock, error: Exception
+    ) -> None:
+        """Missing or expired credentials give a ValueError that says how to log in."""
+        mock_client.return_value.get_caller_identity.side_effect = error
+
+        # When AWS rejects, or can't find, the credentials
+        with pytest.raises(ValueError) as exc_info:
+            validate_aws_credentials()
+
+        # Then the message names both login steps and keeps the original error
+        message = str(exc_info.value)
+        assert "aws sso login" in message
+        assert "AWS_PROFILE" in message
+        assert str(error) in message
+        assert exc_info.value.__cause__ is error
