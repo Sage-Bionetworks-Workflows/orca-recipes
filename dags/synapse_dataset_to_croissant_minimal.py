@@ -37,6 +37,7 @@ from airflow.decorators import dag, task
 from datetime import datetime
 from synapseclient.models import query
 from synapseclient import Entity, Synapse
+from synapseclient.core.exceptions import SynapseHTTPError
 from synapseclient.models import Table
 from airflow.models.param import Param
 import pandas as pd
@@ -67,7 +68,9 @@ from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from airflow.providers.amazon.aws.hooks.s3 import S3Hook
 from synapseclient.core.retry import with_retry
 
+
 from src.synapse_hook import SynapseHook
+from src.synapse_alerts import send_synapse_message, synapse_failure_callback
 from src.utils import validate_aws_credentials, validate_required_secrets
 
 dag_params = {
@@ -81,6 +84,10 @@ dag_params = {
     "push_links_to_synapse": Param(True, type="boolean"),
     "delete_out_of_date_from_s3": Param(True, type="boolean"),
     "delete_out_of_date_from_synapse": Param(True, type="boolean"),
+    "collaborator_user_list": Param("3459953", type="string"), # croissant data collaborators
+    # Comma-separated Synapse usernames or IDs of DPE/developers to
+    # alert on failure.
+    "dev_user_list": Param("3485485", type="string"), # DPE service team
 }
 
 dag_config = {
@@ -296,7 +303,14 @@ def execute_push_to_s3(dataset: Entity, dataset_id: str, s3_key: str, croissant_
         raise ex
 
 
-@dag(**dag_config)
+@dag(
+    on_failure_callback=synapse_failure_callback(
+        message=(
+            "The minimal Croissant JSON-LD file processing failed. Please review the task logs."
+        )
+    ),
+    **dag_config,
+)
 def save_minimal_jsonld_to_s3() -> None:
     """Execute a query on Snowflake and report the results to a Synapse table."""
 
@@ -591,6 +605,9 @@ def save_minimal_jsonld_to_s3() -> None:
         """
         Create and save the minimal croissant JSON-LD files to S3 and links to a synapse table for all datasets in the home page of data catalog.
 
+        If the JSON-LD file cannot be accessed due to lack of READ access,
+        it will be skipped and a notification will be sent to the collaborators and developers.
+
         Arguments:
             dataset_collection: The dataset collection to query for datasets.
 
@@ -618,7 +635,23 @@ def save_minimal_jsonld_to_s3() -> None:
                 "dataset_id": dataset_id,
                 "dataset_name": dataset_name
             })
-            dataset = syn_client.get(dataset_id, downloadFile=False)
+            try:
+                dataset = syn_client.get(dataset_id, downloadFile=False)
+            except SynapseHTTPError as err:
+                message = err.args[0]
+                # only handle the case where the error is due to lack of READ access
+                if "lack READ access" in message:
+                    otel_logger.error(f"Failed to get JSON-LD file {dataset_id}: {message}")
+                    send_synapse_message(
+                        conn_id=context["params"]["synapse_conn_id"],
+                        usernames=context["params"]["collaborator_user_list"],
+                        subject="Minimal Croissant Dataset Synapse Data Catalog Access Issue",
+                        body=f"Failed to get JSON-LD file {dataset_id} from the synapse data catalog due to lack of READ access. "
+                            "Note that this file will not be processed and will be removed from the data catalog. "
+                            "Please grant the Orca Service synapse service account (ID: 3471981) "
+                            "READ access in the future if you would like it to be included in the minimal croissant dataset.",
+                    )
+                    continue
 
             link = f"https://www.synapse.org/Synapse:{row['id']}"
 
@@ -669,5 +702,8 @@ if __name__ == "__main__":
         run_conf={
             "synapse_table_for_croissant_links": "syn77524779",
             "bucket_name": "test-synapse-croissant-metadata-minimal",
+            # orca airflow dags testing team
+            "collaborator_user_list": "3622772",
+            "dev_user_list": "3622772"
         }
     )
