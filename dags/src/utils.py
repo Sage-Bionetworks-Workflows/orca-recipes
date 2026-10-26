@@ -72,11 +72,11 @@ def validate_required_secrets(connection_ids: list[str], variable_names: list[st
 def validate_aws_credentials(region_name: str = "us-east-1") -> str:
     """Fail fast if AWS credentials aren't available or have expired.
 
-    Asks AWS STS who the caller is, using the credentials boto3 finds on its own
-    (the `AWS_PROFILE` profile, `AWS_*` environment variables, or a default
-    profile). This is the same lookup a hook with no Airflow connection does, such as
-    `S3Hook(aws_conn_id=None)`, so a pass here means those calls can sign requests.
-    `aws sso login` alone isn't enough: a profile must also be selected.
+    Verifies that the current environment can authenticate to AWS by calling STS.
+    This is useful when running DAGs locally because AWS hooks that do not specify
+    an Airflow connection rely on the AWS credentials available to boto3. When
+    using AWS SSO locally, log in and select the intended profile with
+    `AWS_PROFILE`.
 
     Args:
         region_name: Region for the STS client. Passed explicitly so the check doesn't
