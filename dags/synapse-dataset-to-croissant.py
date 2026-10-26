@@ -37,19 +37,26 @@ DAG Parameters:
 - Review the DAG Parameters under the `@dag` decorated function
 
 Running locally (`python dags/synapse-dataset-to-croissant.py`):
-Follow the README first: "AWS credentials (required for all options)" and "Local
-Development (without Dev Container)", steps 3 and 4. In short, in the same terminal:
+Follow the README's local development steps, which cover AWS credentials (using an
+`AWS_PROFILE`) and the Airflow secrets backend:
+https://github.com/Sage-Bionetworks-Workflows/orca-recipes/blob/main/README.md#local-development-without-dev-container
 
-    export AWS_PROFILE=<your-profile>
-    aws sso login
-    export AIRFLOW__SECRETS__BACKEND=airflow.providers.amazon.aws.secrets.secrets_manager.SecretsManagerBackend
-    export AIRFLOW__SECRETS__BACKEND_KWARGS="{\"connections_prefix\": \"airflow/connections\", \"variables_prefix\": \"airflow/variables\", \"profile_name\": \"$AWS_PROFILE\"}"
+This DAG also needs one setting of its own, in the same terminal:
+
     export AIRFLOW__CORE__MAX_MAP_LENGTH=2000
-    python dags/synapse-dataset-to-croissant.py
 
-The `AIRFLOW__SECRETS__*` lines supply the Synapse and Snowflake connections and the
-SigNoz variable. The S3 upload needs `AWS_PROFILE` separately. The script checks all of
-these first and stops with a message if any is missing or expired.
+It maps tasks over every dataset in the collection, which is now longer than Airflow's
+default `max_map_length` of 1024 (1277 datasets at the time of writing). Without the
+export, a local run fails with `UnmappableXComLengthPushed: unmappable return value
+length: 1277 > 1024`.
+
+TODO: Revisit once https://github.com/Sage-Bionetworks-Workflows/eks-stack/pull/90 is
+deployed to prod. It raises the deployed limit from 1024 to 8192 but is held up by the
+ongoing migration work. A local run uses its own Airflow config rather than the
+deployed one, so check whether this export is still needed locally at that point.
+
+The script checks credentials and secrets first and stops with a message if any is
+missing or expired.
 """
 
 import json

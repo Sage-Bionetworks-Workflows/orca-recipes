@@ -27,21 +27,12 @@ DAG Parameters:
 - Review the DAG Parameters under the `@dag` decorated function
 
 Running locally (`python dags/synapse_dataset_to_croissant_minimal.py`):
-Follow the README first: "AWS credentials (required for all options)" and "Local
-Development (without Dev Container)", steps 3 and 4. In short, in the same terminal:
+Set up your environment by following the README's local development steps (AWS
+credentials via an `AWS_PROFILE`, and the Airflow secrets backend):
+https://github.com/Sage-Bionetworks-Workflows/orca-recipes/blob/main/README.md#local-development-without-dev-container
 
-    export AWS_PROFILE=<your-profile>
-    aws sso login
-    export AIRFLOW__SECRETS__BACKEND=airflow.providers.amazon.aws.secrets.secrets_manager.SecretsManagerBackend
-    export AIRFLOW__SECRETS__BACKEND_KWARGS="{\"connections_prefix\": \"airflow/connections\", \"variables_prefix\": \"airflow/variables\", \"profile_name\": \"$AWS_PROFILE\"}"
-    python dags/synapse_dataset_to_croissant_minimal.py
-
-Exporting `AWS_PROFILE` first means you only fill in your profile name once: `aws sso
-login` and the S3 upload both pick it up from the environment, and the backend kwargs
-reference it as `$AWS_PROFILE` (note the double quotes there, so the shell expands it).
-The `AIRFLOW__SECRETS__*` lines supply the Synapse connection and the SigNoz variable.
-The script checks all of these first and stops with a message if any is missing or
-expired.
+Local runs use the staging Synapse table and test S3 bucket set in the `__main__`
+block, and fail fast if AWS credentials are missing or expired.
 """
 from airflow.decorators import dag, task
 from datetime import datetime
