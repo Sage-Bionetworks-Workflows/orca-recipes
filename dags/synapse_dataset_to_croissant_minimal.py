@@ -648,8 +648,8 @@ def save_minimal_jsonld_to_s3() -> None:
                         subject="Minimal Croissant Dataset Synapse Data Catalog Access Issue",
                         body=f"Failed to get JSON-LD file {dataset_id} from the synapse data catalog due to lack of READ access. "
                             "Note that this file will not be processed and will be removed from the data catalog. "
-                            "Please grant the Orca Service synapse service account (ID: 3471981) "
-                            "READ access in the future if you would like it to be included in the minimal croissant dataset.",
+                            "Please make the file publicly accessible in the future if you would like it to be included in "
+                            "the minimal croissant dataset.",
                     )
                     continue
 
