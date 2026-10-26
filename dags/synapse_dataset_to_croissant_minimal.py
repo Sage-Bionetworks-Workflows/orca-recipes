@@ -27,8 +27,7 @@ DAG Parameters:
 - Review the DAG Parameters under the `@dag` decorated function
 
 Running locally (`python dags/synapse_dataset_to_croissant_minimal.py`):
-Set up your environment by following the README's local development steps (AWS
-credentials via an `AWS_PROFILE`, and the Airflow secrets backend):
+Set up your environment by following the README's local development steps:
 https://github.com/Sage-Bionetworks-Workflows/orca-recipes/blob/main/README.md#local-development-without-dev-container
 
 Local runs use the staging Synapse table and test S3 bucket set in the `__main__`

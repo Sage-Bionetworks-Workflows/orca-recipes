@@ -37,8 +37,7 @@ DAG Parameters:
 - Review the DAG Parameters under the `@dag` decorated function
 
 Running locally (`python dags/synapse-dataset-to-croissant.py`):
-Follow the README's local development steps, which cover AWS credentials (using an
-`AWS_PROFILE`) and the Airflow secrets backend:
+Follow the README's local development steps, which cover AWS credentials and the Airflow secrets backend:
 https://github.com/Sage-Bionetworks-Workflows/orca-recipes/blob/main/README.md#local-development-without-dev-container
 
 This DAG also needs one setting of its own, in the same terminal:
