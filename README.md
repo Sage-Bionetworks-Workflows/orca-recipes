@@ -184,12 +184,16 @@ This creates the local SQLite metadata database (including the `task_instance` t
 
 Prior to configuring environment variables, configure and log in to an SSO profile with read access to the `dpe-prod` Secrets Manager secrets (`airflow/connections/`, `airflow/variables/`) — see [AWS credentials](#aws-credentials-required-for-all-options) for the one-time setup and `aws sso login` step. Unlike the container paths, here you point Airflow's secrets backend at the profile directly (below) rather than via `.env`.
 
-Set the following exports (e.g., in your shell profile) so Airflow can resolve connections and variables from AWS Secrets Manager and deserialize custom dataclasses passed between tasks:
+Set `AWS_PROFILE` to that profile first. Using a profile is the recommended way to authenticate: `aws sso login` and anything that talks to AWS directly (e.g. a DAG's S3 upload) pick it up from the environment, and the backend kwargs below reference it as `$AWS_PROFILE`, so you only fill in the profile name once.
+
+Then set the following exports (e.g., in your shell profile) so Airflow can resolve connections and variables from AWS Secrets Manager and deserialize custom dataclasses passed between tasks:
 
 ```console
+export AWS_PROFILE=<your-aws-profile>
+
 export AIRFLOW__SECRETS__BACKEND=airflow.providers.amazon.aws.secrets.secrets_manager.SecretsManagerBackend
 
-export AIRFLOW__SECRETS__BACKEND_KWARGS='{"connections_prefix": "airflow/connections", "variables_prefix": "airflow/variables", "profile_name": "<your-aws-profile>"}'
+export AIRFLOW__SECRETS__BACKEND_KWARGS="{\"connections_prefix\": \"airflow/connections\", \"variables_prefix\": \"airflow/variables\", \"profile_name\": \"$AWS_PROFILE\"}"
 
 export AIRFLOW__CORE__ALLOWED_DESERIALIZATION_CLASSES="airflow.* astro.* __main__.*"
 ```
