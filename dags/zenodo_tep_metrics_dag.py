@@ -36,8 +36,7 @@ import os
 from datetime import datetime
 from typing import Any, Dict, List, NamedTuple
 
-from airflow.decorators import dag, task
-from airflow.models import DAG as AirflowDAG, Param, Variable
+from airflow.sdk import DAG as AirflowDAG, Param, Variable, dag, task
 import requests
 from synapseclient.models import Activity, File, UsedURL
 

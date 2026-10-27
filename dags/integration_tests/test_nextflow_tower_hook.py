@@ -31,8 +31,7 @@ Checking the results:
     failures are outside our control, but still worth noting when reporting
     results.
 """
-from airflow.decorators import dag, task
-from airflow.models import Param
+from airflow.sdk import Param, dag, task
 
 from src.nextflow_tower_hook import LaunchInfo, NextflowTowerHook
 from src.utils import validate_required_secrets

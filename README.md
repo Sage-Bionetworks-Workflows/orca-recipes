@@ -163,13 +163,11 @@ If you want to test a DAG locally without Docker or Codespaces, you can run it d
 
 #### 1. Install dependencies
 
-There is a shell script that you can run to install the local Airflow requirements.
+There is a shell script that you can run to install the local Airflow requirements. It installs the Airflow version and packages that MWAA runs, constrained by [`mwaa/constraints.txt`](./mwaa/constraints.txt), so run it in a Python 3.12 environment.
 
 ```console
 bash scripts/install_local_airflow.sh
 ```
-
-This separate shell script is needed because to avoid a `urllib3` version conflict introduced by the Airflow constraints file. There is also a known issue with `setuptools >82` as `synapseclient` (via `opentelemetry-instrumentation`) depends on the deprecated `pkg_resources` module, which `setuptools` 82+ removed. We pin that until `opentelemetry-instrumentation` drops the pkg_resources import.
 
 #### 2. Initialize the Airflow database
 
@@ -189,6 +187,9 @@ Then set the following exports (e.g., in your shell profile) so Airflow can reso
 
 ```console
 export AWS_PROFILE=<your-aws-profile>
+
+# dag.test() runs the DAG as Airflow parses it from this folder
+export AIRFLOW__CORE__DAGS_FOLDER="$PWD/dags"
 
 export AIRFLOW__SECRETS__BACKEND=airflow.providers.amazon.aws.secrets.secrets_manager.SecretsManagerBackend
 

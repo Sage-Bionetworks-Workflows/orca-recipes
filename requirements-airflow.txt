@@ -1,7 +1,5 @@
-# Installed on both the EKS Airflow image (Airflow 2.10.5, Python 3.10) and MWAA
-# (Airflow 2.11.2, Python 3.12, constrained by mwaa/constraints.txt). Ranges must
-# resolve under both until the migration to MWAA is complete. Do not pin
-# apache-airflow here, MWAA would try to change it.
+# Installed on MWAA (Airflow 3.3.1, Python 3.12, constrained by mwaa/constraints.txt).
+# Do not pin apache-airflow here, MWAA would try to change it.
 apache-airflow-providers-amazon >=9.2.0,<10
 apache-airflow-providers-celery >=3.10.0
 apache-airflow-providers-snowflake >=6.0.0,<7
@@ -14,7 +12,7 @@ jsonata-python ~=0.5.3
 boto3 >=1.7.0,<2.0
 requests ~=2.31
 PyYAML ~=6.0.3
-# synapseclient (via opentelemetry-instrumentation) depends on the deprecated
-# pkg_resources module, which setuptools 82+ removed. Pin below that until
-# opentelemetry-instrumentation drops the pkg_resources import.
-setuptools <82
+# Installed on the MWAA image but not required by the packages above. Listed so pip
+# upgrades them to their mwaa/constraints.txt overrides
+virtualenv
+werkzeug

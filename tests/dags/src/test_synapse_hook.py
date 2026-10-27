@@ -4,7 +4,7 @@ External dependencies (the Synapse client, the module-level query helper, and
 Airflow's BaseHook) are mocked so the tests need no Synapse credentials or
 Airflow metadata database.
 """
-import airflow.hooks.base as base
+from airflow.sdk import BaseHook
 
 import pytest
 from airflow.exceptions import AirflowNotFoundException
@@ -38,7 +38,7 @@ def test_get_connection_prefers_airflow_connection(monkeypatch):
             self.password = token
 
     monkeypatch.setattr(
-        base.BaseHook,
+        BaseHook,
         "get_connection",
         classmethod(lambda cls, conn_id: MockConnection(mock_token)),
     )
@@ -51,7 +51,7 @@ def test_get_connection_falls_back_to_env(monkeypatch):
         raise AirflowNotFoundException("no such connection")
 
     monkeypatch.setattr(
-        base.BaseHook, "get_connection", classmethod(mock_get_connection)
+        BaseHook, "get_connection", classmethod(mock_get_connection)
     )
     monkeypatch.setenv("SYNAPSE_AUTH_TOKEN", "env-token")
 
@@ -63,7 +63,7 @@ def test_get_connection_raises_when_unresolvable(monkeypatch):
         raise AirflowNotFoundException("no such connection")
 
     monkeypatch.setattr(
-        base.BaseHook, "get_connection", classmethod(mock_get_connection)
+        BaseHook, "get_connection", classmethod(mock_get_connection)
     )
     monkeypatch.delenv("SYNAPSE_AUTH_TOKEN", raising=False)
 

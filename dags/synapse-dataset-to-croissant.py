@@ -69,9 +69,7 @@ from types import MethodType
 from typing import Any, Dict, List
 from urllib.parse import quote_plus
 
-from airflow.decorators import dag, task
-from airflow.models import Variable
-from airflow.models.param import Param
+from airflow.sdk import Param, Variable, dag, task
 from airflow.providers.amazon.aws.hooks.s3 import S3Hook
 from airflow.providers.snowflake.hooks.snowflake import SnowflakeHook
 from opentelemetry import context as otel_context

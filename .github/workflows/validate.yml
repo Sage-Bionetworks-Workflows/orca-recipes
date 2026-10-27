@@ -9,7 +9,8 @@ on: # Run on new commits and PR openings
     types: [opened, reopened]
 
 env:
-  PYTHON_VERSION: "3.10"
+  PYTHON_VERSION: "3.12"
+  AIRFLOW_VERSION: "3.3.1"
   RUFF_VERSION: "0.15.20"
 
 jobs:
@@ -23,14 +24,12 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
-      - name: Install dependencies
+      - name: Install the MWAA Airflow version and requirements
         run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements-dev.txt
-
-      - name: Install airflow deps
-        run: |
-          pip install "apache-airflow==2.10.5" -r requirements-airflow.txt
+          pip install --only-binary :all: \
+            "apache-airflow[amazon,celery,snowflake]==${AIRFLOW_VERSION}" \
+            -r requirements-airflow.txt pytest pytest-mock \
+            -c mwaa/constraints.txt
 
       - name: Run tests
         run: |
@@ -51,7 +50,7 @@ jobs:
         run: pip install "ruff==${{ env.RUFF_VERSION }}"
 
       # AIR3 = Ruff's Airflow 3.x deprecation/removal rules (e.g. schedule_interval,
-      # execution_date). Catches DAG code that will break on the Airflow 3 upgrade.
+      # execution_date). Catches DAG code that uses APIs Airflow 3 removed or deprecated.
       - name: Lint changed DAGs for Airflow 3 deprecations
         continue-on-error: true
         run: |

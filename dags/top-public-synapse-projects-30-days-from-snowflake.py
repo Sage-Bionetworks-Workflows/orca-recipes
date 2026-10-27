@@ -7,9 +7,7 @@ from datetime import date, datetime, timedelta
 from typing import List
 
 import synapseclient
-from airflow.decorators import dag, task
-from airflow.models import Variable
-from airflow.models.param import Param
+from airflow.sdk import Param, Variable, dag, task
 from airflow.providers.snowflake.hooks.snowflake import SnowflakeHook
 
 from src.synapse_hook import SynapseHook

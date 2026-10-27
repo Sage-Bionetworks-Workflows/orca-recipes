@@ -88,8 +88,8 @@ by the EKS Airflow image and CI. eks-stack pins a commit SHA of this repo, downl
 eks-stack.
 
 MWAA always installs with a constraints file. If `requirements.txt` has none, MWAA
-uses the upstream Airflow constraints, which cannot install synapseclient 4.14. That
-is why this repo ships its own.
+uses the upstream Airflow constraints, which conflict with `requirements-airflow.txt` and
+pin packages that have vulnerability alerts. That is why this repo ships its own.
 
 ## `constraints.txt`
 
@@ -112,10 +112,7 @@ as described in [Overriding a pin](#overriding-a-pin).
 
 ### Changing a dependency in `requirements-airflow.txt`
 
-1. Make the change. Until the migration to MWAA is complete, version ranges must
-   resolve under both the EKS image (Airflow 2.10.5, Python 3.10, no constraints) and
-   MWAA (Airflow 2.11.2, Python 3.12, `mwaa/constraints.txt`). Do not pin
-   `apache-airflow`.
+1. Make the change. Do not pin `apache-airflow`.
 2. Find the package in `mwaa/constraints.txt`:
    - Not listed, or listed at a version inside your new range: leave
      `mwaa/constraints.txt` unchanged.
@@ -126,8 +123,8 @@ as described in [Overriding a pin](#overriding-a-pin).
    ```bash
    uv venv -p 3.12 /tmp/mwaa-check
    uv pip install -p /tmp/mwaa-check/bin/python pip \
-     "apache-airflow[amazon,celery,snowflake]==2.11.2" \
-     -c https://raw.githubusercontent.com/apache/airflow/constraints-2.11.2/constraints-3.12.txt
+     "apache-airflow[amazon,celery,snowflake]==3.3.1" \
+     -c https://raw.githubusercontent.com/apache/airflow/constraints-3.3.1/constraints-3.12.txt
    /tmp/mwaa-check/bin/python -m pip install -r requirements-airflow.txt -c mwaa/constraints.txt
    /tmp/mwaa-check/bin/python -m pip check
    ```
@@ -159,7 +156,8 @@ Once this resolves cleanly, continue with the deployment steps in
 5. Re-run the [check](#changing-a-dependency-in-requirements-airflowtxt) with the new
    Airflow and Python versions.
 6. Update `AIRFLOW_VERSION` and `PYTHON_VERSION` in
-   `.github/workflows/mwaa-dependency-submission.yml`. `mwaa-dags.yml` reads them from
-   the `Source:` URL of the deployed commit's `mwaa/constraints.txt`, because it always
-   runs from `main`.
+   `.github/workflows/mwaa-dependency-submission.yml` and `.github/workflows/validate.yml`,
+   and the `apache-airflow` version in `requirements-local-airflow.txt`. `mwaa-dags.yml`
+   reads them from the `Source:` URL of the deployed commit's `mwaa/constraints.txt`,
+   because it always runs from `main`.
 7. Bump the airflow version and the pinned SHA of this repo together in eks-stack.

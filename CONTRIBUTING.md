@@ -190,9 +190,7 @@ task set and the dependency edges you expect. This catches a miswired pipeline
 from airflow.models import DagBag
 
 def test_dag_structure():
-    dagbag = DagBag(
-        dag_folder="dags/zenodo_tep_metrics_dag.py", include_examples=False
-    )
+    dagbag = DagBag(dag_folder="dags/zenodo_tep_metrics_dag.py")
     dag = dagbag.get_dag("zenodo_tep_metrics_dag")
 
     assert dag is not None, "zenodo_tep_metrics_dag failed to load"
@@ -431,10 +429,9 @@ pre-commit run --all-files
 > The Airflow `AIR3` findings are **advisory, not enforced**. The Ruff hook runs
 > with `--exit-zero` (and the CI lint job uses `continue-on-error`), so it
 > *reports* Airflow 3.x deprecation warnings but never blocks your commit or the
-> build. They flag Airflow-3 migration items — e.g. `airflow.decorators` /
-> `airflow.models.Param` moving to `airflow.sdk` — that can't be fixed while the
-> repo runs Airflow 2.10, so treat them as a heads-up for the eventual upgrade
-> rather than something to resolve now.
+> build. The DAGs run on Airflow 3 (MWAA), so fix any finding in code you change,
+> e.g. import `dag`, `task`, `Param` and `Variable` from `airflow.sdk` instead of
+> `airflow.decorators` / `airflow.models`.
 
 See [Airflow's documentation on linting for best practices and how to contribute your own](https://airflow.apache.org/docs/apache-airflow/stable/best-practices.html#code-quality-and-linting)
 
@@ -550,8 +547,7 @@ a notification failure can never mask the original task error.
 [See Airflow's callback docs for more info.](https://airflow.apache.org/docs/apache-airflow/stable/administration-and-deployment/logging-monitoring/callbacks.html#callbacks)
 
 ```python
-from airflow.decorators import dag
-from airflow.models import Param
+from airflow.sdk import Param, dag
 
 from src.synapse_alerts import synapse_failure_callback
 

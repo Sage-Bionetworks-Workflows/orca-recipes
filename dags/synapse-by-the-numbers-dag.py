@@ -8,8 +8,7 @@ from dateutil.relativedelta import relativedelta
 from typing import List
 
 import synapseclient
-from airflow.decorators import dag, task
-from airflow.models.param import Param
+from airflow.sdk import Param, dag, task
 from airflow.providers.snowflake.hooks.snowflake import SnowflakeHook
 
 from src.synapse_hook import SynapseHook

@@ -33,12 +33,11 @@ https://github.com/Sage-Bionetworks-Workflows/orca-recipes/blob/main/README.md#l
 Local runs use the staging Synapse table and test S3 bucket set in the `__main__`
 block, and fail fast if AWS credentials are missing or expired.
 """
-from airflow.decorators import dag, task
+from airflow.sdk import Param, Variable, dag, task
 from datetime import datetime
 from synapseclient.models import query
 from synapseclient import Entity, Synapse
 from synapseclient.models import Table
-from airflow.models.param import Param
 import pandas as pd
 from pandas import DataFrame
 from urllib.parse import quote_plus
@@ -47,7 +46,6 @@ import os
 from io import BytesIO
 from typing import Any, Dict, List
 from types import MethodType
-from airflow.models import Variable
 from logging import NOTSET, Logger, getLogger
 from opentelemetry import trace
 from opentelemetry import context as otel_context

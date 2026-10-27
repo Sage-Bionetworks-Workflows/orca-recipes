@@ -19,8 +19,7 @@ import requests
 import json
 from typing import Dict, List, Tuple, Any, Optional
 
-from airflow.decorators import task, dag
-from airflow.models import Variable, Param
+from airflow.sdk import Param, Variable, dag, task
 from jsonata import jsonata
 from jsonschema import validate, ValidationError
 from synapseclient.models import Dataset, DatasetCollection, File

@@ -10,7 +10,7 @@ Synapse table. This DAG updates the Trending Projects Snapshots Synapse table
 - Export date (the last time this table was updated)
 """
 
-from airflow.decorators import dag
+from airflow.sdk import Param, dag, task
 
 from dataclasses import dataclass
 from datetime import date, datetime
@@ -18,8 +18,6 @@ from typing import List
 from dateutil.relativedelta import relativedelta
 
 import synapseclient
-from airflow.decorators import dag, task
-from airflow.models.param import Param
 from airflow.providers.snowflake.hooks.snowflake import SnowflakeHook
 
 from src.synapse_hook import SynapseHook
