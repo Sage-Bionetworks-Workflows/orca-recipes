@@ -68,11 +68,11 @@ Please note that everything here is for how to setup your environment and run th
 
 - See the [snowflake_utils running locally docs](/src/snowflake_utils/README.md#connecting-to-snowflake-locally) in your code for how to setup your local system's snowflake credentials
 
-- Create a python environment using a env manager of your choice (e.g: `python -m venv <virtual environment name>`) and install the requirements into it
+- Create a Python 3.12 environment using a env manager of your choice (e.g: `python3.12 -m venv <virtual environment name>`) and install the requirements into it (see [Local Development](/README.md#local-development))
 
     ```bash
-    pip install "apache-airflow==2.10.5" -r requirements-airflow.txt
-    pip install -r requirements-dev.txt
+    bash scripts/install_local_airflow.sh
+    pip install pytest pytest-mock -c mwaa/constraints.txt
     ```
 
 ### When These Scripts Needs Modification

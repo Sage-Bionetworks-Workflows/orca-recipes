@@ -6,18 +6,20 @@
 - [Airflow Development](#airflow-development)
   - [Setting up the Dev Environment](#setting-up-the-dev-environment)
     - [AWS credentials](#aws-credentials-required-for-all-options)
-    - [Dev Container](#dev-container)
-      - [Codespaces](#codespaces)
-      - [VS Code](#vs-code)
-    - [Docker Compose](#docker-compose)
-  - [Interfacing with Airflow](#interfacing-with-airflow)
-    - [CLI](#cli)
-    - [Browser](#browser)
-  - [Local Development (without Dev Container)](#local-development-without-dev-container)
+  - [Local Development](#local-development)
     - [1. Install dependencies](#1-install-dependencies)
     - [2. Initialize the Airflow database](#2-initialize-the-airflow-database)
     - [3. Configure environment variables](#3-configure-environment-variables)
     - [4. Run a DAG locally](#4-run-a-dag-locally)
+    - [5. Run the scheduler and UI](#5-run-the-scheduler-and-ui)
+  - [Dev Container and Docker Compose (EKS, Airflow 2.10.5)](#dev-container-and-docker-compose-eks-airflow-2105)
+    - [Dev Container](#dev-container)
+      - [Codespaces](#codespaces)
+      - [VS Code](#vs-code)
+    - [Docker Compose](#docker-compose)
+    - [Interfacing with Airflow](#interfacing-with-airflow)
+      - [CLI](#cli)
+      - [Browser](#browser)
 - [Local DAGs](#local-dags)
 - [Contributing](#contributing)
 - [Releases](#releases)
@@ -36,12 +38,11 @@ For instructions on how to set up the development environment and interface with
 
 ### Setting up the Dev Environment
 
-A complete Airflow deployment is made up of multiple services running in parallel, so the steps involved in setting up a dev environment are more complex than you may be used to. There are two steps involved in setting up Airflow for development:
+The DAGs run on [Amazon MWAA](./mwaa/README.md) with Airflow 3.3.1 and Python 3.12. To develop them, install the same Airflow version and packages in a local Python 3.12 virtual environment, as described in [Local Development](#local-development). From there you can run a DAG with `dag.test()`, or run the scheduler and UI with `airflow standalone`, against a local SQLite database.
 
-1. (Highly recommended) Develop within the provided dev container. A dev container is a virtual machine (e.g., Docker container) that standardizes tools, libraries, and configs for consistent development across machines. This provides us with a consistent environment for the next step.
-2. Run docker compose to deploy the full suite of containerized services.
+The [dev container, Codespaces and Docker Compose setup](#dev-container-and-docker-compose-eks-airflow-2105) builds the Airflow 2.10.5 image that EKS runs. The DAGs do not import on it.
 
-Regardless of which path you take — Codespaces, a local dev container, or [local development without a dev container](#local-development-without-dev-container) — you first need AWS credentials, since every path resolves Airflow's secrets from AWS Secrets Manager.
+Every setup resolves Airflow's secrets from AWS Secrets Manager, so you first need AWS credentials.
 
 #### AWS credentials (required for all options)
 
@@ -59,105 +60,11 @@ aws sso login --profile <your-sso-profile>
 
 Then supply the credentials to Airflow, which differs by path:
 
+* **Local** — point the secrets backend at your profile via `AIRFLOW__SECRETS__BACKEND_KWARGS`; see [that section](#3-configure-environment-variables).
 * **Local Dev Container / VS Code** — set `AWS_PROFILE` (and, if your AWS config is not at `$HOME/.aws`, `HOST_AWS_DIR`) in `.env`. Your `~/.aws` is mounted read-only into the containers and SSO tokens refresh automatically.
 * **Codespaces** — run `bash scripts/aws-sso-to-env.sh <your-sso-profile>` to write short-lived credentials into `.env` (there is no host `~/.aws` to mount). They expire; re-run the script to refresh.
-* **Local without a dev container** — point the secrets backend at your profile via `AIRFLOW__SECRETS__BACKEND_KWARGS`; see [that section](#3-configure-environment-variables).
 
-#### Dev Container
-
-There are multiple ways to set up and interface with a dev container, depending on whether you want an IDE-agnostic approach, a VS Code workflow with the Dev Containers extension, or a cloud option like GitHub Codespaces. The cloud option is the most straightforward, although because the infrastructure is running in the cloud, there is a limit on how much time we can develop before we need to pay for the service.
-
-* Note: The environment setup for the Dev Container is defined in [Dockerfile](./Dockerfile). _How_ we deploy the container locally is defined in [devcontainer.json](.devcontainer/devcontainer.json).
-
-##### Codespaces
-
-1. Create a branch for your changes
-2. From the main repo page click on `<> Code`
-3. Under `Codespaces` click the 3 ellipses and `New with options...`
-4. Choose your branch and 4-core (2-core is sufficient for basic edits without docker compose).
-
-##### VS Code
-
-Visual Studio Code provides an extension so that your IDE terminal and other development tools are run within a dev container. Follow the instructions [here](https://code.visualstudio.com/docs/devcontainers/tutorial) to set up the Dev Containers extension. Do not create a new dev container, but rather use the existing configuration by opening the Command Palette (CMD+Shift+p by default on Mac) → "Dev Containers: Reopen in Container."
-
-Set `AWS_PROFILE` in `.env` (see [AWS credentials](#aws-credentials-required-for-all-options) above) so the container can reach the Airflow Secrets backend. Alternatively, you can [connect to Codespaces as a remote environment from within VS Code](https://docs.github.com/en/codespaces/developing-in-a-codespace/using-github-codespaces-in-visual-studio-code).
-
-#### Docker Compose
-
-Ensure that your Docker installation is up to date (we use [Docker Compose V2](https://docs.docker.com/compose/compose-v2/)). It's recommended that you deploy from within the included dev container (previous section).
-
-We pass environment variables to our build via the `.env` file. Configure your AWS credentials there following the [AWS credentials](#aws-credentials-required-for-all-options) section above (set `AWS_PROFILE` locally, or run `scripts/aws-sso-to-env.sh` in Codespaces).
-
-```console
-# Duplicate example `.env` file, then set your AWS credentials in it.
-cp .env.example .env
-```
-
-To build and deploy our Airflow services to background containers:
-
-```console
-docker compose up --build --detach
-```
-
-Congrats! You have completed set up of the dev environment.
-
-### Interfacing with Airflow
-
-Airflow is made up of multiple components or services working together. The webserver exposes a browser-accessible port, but in a development environment we often want to interface with Airflow through its CLI.
-
-#### CLI
-
-We can see which services are currently running:
-```console
-# list running docker containers
-docker compose ps
-
-# see stats
-docker compose stats
-```
-
-We provide a convenience script [airflow.sh](./airflow.sh) to invoke the Airflow CLI within the same container environment as the webserver/scheduler:
-
-```console
-# Start a shell inside one of the containers
-./airflow.sh bash
-
-# List our DAGs
-./airflow.sh dags list
-```
-
-It may be helpful at this point to verify that Airflow has access to the secrets backend.
-```console
-./airflow.sh python
-```
-```python
-import boto3
-
-secretsmanager = boto3.client("secretsmanager", region_name='us-east-1')
-secret_prefixes = ["airflow/connections/", "airflow/variables/"] # see secrets.backend_kwargs in airflow.cfg
-all_secrets = secretsmanager.list_secrets()["SecretList"]
-for secret in all_secrets:
-    if any([secret["Name"].startswith(p) for p in secret_prefixes]):
-        print(secret["Name"])
-```
-
-#### Browser
-
-We can see which ports our Airflow services expose under `PORTS`:
-```
-docker compose ps
-```
-
-Airflow’s webserver listens on port 8080 by default via the localhost url: http://localhost:8080. You can access the local server in two ways:
-
-- If you run the service locally on your machine, open the localhost url link in your browser.
-- If you run the service inside a GitHub Codespace, localhost:8080 refers to the Codespace virtual machine, not your computer. In that case, use the forwarded port URL (e.g., `https://<codespace-name>-8080.app.github.dev`) or Ctrl/Cmd-click the localhost url link inside the Codespace to automatically use the correct forwarded URL
-
-The username and password will be "airflow".
-
-If you encounter the `nginx bad gateway` errors when navigating to the forwarded port, just wait and refresh a couple of times. Airflow takes a few minutes to become available.
-
-### Local Development (without Dev Container)
+### Local Development
 
 If you want to test a DAG locally without Docker or Codespaces, you can run it directly against a local Airflow SQLite database.
 
@@ -204,15 +111,136 @@ export AIRFLOW__CORE__ALLOWED_DESERIALIZATION_CLASSES="airflow.* astro.* __main_
 python dags/<your-dag-file>.py
 ```
 
-DAG files with an `if __name__ == "__main__":` block that calls `dag.test()` can be run directly this way.
+DAG files with an `if __name__ == "__main__":` block that calls `dag.test()` can be run directly this way. Any other DAG runs by its DAG id:
+
+```console
+airflow dags test <dag_id>
+```
+
+`-c '{"<param>": "<value>"}'` overrides the DAG's `Param` values for the run, like `dag.test(run_conf=...)`.
 
 See section [Testing](./CONTRIBUTING.md#testing) in the CONTRIBUTING.md for more info on testing a dag and how you can bypass configuring with AWS.
+
+#### 5. Run the scheduler and UI
+
+`dag.test()` and `airflow dags test` run a DAG without a scheduler. To trigger DAGs from the UI, or to test what the scheduler and DAG processor run (DAG-level callbacks, sensors in `reschedule` mode), start every Airflow component in one process with the same environment variables:
+
+```console
+export AIRFLOW__CORE__LOAD_EXAMPLES=False
+airflow standalone
+```
+
+Open http://localhost:8080 and log in as `admin` with the password printed at startup. It is also saved in `$AIRFLOW_HOME/simple_auth_manager_passwords.json.generated` (`AIRFLOW_HOME` defaults to `~/airflow`). New DAGs are paused; unpause them in the UI or with `airflow dags unpause <dag_id>`.
+
+### Dev Container and Docker Compose (EKS, Airflow 2.10.5)
+
+> [!WARNING]
+> This setup builds the Airflow 2.10.5 image in the [Dockerfile](./Dockerfile), the version EKS runs. The DAGs import from `airflow.sdk`, which Airflow 2.10.5 does not have, so they fail to import here. EKS runs the DAGs from a commit pinned before the Airflow 3 upgrade. Use [Local Development](#local-development) to develop and test DAGs.
+
+A complete Airflow deployment is made up of multiple services running in parallel, so the steps involved in setting up a dev environment are more complex than you may be used to. There are two steps involved in setting up Airflow for development:
+
+1. Develop within the provided dev container. A dev container is a virtual machine (e.g., Docker container) that standardizes tools, libraries, and configs for consistent development across machines. This provides us with a consistent environment for the next step.
+2. Run docker compose to deploy the full suite of containerized services.
+
+#### Dev Container
+
+There are multiple ways to set up and interface with a dev container, depending on whether you want an IDE-agnostic approach, a VS Code workflow with the Dev Containers extension, or a cloud option like GitHub Codespaces. The cloud option is the most straightforward, although because the infrastructure is running in the cloud, there is a limit on how much time we can develop before we need to pay for the service.
+
+* Note: The environment setup for the Dev Container is defined in [Dockerfile](./Dockerfile). _How_ we deploy the container locally is defined in [devcontainer.json](.devcontainer/devcontainer.json).
+
+##### Codespaces
+
+1. Create a branch for your changes
+2. From the main repo page click on `<> Code`
+3. Under `Codespaces` click the 3 ellipses and `New with options...`
+4. Choose your branch and 4-core (2-core is sufficient for basic edits without docker compose).
+
+##### VS Code
+
+Visual Studio Code provides an extension so that your IDE terminal and other development tools are run within a dev container. Follow the instructions [here](https://code.visualstudio.com/docs/devcontainers/tutorial) to set up the Dev Containers extension. Do not create a new dev container, but rather use the existing configuration by opening the Command Palette (CMD+Shift+p by default on Mac) → "Dev Containers: Reopen in Container."
+
+Set `AWS_PROFILE` in `.env` (see [AWS credentials](#aws-credentials-required-for-all-options) above) so the container can reach the Airflow Secrets backend. Alternatively, you can [connect to Codespaces as a remote environment from within VS Code](https://docs.github.com/en/codespaces/developing-in-a-codespace/using-github-codespaces-in-visual-studio-code).
+
+#### Docker Compose
+
+Ensure that your Docker installation is up to date (we use [Docker Compose V2](https://docs.docker.com/compose/compose-v2/)). It's recommended that you deploy from within the included dev container (previous section).
+
+We pass environment variables to our build via the `.env` file. Configure your AWS credentials there following the [AWS credentials](#aws-credentials-required-for-all-options) section above (set `AWS_PROFILE` locally, or run `scripts/aws-sso-to-env.sh` in Codespaces).
+
+```console
+# Duplicate example `.env` file, then set your AWS credentials in it.
+cp .env.example .env
+```
+
+To build and deploy our Airflow services to background containers:
+
+```console
+docker compose up --build --detach
+```
+
+Congrats! You have completed set up of the dev environment.
+
+#### Interfacing with Airflow
+
+Airflow is made up of multiple components or services working together. The webserver exposes a browser-accessible port, but in a development environment we often want to interface with Airflow through its CLI.
+
+##### CLI
+
+We can see which services are currently running:
+```console
+# list running docker containers
+docker compose ps
+
+# see stats
+docker compose stats
+```
+
+We provide a convenience script [airflow.sh](./airflow.sh) to invoke the Airflow CLI within the same container environment as the webserver/scheduler:
+
+```console
+# Start a shell inside one of the containers
+./airflow.sh bash
+
+# List our DAGs
+./airflow.sh dags list
+```
+
+It may be helpful at this point to verify that Airflow has access to the secrets backend.
+```console
+./airflow.sh python
+```
+```python
+import boto3
+
+secretsmanager = boto3.client("secretsmanager", region_name='us-east-1')
+secret_prefixes = ["airflow/connections/", "airflow/variables/"] # see secrets.backend_kwargs in airflow.cfg
+all_secrets = secretsmanager.list_secrets()["SecretList"]
+for secret in all_secrets:
+    if any([secret["Name"].startswith(p) for p in secret_prefixes]):
+        print(secret["Name"])
+```
+
+##### Browser
+
+We can see which ports our Airflow services expose under `PORTS`:
+```
+docker compose ps
+```
+
+Airflow’s webserver listens on port 8080 by default via the localhost url: http://localhost:8080. You can access the local server in two ways:
+
+- If you run the service locally on your machine, open the localhost url link in your browser.
+- If you run the service inside a GitHub Codespace, localhost:8080 refers to the Codespace virtual machine, not your computer. In that case, use the forwarded port URL (e.g., `https://<codespace-name>-8080.app.github.dev`) or Ctrl/Cmd-click the localhost url link inside the Codespace to automatically use the correct forwarded URL
+
+The username and password will be "airflow".
+
+If you encounter the `nginx bad gateway` errors when navigating to the forwarded port, just wait and refresh a couple of times. Airflow takes a few minutes to become available.
 
 ### Local DAGs
 
 This repository also contains recipes for specific projects that either don't need to be deployed to Airflow or are not ready to be deployed to Airflow. These recipes can be run locally from the `local` directory. Each sub-directory contains recipes specific to a project and those project folders have their own documentation for running the recipes.
 
-For local development outside of Docker, we provide a convenience script to set up a Python virtual environment:
+The recipes use [py-orca](https://github.com/Sage-Bionetworks-Workflows/py-orca), which pins Airflow 2.10.5 and Python <3.12, so they need their own Python 3.10 environment, separate from the [Local Development](#local-development) one. A convenience script sets it up with the packages in [local/requirements.txt](./local/requirements.txt):
 
 ```console
 bash local/dev_setup.sh
@@ -224,6 +252,8 @@ source venv/bin/activate
 For detailed contribution guidelines, repository structure, and testing instructions, see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Releases
+
+The container is the Airflow 2.10.5 image that EKS runs, built from the [Dockerfile](./Dockerfile). MWAA does not use it: DAGs deploy to MWAA as described in [Deploying DAGs](./mwaa/README.md#deploying-dags).
 
 To release a new version of the `orca-recipes` container to GHCR:
 
