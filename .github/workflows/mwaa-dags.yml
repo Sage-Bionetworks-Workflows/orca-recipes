@@ -23,10 +23,6 @@ concurrency:
 permissions:
   contents: read
 
-env:
-  PYTHON_VERSION: "3.12"
-  AIRFLOW_VERSION: "2.11.2"
-
 jobs:
   # Determine the exact commit to test and deploy.
   # If push to main: use the commit that triggered the workflow.
@@ -71,14 +67,29 @@ jobs:
         with:
           ref: ${{ needs.resolve.outputs.sha }}
 
+      # This workflow file always comes from main, so the versions come from the deployed
+      # commit: the Source: line of its mwaa/constraints.txt header is
+      # .../constraints-<airflow>/constraints-<python>.txt
+      - name: Read the MWAA Airflow and Python versions from mwaa/constraints.txt
+        id: versions
+        run: |
+          versions=$(sed -nE 's|^# Source: .*/constraints-([0-9.]+)/constraints-([0-9.]+)\.txt$|airflow=\1\npython=\2|p' mwaa/constraints.txt)
+          if [ -z "$versions" ]; then
+            echo "::error::mwaa/constraints.txt has no '# Source: .../constraints-<airflow>/constraints-<python>.txt' line"
+            exit 1
+          fi
+          echo "$versions" >> "$GITHUB_OUTPUT"
+
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          python-version: ${{ env.PYTHON_VERSION }}
+          python-version: ${{ steps.versions.outputs.python }}
 
       - name: Install the MWAA Airflow version and requirements
         # --only-binary :all: installs only wheels, so pip never runs a package's setup
         # script. python-nvd3 (an Airflow dependency) is only published as an sdist, so it
         # is the one package built from source. Its version is pinned by mwaa/constraints.txt
+        env:
+          AIRFLOW_VERSION: ${{ steps.versions.outputs.airflow }}
         run: |
           pip install --only-binary :all: --no-binary python-nvd3 \
             "apache-airflow[amazon,celery,snowflake]==${AIRFLOW_VERSION}" \
