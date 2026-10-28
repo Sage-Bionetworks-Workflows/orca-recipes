@@ -31,6 +31,7 @@
   - [Shared Utilities](#shared-utilities)
     - [Logging](#logging)
     - [Validating Required Secrets](#validating-required-secrets)
+    - [Dev vs Prod Values](#dev-vs-prod-values)
   - [Testing and Validation](#testing-and-validation)
   - [DAG Failure Alerts](#dag-failure-alerts)
 - [Secrets](#secrets)
@@ -466,7 +467,7 @@ Follow these best practices when developing DAGs to ensure reliability and maint
 
 ### Shared Utilities
 
-The repository provides shared helper functions in `src.utils` for common DAG development tasks. Prefer using these helpers rather than duplicating the logic in individual DAGs.
+The repository provides shared helper functions in `src.utils` and `src.environment` for common DAG development tasks. Prefer using these helpers rather than duplicating the logic in individual DAGs.
 
 #### Logging
 
@@ -513,6 +514,27 @@ Missing required secrets before running locally:
 ```
 
 This is particularly useful when developing locally with `LocalFilesystemBackend`, where missing connections or variables are a common source of configuration errors.
+
+#### Dev vs Prod Values
+
+Use `by_environment()` for values that differ between MWAA dev and prod, such as Synapse table IDs, S3 buckets, Slack channels, or whether a DAG writes its results:
+
+```python
+from airflow.sdk import Param
+
+from src.environment import by_environment
+
+dag_params = {
+    "slack_channel": Param(by_environment(dev="dpe-prs", prod="hotdrops"), type="string"),
+    "push_results_to_s3": Param(by_environment(dev=False, prod=True), type="boolean"),
+}
+```
+
+* **`dev` and `prod` are required** - Other environments can be passed by name, for example `by_environment(dev=..., prod=..., staging=...)`
+* **Unset means dev** - The environment comes from `AIRFLOW__ORCA__ENVIRONMENT`, which eks-stack sets on each MWAA environment from `deployment_environment`. When it is unset (local runs and tests) or names an environment with no value, the `dev` value is used, so a DAG never uses production values by accident
+* **It sets the default, not the run value** - The value is chosen when the DAG is parsed and becomes the `Param` default. Scheduled runs use it, but a manual trigger can still override it in the trigger form
+* **Connection IDs usually don't need it** - MWAA dev and prod each read their own AWS Secrets Manager, so the same connection ID resolves to the dev secret on dev and the prod secret on prod
+* **`ENVIRONMENT`** holds the current environment name if you need it directly, for example `tags=["test", ENVIRONMENT]` in `dags/hello_world_dag.py`
 
 ### Testing and Validation
 
