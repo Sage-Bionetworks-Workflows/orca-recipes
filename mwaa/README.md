@@ -158,6 +158,8 @@ Once this resolves cleanly, continue with the deployment steps in
    satisfies the `Reason`, keep the upstream version and remove the row.
 5. Re-run the [check](#changing-a-dependency-in-requirements-airflowtxt) with the new
    Airflow and Python versions.
-6. Update `AIRFLOW_VERSION` and `PYTHON_VERSION` in the MWAA workflows in
-   `.github/workflows/`.
+6. Update `AIRFLOW_VERSION` and `PYTHON_VERSION` in
+   `.github/workflows/mwaa-dependency-submission.yml`. `mwaa-dags.yml` reads them from
+   the `Source:` URL of the deployed commit's `mwaa/constraints.txt`, because it always
+   runs from `main`.
 7. Bump the airflow version and the pinned SHA of this repo together in eks-stack.
