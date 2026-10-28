@@ -22,9 +22,12 @@ from src.environment import ENVIRONMENT, by_environment
     catchup=False,
     tags=["test", ENVIRONMENT],
 )
-def hello_world_dag():
+def hello_world_dag() -> None:
+    """Log a greeting chosen for the current MWAA environment."""
+
     @task
     def say_hello() -> None:
+        """Print the dev or prod greeting."""
         print(by_environment(dev="Hello from dev!", prod="Hello from prod!"))
 
     say_hello()
