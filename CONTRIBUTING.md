@@ -5,8 +5,6 @@
 - [Development](#development)
   - [Environment](#environment)
     - [Infrastructure](#infrastructure)
-      - [Core Infrastructure Files](#core-infrastructure-files)
-      - [Development Environment Files](#development-environment-files)
     - [Code](#code)
   - [Structure](#structure)
   - [Testing](#testing)
@@ -62,44 +60,6 @@ The development environment breaks down into two categories: Infrastructure and 
 
 The DAGs run on Amazon MWAA (Airflow 3.3.1, Python 3.12). The MWAA environments are created by [eks-stack](https://github.com/Sage-Bionetworks-Workflows/eks-stack) (`modules/mwaa`). This repo provides the DAGs and the Python packages MWAA installs; see [mwaa/README.md](./mwaa/README.md) for how both are deployed. See [Local Development](./README.md#local-development) in the README to set up a local environment that matches MWAA.
 
-The following files build the Airflow 2.10.5 environment that EKS runs, and the [dev container and Docker Compose setup](./README.md#dev-container-and-docker-compose-eks-airflow-2105). The DAGs do not import on it:
-
-##### Core Infrastructure Files
-
-* `docker-compose.yaml` - Orchestrates the multi-container Airflow setup, including:
-   * Airflow webserver, scheduler, and workers
-   * PostgreSQL database (metadata storage)
-   * Redis (message broker for CeleryExecutor)
-   * Container networking, volumes, and health checks
-
-* `Dockerfile` - Builds the custom Airflow Docker image:
-   * All Python DAGs run within this environment
-
-* `config/airflow.cfg` - Airflow configuration file that controls:
-   * Scheduler behavior and intervals
-   * Executor settings (CeleryExecutor)
-   * Secrets backend configuration (AWS Secrets Manager)
-   * Logging, security, and other operational settings
-
-##### Development Environment Files
-
-* `.devcontainer/devcontainer.json` - VS Code Dev Container configuration for GitHub Codespaces and local development:
-   * Configures the development environment, defines VS Code extensions to install, and sets up port forwarding and environment variables.
-
-* `.env.example` - Template for environment variables used by Docker Compose:
-   * Note that this is not necessarily the preferred way to pass runtime configuration settings
-   * Can include Airflow connection strings, AWS credentials for secrets backend, etc.
-
-When making changes to infrastructure files (Dockerfile, docker-compose.yaml, config files), you'll need to rebuild the containers to see your changes take effect:
-
-```console
-docker compose down
-docker compose up --build --detach
-# OR
-# do not use cached images
-# docker compose up --no-cache --build --detach
-```
-
 #### Code
 
 Python dependencies are managed in requirement files.
@@ -128,10 +88,10 @@ Testing breaks down into two categories: formal testing via unit tests and relat
 
 #### Unit Testing
 
-Unit tests can be found in `tests/`. We use `pytest` as part of a Github actions workflow to automatically run tests when new commits are pushed to a branch. To run them locally, install `pytest` and `pytest-mock` into your [local Airflow environment](./README.md#local-development), as CI does:
+Unit tests can be found in `tests/`. We use `pytest` as part of a Github actions workflow to automatically run tests when new commits are pushed to a branch. To run them locally, install [requirements-dev.txt](./requirements-dev.txt) into your [local Airflow environment](./README.md#local-development), as CI does:
 
 ```
-pip install pytest pytest-mock -c mwaa/constraints.txt
+pip install -r requirements-dev.txt -c mwaa/constraints.txt
 python -m pytest tests/ -v --tb=short
 ```
 
@@ -233,7 +193,10 @@ Presently, integration testing means triggering your DAG in Airflow and manually
 
 If you change `requirements-airflow.txt` or `mwaa/constraints.txt`, re-run `bash scripts/install_local_airflow.sh`.
 
-To run your branch on MWAA dev, add the `deploy-to-dev` label to its pull request. Dev is shared, so read [Before you deploy to dev](./mwaa/README.md#before-you-deploy-to-dev) first. See [Deploying DAGs](./mwaa/README.md#deploying-dags) for the other ways to deploy.
+To run your branch on MWAA dev, add the `deploy-to-dev` label to its pull request. See [Deploying DAGs](./mwaa/README.md#deploying-dags) for the other ways to deploy.
+
+> [!WARNING]
+> Dev is shared. Read [Before you deploy to dev](./mwaa/README.md#before-you-deploy-to-dev) before you deploy.
 
 ##### DAG Testing
 
@@ -272,7 +235,7 @@ Steps to Run:
 4. Once you've confirmed the result, **re-pause** the DAG so it doesn't keep running or getting triggered unintentionally.
 
 > [!NOTE]
-> You can also run these **locally** as plain scripts instead of triggering them through the Airflow UI — see [Running Integration Test DAGs Locally](#running-integration-test-dags-locally) below, which covers the extra environment variable a local run needs.
+> You can also run these **locally** as plain scripts instead of triggering them through the Airflow UI — see [Running Integration Test DAGs Locally](#running-integration-test-dags-locally) below, which covers the environment variables a local run needs.
 
 #### Testing DAGs Locally
 
@@ -290,11 +253,10 @@ The integration test DAGs under [`dags/integration_tests/`](./dags/integration_t
 python3 dags/integration_tests/test_synapse_hook.py
 ```
 
-These DAGs import shared helpers from this repo's `dags/src/` package (e.g. `from src.utils import validate_required_secrets`). Because they live in a *subfolder* of `dags/`, running them directly puts `dags/integration_tests/` on `sys.path` — not `dags/` — so `src` can't be found. Point `AIRFLOW__CORE__DAGS_FOLDER` at this repo's `dags/` folder and Airflow appends it to `sys.path` on import, which resolves them:
+These DAGs import shared helpers from this repo's `dags/src/` package (e.g. `from src.utils import validate_required_secrets`). Because they live in a *subfolder* of `dags/`, running them directly puts `dags/integration_tests/` on `sys.path` — not `dags/` — so `src` can't be found. Load `.env` from [3. Configure environment variables](./README.md#3-configure-environment-variables) first. It sets two variables that a local run needs:
 
-```console
-export AIRFLOW__CORE__DAGS_FOLDER=/absolute/path/to/orca-recipes/dags
-```
+- `PYTHONPATH` adds `dags/` to `sys.path`, so `src` can be found.
+- `AIRFLOW__CORE__DAGS_FOLDER` points Airflow at `dags/`. If the DAG file is not in that folder, `dag.test()` stops with `the dag is not serialized`.
 
 You'll also need credentials configured for whichever connections the DAG uses; see [Skip AWS Secrets Manager for Local Development](#skip-aws-secrets-manager-for-local-development) below.
 
@@ -307,6 +269,8 @@ If you'd rather not authenticate to AWS just to test a DAG (e.g., to talk to the
 export AIRFLOW__SECRETS__BACKEND=airflow.secrets.local_filesystem.LocalFilesystemBackend
 export AIRFLOW__SECRETS__BACKEND_KWARGS='{"connections_file_path": "connections.yaml"}'
 ```
+
+`.env.example` has these two lines, commented out.
 
 Create `connections.yaml` from the template:
 
@@ -439,15 +403,6 @@ The DAGs run on two Amazon MWAA environments, created by [eks-stack](https://git
 	* Deployed from the `main` branch in this repository.
 
 See [Deploying DAGs](./mwaa/README.md#deploying-dags) for how DAGs deploy and roll back, and eks-stack's [Accessing the Airflow UI](https://github.com/Sage-Bionetworks-Workflows/eks-stack/blob/main/modules/mwaa/README.md#accessing-the-airflow-ui) to open the UI.
-
-The EKS Airflow 2.10.5 servers run the DAGs from a commit pinned before the Airflow 3 upgrade, so changes merged to `main` do not reach them:
-
-* `airflow-dev`: Hosted in the `dnt-dev` AWS account.
-* `airflow-prod`: Hosted in the `dpe-prod` AWS account. Deployed using OpenTofu. Only accessible via [port forwarding](https://kubernetes.io/docs/tasks/access-application-cluster/port-forward-access-application-cluster/#forward-a-local-port-to-a-port-on-the-pod).
-
-Please see [Connecting to AWS EKS](https://sagebionetworks.jira.com/wiki/spaces/DPE/pages/3389325317/Connecting+to+AWS+EKS+Kubernetes+K8s+cluster) on Confluence if you want to interface with the EKS/Kubernetes cluster. Otherwise, for local development you will likely only be interested in using AWS Secrets Manager as a backend for Airflow Secrets.
-
-There is a helper script in this repository for accessing this Airflow server.
 
 ## DAG Development Best Practices
 
@@ -642,7 +597,7 @@ Airflow secrets (_e.g._ connections and variables) are stored in Secrets Manager
 
 These are all located in AWS Secrets Manager in the `dpe-prod` account.
 
-Developers access these secrets with their own AWS Identity Center (SSO) credentials — there is no shared IAM user or long-lived access key to manage or rotate. Set up an SSO profile once and log in per the [AWS credentials](./README.md#aws-credentials-required-for-all-options) section of the README (the source of truth for the `aws configure sso` / `aws sso login` steps). On MWAA, the environment's execution role reads them, from Secrets Manager in the environment's own account: `dpe-prod` for `synapse-mwaa-prod` and `dnt-dev` for `synapse-mwaa-dev` (see [Deployment Infrastructure](#deployment-infrastructure)). On EKS, the pods assume an IRSA role (`airflow-croissant`). No credentials are stored in the connection secrets.
+Developers access these secrets with their own AWS Identity Center (SSO) credentials — there is no shared IAM user or long-lived access key to manage or rotate. Set up an SSO profile once and log in per the [AWS credentials](./README.md#aws-credentials) section of the README (the source of truth for the `aws configure sso` / `aws sso login` steps). On MWAA, the environment's execution role reads them, from Secrets Manager in the environment's own account: `dpe-prod` for `synapse-mwaa-prod` and `dnt-dev` for `synapse-mwaa-dev` (see [Deployment Infrastructure](#deployment-infrastructure)). On EKS, the pods assume an IRSA role (`airflow-croissant`). No credentials are stored in the connection secrets.
 
 ### Creating a new secret
 
@@ -724,66 +679,12 @@ botocore.exceptions.ClientError: An error occurred (UnrecognizedClientException)
 ```
 — even when the connection ID strings themselves look correct.
 
-**To fix it, refresh your SSO session** by re-running the credential steps for your path in the README's [AWS credentials](./README.md#aws-credentials-required-for-all-options) section (`aws sso login`, plus `scripts/aws-sso-to-env.sh` + a stack restart in Codespaces).
+**To fix it, refresh your SSO session** with `aws sso login`, as described in the README's [AWS credentials](./README.md#aws-credentials) section.
 
 If it still fails, confirm your profile is configured and you are assigned the `Developer` (or `Administrator`) role in `dpe-prod` (`766808016710`):
 ```console
 aws sts get-caller-identity --profile <your-sso-profile>
 ```
-
-#### Codespaces: AWS Credentials Not Reaching the Airflow Containers
-
-This applies to the [Codespaces and Docker Compose setup](./README.md#dev-container-and-docker-compose-eks-airflow-2105), which runs Airflow 2.10.5.
-
-In Codespaces, authenticate via the **short-lived keys path**, not `AWS_PROFILE`.
-There is no host `~/.aws` to mount, so an SSO profile can't be resolved inside the
-containers — `scripts/aws-sso-to-env.sh` exports temporary keys into `.env` instead.
-Two failure modes:
-
-- **`botocore.exceptions.ProfileNotFound: The config profile () could not be found`**
-  — `AWS_PROFILE` is set to an empty string. Make sure `AWS_PROFILE` is **not** set
-  in your Codespace `.env` at all (it's for the local profile path, not Codespaces).
-- **`UnrecognizedClientException` / `InvalidClientTokenId: The security token
-  included in the request is invalid`** — the containers are running with stale,
-  incomplete, or mismatched temporary credentials.
-
-Fix, in order:
-
-1. Confirm your SSO session is valid at the source:
-   ```console
-   aws sts get-caller-identity --profile dpe-airflow
-   ```
-   If it fails, re-run `aws sso login --profile dpe-airflow` and finish the browser flow.
-1. Re-export a fresh, matched credential set into `.env` (clear stale/duplicate lines first):
-   ```console
-   sed -i '/^AWS_ACCESS_KEY_ID=/d;/^AWS_SECRET_ACCESS_KEY=/d;/^AWS_SESSION_TOKEN=/d' .env
-   bash scripts/aws-sso-to-env.sh dpe-airflow
-   ```
-1. **Recreate the containers.** Containers only read `.env` at (re)creation, so a
-   plain `restart` won't pick up new credentials — and it must reach the **worker**
-   (where tasks run), so recreate the whole stack:
-   ```console
-   docker compose up -d --force-recreate
-   ```
-1. Verify the **worker** has a complete, valid set (access key starts with `ASIA`,
-   session token present):
-   ```console
-   docker compose exec airflow-worker env | grep AWS_
-   docker compose exec airflow-worker python -c \
-     "import boto3; print(boto3.client('sts', region_name='us-east-1').get_caller_identity())"
-   ```
-1. A task that already failed keeps its old error — clear it (or trigger a fresh run)
-   so it re-executes with the refreshed credentials:
-   ```console
-   docker compose exec airflow-scheduler airflow tasks clear <dag_id> -y
-   ```
-
-> [!NOTE]
-> These exported keys are **short-lived (~1 hour)**. A long-waiting sensor (e.g. a
-> RecordSet/CurationTask poll) can outlive them, so the step that finally runs may
-> fail with `ExpiredToken`. Re-run steps 2–3 shortly before the pipeline needs to
-> run. For long runs, use the local `AWS_PROFILE` + mounted `~/.aws` path (which
-> auto-refreshes) rather than Codespaces.
 
 ### Refreshing the `AWS_TOWER_PROD_S3_CONN` - Expired AWS credentials
 
