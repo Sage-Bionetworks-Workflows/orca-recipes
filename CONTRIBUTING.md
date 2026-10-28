@@ -533,6 +533,7 @@ dag_params = {
 * **`dev` and `prod` are required** - Other environments can be passed by name, for example `by_environment(dev=..., prod=..., staging=...)`
 * **Unset means dev** - The environment comes from `AIRFLOW__ORCA__ENVIRONMENT`, which eks-stack sets on each MWAA environment from `deployment_environment`. When it is unset (local runs and tests) or names an environment with no value, the `dev` value is used, so a DAG never uses production values by accident
 * **It sets the default, not the run value** - The value is chosen when the DAG is parsed and becomes the `Param` default. Scheduled runs use it, but a manual trigger can still override it in the trigger form
+* **No prod value yet? Pass `prod=None`** - Use this when you deploy a new DAG to dev before its prod resources exist. On prod, a `None` default fails the `Param` type check, so the DAG can't run with the missing value: a scheduled DAG shows an import error, and a manual trigger fails unless a value is entered. Values used outside a `Param` get no check and only fail when the code that uses them runs
 * **Connection IDs usually don't need it** - MWAA dev and prod each read their own AWS Secrets Manager, so the same connection ID resolves to the dev secret on dev and the prod secret on prod
 * **`ENVIRONMENT`** holds the current environment name if you need it directly, for example `tags=["test", ENVIRONMENT]` in `dags/hello_world_dag.py`
 
