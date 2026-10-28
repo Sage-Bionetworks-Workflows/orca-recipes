@@ -15,10 +15,6 @@ on:
 
 permissions: {}
 
-env:
-  PYTHON_VERSION: "3.12"
-  AIRFLOW_VERSION: "3.3.1"
-
 jobs:
   submit:
     runs-on: ubuntu-latest
@@ -30,11 +26,17 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Read the MWAA Airflow and Python versions from mwaa/constraints.txt
+        id: versions
+        run: bash scripts/mwaa_versions.sh >> "$GITHUB_OUTPUT"
+
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          python-version: ${{ env.PYTHON_VERSION }}
+          python-version: ${{ steps.versions.outputs.python }}
 
       - name: Resolve the packages MWAA installs
+        env:
+          AIRFLOW_VERSION: ${{ steps.versions.outputs.airflow }}
         run: |
           pip install --dry-run --ignore-installed --quiet --report report.json \
             --only-binary :all: \

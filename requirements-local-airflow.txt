@@ -1,5 +1,5 @@
-# Local Airflow for running DAGs with dag.test(), matching MWAA (Airflow 3.3.1,
-# Python 3.12). Install with scripts/install_local_airflow.sh
+# Local Airflow for running DAGs with dag.test(), matching MWAA. Install with
+# scripts/install_local_airflow.sh, which adds the apache-airflow version from
+# mwaa/constraints.txt
 -c mwaa/constraints.txt
-apache-airflow[amazon,celery,snowflake]==3.3.1
 -r requirements-airflow.txt
