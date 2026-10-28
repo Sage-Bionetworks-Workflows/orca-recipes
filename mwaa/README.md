@@ -81,7 +81,7 @@ MWAA update, so a wrong dependency is slow to fix.
 ## How dependencies are installed
 
 MWAA installs `requirements-airflow.txt` from the root of this repo, the same file used
-by the EKS Airflow image and CI. eks-stack pins a commit SHA of this repo, downloads
+by CI. eks-stack pins a commit SHA of this repo, downloads
 `requirements-airflow.txt` at that SHA, adds a `--constraint` line pointing at
 `mwaa/constraints.txt` at the same SHA, and uploads the result to the MWAA bucket as
 `requirements.txt`. A dependency change reaches MWAA only when that SHA is bumped in

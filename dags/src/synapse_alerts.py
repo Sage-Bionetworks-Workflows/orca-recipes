@@ -72,8 +72,8 @@ def synapse_failure_callback(
     the original task error.
 
     If the task logs are not available as a shareable URL (e.g. when running Airflow
-    locally or in GitHub Codespaces), the alert will include guidance to view the
-    logs directly in the Airflow UI or inspect the Airflow container logs.
+    locally), the alert will include guidance to view the logs directly in the
+    Airflow UI or under $AIRFLOW_HOME/logs.
 
     Arguments:
         message (Optional[str]): DAG-specific note appended to the alert body
@@ -124,8 +124,8 @@ def synapse_failure_callback(
         else:
             body += (
                 "Logs: Not available as a shareable URL in this environment.\n"
-                "If you're running Airflow locally or in GitHub Codespaces, view the task "
-                "logs directly in the Airflow UI or inspect the Airflow container logs.\n"
+                "If you're running Airflow locally, view the task logs directly in the "
+                "Airflow UI or under $AIRFLOW_HOME/logs.\n"
             )
         if message:
             body += (
