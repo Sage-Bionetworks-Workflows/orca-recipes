@@ -87,10 +87,10 @@ Testing breaks down into two categories: formal testing via unit tests and relat
 
 #### Unit Testing
 
-Unit tests can be found in `tests/`. We use `pytest` as part of a Github actions workflow to automatically run tests when new commits are pushed to a branch. To run them locally, install `pytest` and `pytest-mock` into your [local Airflow environment](./README.md#local-development), as CI does:
+Unit tests can be found in `tests/`. We use `pytest` as part of a Github actions workflow to automatically run tests when new commits are pushed to a branch. To run them locally, install [requirements-dev.txt](./requirements-dev.txt) into your [local Airflow environment](./README.md#local-development), as CI does:
 
 ```
-pip install pytest pytest-mock -c mwaa/constraints.txt
+pip install -r requirements-dev.txt -c mwaa/constraints.txt
 python -m pytest tests/ -v --tb=short
 ```
 
@@ -192,7 +192,10 @@ Presently, integration testing means triggering your DAG in Airflow and manually
 
 If you change `requirements-airflow.txt` or `mwaa/constraints.txt`, re-run `bash scripts/install_local_airflow.sh`.
 
-To run your branch on MWAA dev, add the `deploy-to-dev` label to its pull request. Dev is shared, so read [Before you deploy to dev](./mwaa/README.md#before-you-deploy-to-dev) first. See [Deploying DAGs](./mwaa/README.md#deploying-dags) for the other ways to deploy.
+To run your branch on MWAA dev, add the `deploy-to-dev` label to its pull request. See [Deploying DAGs](./mwaa/README.md#deploying-dags) for the other ways to deploy.
+
+> [!WARNING]
+> Dev is shared. Read [Before you deploy to dev](./mwaa/README.md#before-you-deploy-to-dev) before you deploy.
 
 ##### DAG Testing
 
@@ -231,7 +234,7 @@ Steps to Run:
 4. Once you've confirmed the result, **re-pause** the DAG so it doesn't keep running or getting triggered unintentionally.
 
 > [!NOTE]
-> You can also run these **locally** as plain scripts instead of triggering them through the Airflow UI — see [Running Integration Test DAGs Locally](#running-integration-test-dags-locally) below, which covers the extra environment variable a local run needs.
+> You can also run these **locally** as plain scripts instead of triggering them through the Airflow UI — see [Running Integration Test DAGs Locally](#running-integration-test-dags-locally) below, which covers the environment variables a local run needs.
 
 #### Testing DAGs Locally
 
@@ -249,11 +252,10 @@ The integration test DAGs under [`dags/integration_tests/`](./dags/integration_t
 python3 dags/integration_tests/test_synapse_hook.py
 ```
 
-These DAGs import shared helpers from this repo's `dags/src/` package (e.g. `from src.utils import validate_required_secrets`). Because they live in a *subfolder* of `dags/`, running them directly puts `dags/integration_tests/` on `sys.path` — not `dags/` — so `src` can't be found. Point `AIRFLOW__CORE__DAGS_FOLDER` at this repo's `dags/` folder and Airflow appends it to `sys.path` on import, which resolves them:
+These DAGs import shared helpers from this repo's `dags/src/` package (e.g. `from src.utils import validate_required_secrets`). Because they live in a *subfolder* of `dags/`, running them directly puts `dags/integration_tests/` on `sys.path` — not `dags/` — so `src` can't be found. Load `.env` from [3. Configure environment variables](./README.md#3-configure-environment-variables) first. It sets two variables that a local run needs:
 
-```console
-export AIRFLOW__CORE__DAGS_FOLDER=/absolute/path/to/orca-recipes/dags
-```
+- `PYTHONPATH` adds `dags/` to `sys.path`, so `src` can be found.
+- `AIRFLOW__CORE__DAGS_FOLDER` points Airflow at `dags/`. If the DAG file is not in that folder, `dag.test()` stops with `the dag is not serialized`.
 
 You'll also need credentials configured for whichever connections the DAG uses; see [Skip AWS Secrets Manager for Local Development](#skip-aws-secrets-manager-for-local-development) below.
 
@@ -266,6 +268,8 @@ If you'd rather not authenticate to AWS just to test a DAG (e.g., to talk to the
 export AIRFLOW__SECRETS__BACKEND=airflow.secrets.local_filesystem.LocalFilesystemBackend
 export AIRFLOW__SECRETS__BACKEND_KWARGS='{"connections_file_path": "connections.yaml"}'
 ```
+
+`.env.example` has these two lines, commented out.
 
 Create `connections.yaml` from the template:
 

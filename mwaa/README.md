@@ -157,7 +157,8 @@ Once this resolves cleanly, continue with the deployment steps in
    Airflow and Python versions.
 6. Update the versions written out in docs and comments (`git grep` for the old
    versions). The workflows and `scripts/install_local_airflow.sh` read the versions from
-   the `Source:` line with `scripts/mwaa_versions.sh`. `mwaa-dags.yml` parses the line
-   itself, because it runs from `main` against deployed commits that may not have the
-   script.
+   the `Source:` line in `mwaa/constraints.txt` with `scripts/mwaa_versions.sh`.
+   `mwaa-dags.yml` parses the line itself, because it runs from `main` against deployed
+   commits that may not have the script. Keep the line in this format:
+   `# Source: https://raw.githubusercontent.com/apache/airflow/constraints-<airflow>/constraints-<python>.txt`
 7. Bump the airflow version and the pinned SHA of this repo together in eks-stack.

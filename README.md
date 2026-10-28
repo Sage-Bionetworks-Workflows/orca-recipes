@@ -53,13 +53,22 @@ If you want to test a DAG locally, you can run it directly against a local Airfl
 
 #### 1. Install dependencies
 
-There is a shell script that you can run to install the local Airflow requirements. It installs the Airflow version and packages that MWAA runs, constrained by [`mwaa/constraints.txt`](./mwaa/constraints.txt), so run it in a Python 3.12 environment.
+There is a shell script that you can run to install the local Airflow requirements. It installs the Airflow version and packages that MWAA runs, constrained by [`mwaa/constraints.txt`](./mwaa/constraints.txt). Activate a Python 3.12 virtual environment, then run the script. The script stops with an error if `python` is not Python 3.12, or if the `airflow` command on your `PATH` is not the Airflow version that it installed.
 
 ```console
 bash scripts/install_local_airflow.sh
 ```
 
 #### 2. Initialize the Airflow database
+
+> [!WARNING]
+> **If you used Airflow 2 on this machine before, use a new `AIRFLOW_HOME`.** Airflow 3 cannot use the database and `airflow.cfg` that Airflow 2 left in `~/airflow`. `airflow db migrate` stops at migration 0041, and DAGs fail with `No module named 'airflow.providers.fab'`. Set the new `AIRFLOW_HOME` before `airflow db migrate`:
+>
+> ```console
+> export AIRFLOW_HOME="$HOME/airflow3"
+> ```
+>
+> In step 3, also remove the `#` before `AIRFLOW_HOME` in `.env`.
 
 ```console
 airflow db migrate
@@ -71,21 +80,18 @@ This creates the local SQLite metadata database (including the `task_instance` t
 
 Prior to configuring environment variables, configure and log in to an SSO profile with read access to the `dpe-prod` Secrets Manager secrets (`airflow/connections/`, `airflow/variables/`) — see [AWS credentials](#aws-credentials) for the one-time setup and `aws sso login` step.
 
-Set `AWS_PROFILE` to that profile first. Using a profile is the recommended way to authenticate: `aws sso login` and anything that talks to AWS directly (e.g. a DAG's S3 upload) pick it up from the environment, and the backend kwargs below reference it as `$AWS_PROFILE`, so you only fill in the profile name once.
-
-Then set the following exports (e.g., in your shell profile) so Airflow can resolve connections and variables from AWS Secrets Manager and deserialize custom dataclasses passed between tasks:
+[`.env.example`](./.env.example) has the environment variables that Local Development needs. They point Airflow at this repo's `dags/` folder, resolve connections and variables from AWS Secrets Manager with your profile, and let tasks pass custom dataclasses. The comments in the file tell you what each variable does. Copy it to `.env`, then set `AWS_PROFILE` in `.env` to your profile:
 
 ```console
-export AWS_PROFILE=<your-aws-profile>
+cp .env.example .env
+```
 
-# dag.test() runs the DAG as Airflow parses it from this folder
-export AIRFLOW__CORE__DAGS_FOLDER="$PWD/dags"
+Using a profile is the recommended way to authenticate: `aws sso login` and anything that talks to AWS directly (e.g. a DAG's S3 upload) pick it up from the environment, and the backend kwargs reference it as `$AWS_PROFILE`, so you only fill in the profile name once.
 
-export AIRFLOW__SECRETS__BACKEND=airflow.providers.amazon.aws.secrets.secrets_manager.SecretsManagerBackend
+Load `.env` in each new shell, from the repo root:
 
-export AIRFLOW__SECRETS__BACKEND_KWARGS="{\"connections_prefix\": \"airflow/connections\", \"variables_prefix\": \"airflow/variables\", \"profile_name\": \"$AWS_PROFILE\"}"
-
-export AIRFLOW__CORE__ALLOWED_DESERIALIZATION_CLASSES="airflow.* astro.* __main__.*"
+```console
+set -a; source .env; set +a
 ```
 
 #### 4. Run a DAG locally
@@ -106,10 +112,9 @@ See section [Testing](./CONTRIBUTING.md#testing) in the CONTRIBUTING.md for more
 
 #### 5. Run the scheduler and UI
 
-`dag.test()` and `airflow dags test` run a DAG without a scheduler. To trigger DAGs from the UI, or to test what the scheduler and DAG processor run (DAG-level callbacks, sensors in `reschedule` mode), start every Airflow component in one process with the same environment variables:
+`dag.test()` and `airflow dags test` run a DAG without a scheduler. To trigger DAGs from the UI, or to test what the scheduler and DAG processor run (DAG-level callbacks, sensors in `reschedule` mode), start every Airflow component in one process. Load `.env` first, as in [3. Configure environment variables](#3-configure-environment-variables). `AIRFLOW__CORE__DAGS_FOLDER` in it tells Airflow to load the DAGs from this repo:
 
 ```console
-export AIRFLOW__CORE__LOAD_EXAMPLES=False
 airflow standalone
 ```
 

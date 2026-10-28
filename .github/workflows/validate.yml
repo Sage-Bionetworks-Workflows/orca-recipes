@@ -32,7 +32,7 @@ jobs:
         run: |
           pip install --only-binary :all: \
             "apache-airflow[amazon,celery,snowflake]==${AIRFLOW_VERSION}" \
-            -r requirements-airflow.txt pytest pytest-mock \
+            -r requirements-airflow.txt -r requirements-dev.txt \
             -c mwaa/constraints.txt
 
       - name: Run tests
