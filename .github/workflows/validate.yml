@@ -9,8 +9,6 @@ on: # Run on new commits and PR openings
     types: [opened, reopened]
 
 env:
-  PYTHON_VERSION: "3.12"
-  AIRFLOW_VERSION: "3.3.1"
   RUFF_VERSION: "0.15.20"
 
 jobs:
@@ -19,12 +17,18 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Read the MWAA Airflow and Python versions from mwaa/constraints.txt
+        id: versions
+        run: bash scripts/mwaa_versions.sh >> "$GITHUB_OUTPUT"
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: ${{ env.PYTHON_VERSION }}
+          python-version: ${{ steps.versions.outputs.python }}
 
       - name: Install the MWAA Airflow version and requirements
+        env:
+          AIRFLOW_VERSION: ${{ steps.versions.outputs.airflow }}
         run: |
           pip install --only-binary :all: \
             "apache-airflow[amazon,celery,snowflake]==${AIRFLOW_VERSION}" \
@@ -45,7 +49,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: ${{ env.PYTHON_VERSION }}
+          python-version: "3.x"
       - name: Install ruff
         run: pip install "ruff==${{ env.RUFF_VERSION }}"
 
