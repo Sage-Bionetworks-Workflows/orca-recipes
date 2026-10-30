@@ -126,4 +126,3 @@ Common causes:
 Actions:
 
 - Retry with smaller `CHUNK` size
-- If running on codespaces, may need to upgrade to a codespace with more memory

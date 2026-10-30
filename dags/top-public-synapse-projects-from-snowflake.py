@@ -15,9 +15,7 @@ from datetime import date, datetime, timedelta, timezone
 from typing import List, Optional, Sized
 
 import synapseclient
-from airflow.decorators import dag, task
-from airflow.models import Variable
-from airflow.models.param import Param
+from airflow.sdk import Param, Variable, dag, task
 from airflow.providers.snowflake.hooks.snowflake import SnowflakeHook
 from src.synapse_alerts import synapse_failure_callback
 from slack_sdk import WebClient

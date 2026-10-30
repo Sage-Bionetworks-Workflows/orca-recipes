@@ -6,7 +6,7 @@ database.
 """
 from datetime import datetime, timezone
 
-import airflow.hooks.base as base
+from airflow.sdk import BaseHook
 import pytest
 from airflow.exceptions import AirflowNotFoundException
 from requests.exceptions import HTTPError
@@ -98,7 +98,7 @@ def disable_airflow_connections(monkeypatch):
         raise AirflowNotFoundException("no such connection")
 
     monkeypatch.setattr(
-        base.BaseHook, "get_connection", classmethod(mock_get_connection)
+        BaseHook, "get_connection", classmethod(mock_get_connection)
     )
 
 
@@ -480,7 +480,7 @@ def test_client_get_items_stops_on_empty_page(monkeypatch):
 
 def test_config_prefers_airflow_connection(monkeypatch):
     monkeypatch.setattr(
-        base.BaseHook,
+        BaseHook,
         "get_connection",
         classmethod(lambda cls, conn_id: MockConnection()),
     )
@@ -525,7 +525,7 @@ def test_config_raises_when_token_unresolvable(monkeypatch):
 
 def test_config_rejects_malformed_workspace(monkeypatch):
     monkeypatch.setattr(
-        base.BaseHook,
+        BaseHook,
         "get_connection",
         classmethod(
             lambda cls, conn_id: MockConnection(extra_dejson={"workspace": "no-slash"})
@@ -537,7 +537,7 @@ def test_config_rejects_malformed_workspace(monkeypatch):
 
 def test_connection_without_host_leaves_endpoint_to_fallbacks(monkeypatch):
     monkeypatch.setattr(
-        base.BaseHook,
+        BaseHook,
         "get_connection",
         classmethod(lambda cls, conn_id: MockConnection(host=None)),
     )
@@ -547,7 +547,7 @@ def test_connection_without_host_leaves_endpoint_to_fallbacks(monkeypatch):
 
 def test_client_is_lazy_and_cached(monkeypatch):
     monkeypatch.setattr(
-        base.BaseHook,
+        BaseHook,
         "get_connection",
         classmethod(lambda cls, conn_id: MockConnection()),
     )

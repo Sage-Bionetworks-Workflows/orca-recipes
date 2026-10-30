@@ -3,8 +3,7 @@ import logging
 from typing import Optional
 
 from airflow.exceptions import AirflowNotFoundException
-from airflow.hooks.base import BaseHook
-from airflow.models import Variable
+from airflow.sdk import BaseHook, Variable
 
 
 DEFAULT_LOGGER_PREFIX = "sage_airflow"
@@ -57,9 +56,7 @@ def validate_required_secrets(connection_ids: list[str], variable_names: list[st
             missing.append(f"connection: {conn_id}")
 
     for var_name in variable_names:
-        try:
-            Variable.get(var_name)
-        except KeyError:
+        if Variable.get(var_name, default=None) is None:
             missing.append(f"variable: {var_name}")
 
     if missing:

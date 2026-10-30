@@ -6,9 +6,9 @@ python3.10 -m venv venv
 source venv/bin/activate
 # Upgrade pip to latest version
 pip install --upgrade pip
-# Install airflow with constraints
+# Install airflow with constraints. py-orca pins this version
 pip install apache-airflow==2.10.5 --constraint "https://raw.githubusercontent.com/apache/airflow/constraints-2.10.5/constraints-3.10.txt"
-# Install other dependencies
-pip install -r requirements-airflow.txt
+# Install the local/ script dependencies
+pip install -r local/requirements.txt
 # Install dev dependencies
 pip install -r requirements-dev.txt

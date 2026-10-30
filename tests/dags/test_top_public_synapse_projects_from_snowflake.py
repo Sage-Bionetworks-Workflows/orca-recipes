@@ -39,7 +39,7 @@ class TestRaiseIfEmpty:
         # Then the message reports the date actually queried
         assert "2023-12-31" in str(exc_info.value)
 
-    @patch("top-public-synapse-projects-from-snowflake.datetime")
+    @patch.object(dag_module, "datetime")
     def test_message_reports_queried_date_without_backfill_date(
         self, mock_datetime: MagicMock
     ) -> None:

@@ -1086,7 +1086,7 @@ class NextflowTowerHook:
             isn't available (e.g. a local run without a metadata database).
         """
         try:
-            from airflow.hooks.base import BaseHook
+            from airflow.sdk import BaseHook
 
             return BaseHook.get_connection(self.conn_id)
         except AirflowNotFoundException:

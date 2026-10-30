@@ -39,10 +39,7 @@ DAG Parameters:
 from datetime import datetime
 from typing import Any
 
-from airflow.decorators import dag, task
-from airflow.models import Variable
-from airflow.models.dag import DAG
-from airflow.models.param import Param
+from airflow.sdk import DAG, Param, Variable, dag, task
 from slack_sdk import WebClient
 
 from src.nextflow_tower_hook import LaunchInfo, NextflowTowerHook

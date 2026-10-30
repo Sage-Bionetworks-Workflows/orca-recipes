@@ -27,9 +27,15 @@ Each GitHub environment, `mwaa-dev` and `mwaa-prod`, holds two variables, copied
 the eks-stack MWAA stack outputs: `MWAA_BUCKET` and `MWAA_ROLE_ARN`. The deploy is
 skipped while either is empty.
 
-New DAGs are paused when MWAA first sees them. Unpause them in the Airflow UI, opened
-as described in eks-stack's
-[Accessing the Airflow UI](https://github.com/Sage-Bionetworks-Workflows/eks-stack/blob/main/modules/mwaa/README.md#accessing-the-airflow-ui).
+New DAGs are paused when MWAA first sees them. Unpause them in the Airflow UI.
+
+### Opening the Airflow UI
+
+1. For dev, connect to the Sage VPN. The dev UI is only reachable over the VPN.
+2. Log in to the AWS Console of the environment's account through JumpCloud: `dnt-dev`
+   for `synapse-mwaa-dev`, `dpe-prod` for `synapse-mwaa-prod`.
+3. Open **Amazon MWAA** > **Environments** in `us-east-1`, select the environment, and
+   click **Open Airflow UI**.
 
 ### Before you deploy to dev
 
@@ -81,15 +87,15 @@ MWAA update, so a wrong dependency is slow to fix.
 ## How dependencies are installed
 
 MWAA installs `requirements-airflow.txt` from the root of this repo, the same file used
-by the EKS Airflow image and CI. eks-stack pins a commit SHA of this repo, downloads
+by CI. eks-stack pins a commit SHA of this repo, downloads
 `requirements-airflow.txt` at that SHA, adds a `--constraint` line pointing at
 `mwaa/constraints.txt` at the same SHA, and uploads the result to the MWAA bucket as
 `requirements.txt`. A dependency change reaches MWAA only when that SHA is bumped in
 eks-stack.
 
 MWAA always installs with a constraints file. If `requirements.txt` has none, MWAA
-uses the upstream Airflow constraints, which cannot install synapseclient 4.14. That
-is why this repo ships its own.
+uses the upstream Airflow constraints, which conflict with `requirements-airflow.txt` and
+pin packages that have vulnerability alerts. That is why this repo ships its own.
 
 ## `constraints.txt`
 
@@ -112,10 +118,7 @@ as described in [Overriding a pin](#overriding-a-pin).
 
 ### Changing a dependency in `requirements-airflow.txt`
 
-1. Make the change. Until the migration to MWAA is complete, version ranges must
-   resolve under both the EKS image (Airflow 2.10.5, Python 3.10, no constraints) and
-   MWAA (Airflow 2.11.2, Python 3.12, `mwaa/constraints.txt`). Do not pin
-   `apache-airflow`.
+1. Make the change. Do not pin `apache-airflow`.
 2. Find the package in `mwaa/constraints.txt`:
    - Not listed, or listed at a version inside your new range: leave
      `mwaa/constraints.txt` unchanged.
@@ -126,8 +129,8 @@ as described in [Overriding a pin](#overriding-a-pin).
    ```bash
    uv venv -p 3.12 /tmp/mwaa-check
    uv pip install -p /tmp/mwaa-check/bin/python pip \
-     "apache-airflow[amazon,celery,snowflake]==2.11.2" \
-     -c https://raw.githubusercontent.com/apache/airflow/constraints-2.11.2/constraints-3.12.txt
+     "apache-airflow[amazon,celery,snowflake]==3.3.1" \
+     -c https://raw.githubusercontent.com/apache/airflow/constraints-3.3.1/constraints-3.12.txt
    /tmp/mwaa-check/bin/python -m pip install -r requirements-airflow.txt -c mwaa/constraints.txt
    /tmp/mwaa-check/bin/python -m pip check
    ```
@@ -144,6 +147,11 @@ Once this resolves cleanly, continue with the deployment steps in
 2. Add a row to the Overrides table in the header: package, upstream version, new
    version, and the requirement that forces it.
 3. Re-run the [check](#changing-a-dependency-in-requirements-airflowtxt).
+4. In the check environment, run `/tmp/mwaa-check/bin/python -m pip show <package>`. If
+   `Required-by` is empty, nothing in `requirements-airflow.txt` needs the package. MWAA
+   only has it because its image installs it, so pip keeps the image's version. Add the
+   package without a version to the end of `requirements-airflow.txt`, as for
+   `virtualenv` and `werkzeug`, so pip upgrades it to the override.
 
 ### Upgrading the MWAA Airflow version
 
@@ -158,8 +166,10 @@ Once this resolves cleanly, continue with the deployment steps in
    satisfies the `Reason`, keep the upstream version and remove the row.
 5. Re-run the [check](#changing-a-dependency-in-requirements-airflowtxt) with the new
    Airflow and Python versions.
-6. Update `AIRFLOW_VERSION` and `PYTHON_VERSION` in
-   `.github/workflows/mwaa-dependency-submission.yml`. `mwaa-dags.yml` reads them from
-   the `Source:` URL of the deployed commit's `mwaa/constraints.txt`, because it always
-   runs from `main`.
+6. Update the versions written out in docs and comments (`git grep` for the old
+   versions). The workflows and `scripts/install_local_airflow.sh` read the versions from
+   the `Source:` line in `mwaa/constraints.txt` with `scripts/mwaa_versions.sh`.
+   `mwaa-dags.yml` parses the line itself, because it runs from `main` against deployed
+   commits that may not have the script. Keep the line in this format:
+   `# Source: https://raw.githubusercontent.com/apache/airflow/constraints-<airflow>/constraints-<python>.txt`
 7. Bump the airflow version and the pinned SHA of this repo together in eks-stack.

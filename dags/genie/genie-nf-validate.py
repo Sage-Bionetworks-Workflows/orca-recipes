@@ -3,8 +3,7 @@ This runs twice a day. The workflow is configured to only run the data validatio
 
 from datetime import datetime
 
-from airflow.decorators import dag, task
-from airflow.models.param import Param
+from airflow.sdk import Param, dag, task
 
 from src.nextflow_tower_hook import LaunchInfo, NextflowTowerHook
 

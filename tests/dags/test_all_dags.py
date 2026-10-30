@@ -57,7 +57,7 @@ def _parse_dags_like_airflow() -> Dict[str, dict]:
         import json, sys
         from airflow.models import DagBag
 
-        bag = DagBag(dag_folder=sys.argv[1], include_examples=False)
+        bag = DagBag(dag_folder=sys.argv[1])
         print({result_marker!r} + json.dumps({{
             "import_errors": {{str(k): str(v) for k, v in bag.import_errors.items()}},
             "dags": {{

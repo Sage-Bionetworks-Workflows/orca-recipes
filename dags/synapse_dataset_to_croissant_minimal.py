@@ -28,17 +28,16 @@ DAG Parameters:
 
 Running locally (`python dags/synapse_dataset_to_croissant_minimal.py`):
 Set up your environment by following the README's local development steps:
-https://github.com/Sage-Bionetworks-Workflows/orca-recipes/blob/main/README.md#local-development-without-dev-container
+https://github.com/Sage-Bionetworks-Workflows/orca-recipes/blob/main/README.md#local-development
 
 Local runs use the staging Synapse table and test S3 bucket set in the `__main__`
 block, and fail fast if AWS credentials are missing or expired.
 """
-from airflow.decorators import dag, task
+from airflow.sdk import Param, Variable, dag, task
 from datetime import datetime
 from synapseclient.models import query
 from synapseclient import Entity, Synapse
 from synapseclient.models import Table
-from airflow.models.param import Param
 import pandas as pd
 from pandas import DataFrame
 from urllib.parse import quote_plus
@@ -47,7 +46,6 @@ import os
 from io import BytesIO
 from typing import Any, Dict, List
 from types import MethodType
-from airflow.models import Variable
 from logging import NOTSET, Logger, getLogger
 from opentelemetry import trace
 from opentelemetry import context as otel_context
@@ -67,6 +65,7 @@ from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from airflow.providers.amazon.aws.hooks.s3 import S3Hook
 from synapseclient.core.retry import with_retry
 
+from src.environment import ENVIRONMENT, by_environment
 from src.synapse_hook import SynapseHook
 from src.utils import validate_aws_credentials, validate_required_secrets
 
@@ -74,9 +73,9 @@ dag_params = {
     "synapse_conn_id": Param("SYNAPSE_ORCA_SERVICE_ACCOUNT_CONN", type="string"),
     # Synapse table holding the links to the minimal croissant files in S3. The
     # Synapse Web Client reads this table to inject the JSON-LD into dataset pages.
-    "synapse_table_for_croissant_links": Param("syn72041138", type="string"),
-    # Public S3 bucket the minimal croissant files are written to
-    "bucket_name": Param("synapse-croissant-metadata-minimal", type="string"),
+    "synapse_table_for_croissant_links": Param(by_environment(dev="syn77524779", prod="syn72041138"), type="string"),
+    # S3 bucket the minimal croissant files are written to. The prod bucket is public
+    "bucket_name": Param(by_environment(dev="synapse-croissant-metadata-minimal-dev", prod="synapse-croissant-metadata-minimal"), type="string"),
     "push_results_to_s3": Param(True, type="boolean"),
     "push_links_to_synapse": Param(True, type="boolean"),
     "delete_out_of_date_from_s3": Param(True, type="boolean"),
@@ -101,7 +100,7 @@ REGION_NAME = "us-east-1"
 # Since tracing and logging is getting set up outside of the DAG, we need to set
 # the deployment environment here.
 MY_SERVICE_NAME = "airflow-synapse-dataset-to-minimal-croissant"
-MY_DEPLOYMENT_ENVIRONMENT = "prod"
+MY_DEPLOYMENT_ENVIRONMENT = ENVIRONMENT
 MY_SERVICE_VERSION = "1.0.0"
 
 def set_up_tracing() -> Tracer:
@@ -660,14 +659,12 @@ def save_minimal_jsonld_to_s3() -> None:
 dag = save_minimal_jsonld_to_s3()
 
 if __name__ == "__main__":
-    # Staging Synapse table and test S3 bucket. The test bucket lives in the same
-    # `org-sagebase-dpe-prod` account as the production bucket, so the ambient AWS
-    # credentials are unchanged. Sharing one test bucket with the full croissant DAG
+    # Test S3 bucket in the `org-sagebase-dpe-prod` account, which the local AWS
+    # credentials can write to. The dev bucket is in the MWAA dev account. Sharing one test bucket with the full croissant DAG
     # is safe: each DAG's S3 cleanup only considers keys matching its own naming
     # pattern and ignores everything else.
     dag.test(
         run_conf={
-            "synapse_table_for_croissant_links": "syn77524779",
             "bucket_name": "test-synapse-croissant-metadata-minimal",
         }
     )
