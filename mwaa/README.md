@@ -27,9 +27,15 @@ Each GitHub environment, `mwaa-dev` and `mwaa-prod`, holds two variables, copied
 the eks-stack MWAA stack outputs: `MWAA_BUCKET` and `MWAA_ROLE_ARN`. The deploy is
 skipped while either is empty.
 
-New DAGs are paused when MWAA first sees them. Unpause them in the Airflow UI, opened
-as described in eks-stack's
-[Accessing the Airflow UI](https://github.com/Sage-Bionetworks-Workflows/eks-stack/blob/main/modules/mwaa/README.md#accessing-the-airflow-ui).
+New DAGs are paused when MWAA first sees them. Unpause them in the Airflow UI.
+
+### Opening the Airflow UI
+
+1. For dev, connect to the Sage VPN. The dev UI is only reachable over the VPN.
+2. Log in to the AWS Console of the environment's account through JumpCloud: `dnt-dev`
+   for `synapse-mwaa-dev`, `dpe-prod` for `synapse-mwaa-prod`.
+3. Open **Amazon MWAA** > **Environments** in `us-east-1`, select the environment, and
+   click **Open Airflow UI**.
 
 ### Before you deploy to dev
 
@@ -141,6 +147,11 @@ Once this resolves cleanly, continue with the deployment steps in
 2. Add a row to the Overrides table in the header: package, upstream version, new
    version, and the requirement that forces it.
 3. Re-run the [check](#changing-a-dependency-in-requirements-airflowtxt).
+4. In the check environment, run `/tmp/mwaa-check/bin/python -m pip show <package>`. If
+   `Required-by` is empty, nothing in `requirements-airflow.txt` needs the package. MWAA
+   only has it because its image installs it, so pip keeps the image's version. Add the
+   package without a version to the end of `requirements-airflow.txt`, as for
+   `virtualenv` and `werkzeug`, so pip upgrades it to the override.
 
 ### Upgrading the MWAA Airflow version
 

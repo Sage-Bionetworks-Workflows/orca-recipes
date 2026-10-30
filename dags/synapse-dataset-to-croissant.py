@@ -22,23 +22,21 @@ pushes the results to a Croissant file in S3. The S3 bucket is stored in the
 `org-sagebase-dpe-prod` AWS account. That S3 bucket is deployed to AWS through the code
 in this PR: https://github.com/Sage-Bionetworks-Workflows/eks-stack/pull/57 .
 
-Additional note on the pushing to S3. The way that the S3 hook is set up is that it will
-log in as an AWS user to accomplish the required work. In order for this DAG to run the
-user that is running the DAG must have the correct permissions to access the S3 bucket
-and write to it. This was set up on the `airflow-secrets-backend` user in the
-`org-sagebase-dpe-prod` AWS account. The user has an inline policy to grant PutObject,
-GetObject, DeleteObject, and ListBucket permissions to the S3 bucket.
+Additional note on the pushing to S3. The S3 hook (`S3Hook(aws_conn_id=None)`) uses the
+default AWS credential chain: your SSO profile (`AWS_PROFILE`) when run locally, and the
+environment's execution role on MWAA. Those credentials need PutObject, GetObject,
+DeleteObject, and ListBucket permissions on the S3 bucket.
 
-In addition this DAG has been set up with the first iteration of the OpenTelemetry
-integration for Apache Airflow. OTEL support is officially added in 2.10.0, but requires
-that we also set up the production Airflow server to support OTEL.
+The DAG sends its own traces and logs to SigNoz over OTLP with the OpenTelemetry SDK,
+authenticated with the `SIGNOZ_INGESTION_KEY` Airflow Variable. This does not depend on
+Airflow's built-in OpenTelemetry integration, so it needs no Airflow configuration.
 
 DAG Parameters:
 - Review the DAG Parameters under the `@dag` decorated function
 
 Running locally (`python dags/synapse-dataset-to-croissant.py`):
 Follow the README's local development steps, which cover AWS credentials and the Airflow secrets backend:
-https://github.com/Sage-Bionetworks-Workflows/orca-recipes/blob/main/README.md#local-development-without-dev-container
+https://github.com/Sage-Bionetworks-Workflows/orca-recipes/blob/main/README.md#local-development
 
 This DAG also needs one setting of its own, in the same terminal:
 

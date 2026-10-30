@@ -107,16 +107,14 @@ def synapse_failure_callback(
             getattr(context.get("dag"), "dag_id", "unknown_dag"),
         )
         run_id = getattr(task_instance, "run_id", context.get("run_id", "unknown_run"))
-        # logical_date is the modern key; fall back to execution_date for older runs.
-        execution_date = (
-            context.get("logical_date") or context.get("execution_date") or ""
-        )
+        # Airflow 3 removed execution_date, and logical_date can be None.
+        logical_date = context.get("logical_date") or ""
 
         subject = f"Airflow DAG failure: {dag_id}"
         body = (
             f"The DAG '{dag_id}' failed on task '{task_id}'.\n\n"
             f"Run ID: {run_id}\n"
-            f"Execution date: {execution_date}\n"
+            f"Logical date: {logical_date}\n"
             f"Exception: {exception}\n"
         )
         if log_url and is_shareable_url(log_url):

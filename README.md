@@ -53,11 +53,15 @@ If you want to test a DAG locally, you can run it directly against a local Airfl
 
 #### 1. Install dependencies
 
-There is a shell script that you can run to install the local Airflow requirements. It installs the Airflow version and packages that MWAA runs, constrained by [`mwaa/constraints.txt`](./mwaa/constraints.txt). Activate a Python 3.12 virtual environment, then run the script. The script stops with an error if `python` is not Python 3.12, or if the `airflow` command on your `PATH` is not the Airflow version that it installed.
+There is a shell script that you can run to install the local Airflow requirements. It installs the Airflow version and packages that MWAA runs, constrained by [`mwaa/constraints.txt`](./mwaa/constraints.txt). Create and activate a Python 3.12 virtual environment, then run the script. The script stops with an error if `python` is not Python 3.12, or if the `airflow` command on your `PATH` is not the Airflow version that it installed.
 
 ```console
+python3.12 -m venv .venv
+source .venv/bin/activate
 bash scripts/install_local_airflow.sh
 ```
+
+Activate the virtual environment in each new shell.
 
 #### 2. Initialize the Airflow database
 
@@ -108,6 +112,9 @@ airflow dags test <dag_id>
 
 `-c '{"<param>": "<value>"}'` overrides the DAG's `Param` values for the run, like `dag.test(run_conf=...)`.
 
+> [!WARNING]
+> `airflow dags test` does not run the file's `if __name__ == "__main__":` block, so it skips the dev values that block passes to `dag.test()`. The run uses the DAG's default `Param` values, which are often production values. For a DAG with a `__main__` block, use `python dags/<your-dag-file>.py`. For any other DAG, check its defaults and pass dev values with `-c`.
+
 See section [Testing](./CONTRIBUTING.md#testing) in the CONTRIBUTING.md for more info on testing a dag and how you can bypass configuring with AWS.
 
 #### 5. Run the scheduler and UI
@@ -118,7 +125,7 @@ See section [Testing](./CONTRIBUTING.md#testing) in the CONTRIBUTING.md for more
 airflow standalone
 ```
 
-Open http://localhost:8080 and log in as `admin` with the password printed at startup. It is also saved in `$AIRFLOW_HOME/simple_auth_manager_passwords.json.generated` (`AIRFLOW_HOME` defaults to `~/airflow`). New DAGs are paused; unpause them in the UI or with `airflow dags unpause <dag_id>`.
+Open http://localhost:8080 and log in as `admin` with the password printed at startup. It is also saved in `$AIRFLOW_HOME/simple_auth_manager_passwords.json.generated` (`AIRFLOW_HOME` defaults to `~/airflow`). New DAGs are paused; unpause them in the UI or with `airflow dags unpause <dag_id>`. Like `airflow dags test`, a trigger uses the DAG's default `Param` values, so enter dev values in the trigger form.
 
 ### Local DAGs
 
