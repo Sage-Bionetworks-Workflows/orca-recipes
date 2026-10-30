@@ -30,6 +30,7 @@
     - [Logging](#logging)
     - [Validating Required Secrets](#validating-required-secrets)
   - [Testing and Validation](#testing-and-validation)
+    - [Environment-specific values](#environment-specific-values)
   - [DAG Failure Alerts](#dag-failure-alerts)
 - [Secrets](#secrets)
   - [Creating a New Secret](#creating-a-new-secret)
@@ -422,7 +423,7 @@ Follow these best practices when developing DAGs to ensure reliability and maint
 
 ### Shared Utilities
 
-The repository provides shared helper functions in `src.utils` for common DAG development tasks. Prefer using these helpers rather than duplicating the logic in individual DAGs.
+The repository provides shared helper functions in `src.utils` and `src.environment` for common DAG development tasks. Prefer using these helpers rather than duplicating the logic in individual DAGs.
 
 #### Logging
 
@@ -475,6 +476,29 @@ This is particularly useful when developing locally with `LocalFilesystemBackend
 * **Test DAGs locally and on MWAA dev first** - Always test new DAGs thoroughly in your [local development environment](./README.md#local-development) and on MWAA dev before deploying to production
 * **Verify task functionality** - Ensure all tasks execute successfully and produce expected outputs in the development environment
 * **Validate production deployment** - After deploying to production, monitor initial DAG runs to confirm they function as expected with production data and resources
+* **Set up dev and prod resources** - DAGs that read or write different resources per environment (Synapse table IDs, S3 buckets, Slack channels, feature flags) should use `by_environment()`, see [Environment-specific values](#environment-specific-values)
+
+#### Environment-specific values
+
+Use `by_environment()` when a DAG needs different values in `dev` and `prod`, such as Synapse IDs, S3 buckets, Slack channels, or feature flags:
+
+```python
+from airflow.sdk import Param
+
+from src.environment import by_environment
+
+dag_params = {
+    "slack_channel": Param(by_environment(dev="dpe-prs", prod="hotdrops"), type="string"),
+    "push_results_to_s3": Param(by_environment(dev=False, prod=True), type="boolean"),
+}
+```
+
+* **`dev` and `prod` are required** - Other environments can be passed by name, for example `by_environment(dev=..., prod=..., staging=...)`
+* **Unset means dev** - The environment comes from `AIRFLOW__ORCA__ENVIRONMENT`, which eks-stack sets on each MWAA environment from `deployment_environment`. When it is unset (local runs and tests) or names an environment with no value, the `dev` value is used, so a DAG never uses production values by accident
+* **It sets the default, not the run value** - The value is chosen when the DAG is parsed and becomes the `Param` default. Scheduled runs use it, but a manual trigger can still override it in the trigger form
+* **No prod value yet? Pass `prod=None`** - Use this when you deploy a new DAG to dev before its prod resources exist. On prod, a `None` default fails the `Param` type check, so the DAG can't run with the missing value: a scheduled DAG shows an import error, and a manual trigger fails unless a value is entered. Values used outside a `Param` get no check and only fail when the code that uses them runs
+* **Connection IDs usually don't need it** - MWAA dev and prod each read their own AWS Secrets Manager, so the same connection ID resolves to the dev secret on dev and the prod secret on prod
+* **`ENVIRONMENT`** holds the current environment name if you need it directly, for example `tags=["test", ENVIRONMENT]` in `dags/hello_world_dag.py`
 
 ### DAG Failure Alerts
 
