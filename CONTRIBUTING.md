@@ -29,8 +29,8 @@
   - [Shared Utilities](#shared-utilities)
     - [Logging](#logging)
     - [Validating Required Secrets](#validating-required-secrets)
-    - [Dev vs Prod Values](#dev-vs-prod-values)
   - [Testing and Validation](#testing-and-validation)
+    - [Environment-specific values](#environment-specific-values)
   - [DAG Failure Alerts](#dag-failure-alerts)
 - [Secrets](#secrets)
   - [Creating a New Secret](#creating-a-new-secret)
@@ -471,9 +471,16 @@ Missing required secrets before running locally:
 
 This is particularly useful when developing locally with `LocalFilesystemBackend`, where missing connections or variables are a common source of configuration errors.
 
-#### Dev vs Prod Values
+### Testing and Validation
 
-Use `by_environment()` for values that differ between MWAA dev and prod, such as Synapse table IDs, S3 buckets, Slack channels, or whether a DAG writes its results:
+* **Test DAGs locally and on MWAA dev first** - Always test new DAGs thoroughly in your [local development environment](./README.md#local-development) and on MWAA dev before deploying to production
+* **Verify task functionality** - Ensure all tasks execute successfully and produce expected outputs in the development environment
+* **Validate production deployment** - After deploying to production, monitor initial DAG runs to confirm they function as expected with production data and resources
+* **Set up dev and prod resources** - DAGs that read or write different resources per environment (Synapse table IDs, S3 buckets, Slack channels, feature flags) should use `by_environment()`, see [Environment-specific values](#environment-specific-values)
+
+#### Environment-specific values
+
+Use `by_environment()` when a DAG needs different values in `dev` and `prod`, such as Synapse IDs, S3 buckets, Slack channels, or feature flags:
 
 ```python
 from airflow.sdk import Param
@@ -492,12 +499,6 @@ dag_params = {
 * **No prod value yet? Pass `prod=None`** - Use this when you deploy a new DAG to dev before its prod resources exist. On prod, a `None` default fails the `Param` type check, so the DAG can't run with the missing value: a scheduled DAG shows an import error, and a manual trigger fails unless a value is entered. Values used outside a `Param` get no check and only fail when the code that uses them runs
 * **Connection IDs usually don't need it** - MWAA dev and prod each read their own AWS Secrets Manager, so the same connection ID resolves to the dev secret on dev and the prod secret on prod
 * **`ENVIRONMENT`** holds the current environment name if you need it directly, for example `tags=["test", ENVIRONMENT]` in `dags/hello_world_dag.py`
-
-### Testing and Validation
-
-* **Test DAGs locally and on MWAA dev first** - Always test new DAGs thoroughly in your [local development environment](./README.md#local-development) and on MWAA dev before deploying to production
-* **Verify task functionality** - Ensure all tasks execute successfully and produce expected outputs in the development environment
-* **Validate production deployment** - After deploying to production, monitor initial DAG runs to confirm they function as expected with production data and resources
 
 ### DAG Failure Alerts
 
