@@ -9,7 +9,7 @@ This is a plain runnable script, not a pytest test: it hits a real external
 service and requires real credentials for `tower_conn_id`.
 
 Prerequisites:
-    - Access to the `example-project` workspace on Seqera Platform, so you can
+    - Access to the `example-dev-project` workspace on Seqera Platform, so you can
       open the run and check on it. Request access to the corresponding
       project on `nextflow-infra`.
     - Credentials for `EXAMPLE_DEV_PROJECT_TOWER_CONN`, stored in AWS Secrets
@@ -19,8 +19,8 @@ Prerequisites:
 Checking the results:
     Confirm the run in Seqera Platform:
 
-    1. Go to https://tower.sagebionetworks.org and
-       find the `example-project` workspace under the Sage-Bionetworks org.
+    1. Go to https://tower-dev.sagebionetworks.org and
+       find the `example-dev-project` workspace under the Sage-Bionetworks org.
     2. Locate the run named `nf-hello-test` in the Runs list.
     3. Confirm it reaches the `SUCCEEDED` state and its `sayHello` processes
        completed.

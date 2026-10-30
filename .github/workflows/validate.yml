@@ -56,7 +56,6 @@ jobs:
       # AIR3 = Ruff's Airflow 3.x deprecation/removal rules (e.g. schedule_interval,
       # execution_date). Catches DAG code that uses APIs Airflow 3 removed or deprecated.
       - name: Lint changed DAGs for Airflow 3 deprecations
-        continue-on-error: true
         run: |
           BASE_BRANCH="${{ github.base_ref }}"
           if [ -z "$BASE_BRANCH" ]; then
@@ -65,7 +64,7 @@ jobs:
 
           git fetch origin "$BASE_BRANCH"
 
-          files=$(git diff --name-only "origin/$BASE_BRANCH"...HEAD -- 'dags/**/*.py' 'dags/*.py')
+          files=$(git diff --name-only --diff-filter=d "origin/$BASE_BRANCH"...HEAD -- 'dags/**/*.py' 'dags/*.py')
 
           if [ -n "$files" ]; then
             ruff check $files --select AIR3 --output-format=github

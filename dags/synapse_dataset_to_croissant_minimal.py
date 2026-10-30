@@ -28,7 +28,7 @@ DAG Parameters:
 
 Running locally (`python dags/synapse_dataset_to_croissant_minimal.py`):
 Set up your environment by following the README's local development steps:
-https://github.com/Sage-Bionetworks-Workflows/orca-recipes/blob/main/README.md#local-development-without-dev-container
+https://github.com/Sage-Bionetworks-Workflows/orca-recipes/blob/main/README.md#local-development
 
 Local runs use the staging Synapse table and test S3 bucket set in the `__main__`
 block, and fail fast if AWS credentials are missing or expired.
