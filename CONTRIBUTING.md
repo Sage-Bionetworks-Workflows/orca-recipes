@@ -298,14 +298,14 @@ AGORA_PROJECT_TOWER_CONN:
 
 ##### Handling Airflow Variables Locally
 
-`LocalFilesystemBackend`'s `connections_file_path` config above only covers Connections, not Airflow **Variables**. Some DAGs also call `Variable.get("SOME_NAME")` — for example, `SLACK_DPE_TEAM_BOT_TOKEN`, a Slack bot token normally pulled from AWS Secrets Manager. Once you switch away from `SecretsManagerBackend`, there's no source for Variables at all — a plain env var like `SLACK_DPE_TEAM_BOT_TOKEN` in your shell or `.env` is **not** visible to `Variable.get()`. There are two ways to fill that gap without AWS access:
+`LocalFilesystemBackend`'s `connections_file_path` config above only covers Connections, not Airflow **Variables**. Some DAGs also call `Variable.get("SOME_NAME")` — for example, `ZENODO_API_TOKEN`, an API token normally pulled from AWS Secrets Manager. Once you switch away from `SecretsManagerBackend`, there's no source for Variables at all — a plain env var like `ZENODO_API_TOKEN` in your shell or `.env` is **not** visible to `Variable.get()`. There are two ways to fill that gap without AWS access:
 
 **Option A: `AIRFLOW_VAR_` environment variable**
 
-Prefix the Variable's name with `AIRFLOW_VAR_` and export it as a regular environment variable, e.g. `AIRFLOW_VAR_SLACK_DPE_TEAM_BOT_TOKEN`. Airflow checks for this automatically, regardless of which secrets backend is configured — so it works even with `LocalFilesystemBackend`, which has no Variables source of its own.
+Prefix the Variable's name with `AIRFLOW_VAR_` and export it as a regular environment variable, e.g. `AIRFLOW_VAR_ZENODO_API_TOKEN`. Airflow checks for this automatically, regardless of which secrets backend is configured — so it works even with `LocalFilesystemBackend`, which has no Variables source of its own.
 
 ```console
-export AIRFLOW_VAR_SLACK_DPE_TEAM_BOT_TOKEN="<the-secret-value>"
+export AIRFLOW_VAR_ZENODO_API_TOKEN="<the-secret-value>"
 ```
 
 **Option B: `variables_file_path` via `LocalFilesystemBackend`**
@@ -321,7 +321,7 @@ Then create `variables.json` with the Variables your DAG needs:
 
 ```json
 {
-  "SLACK_DPE_TEAM_BOT_TOKEN": "<the-secret-value>"
+  "ZENODO_API_TOKEN": "<the-secret-value>"
 }
 ```
 

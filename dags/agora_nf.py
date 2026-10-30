@@ -16,6 +16,8 @@ Steps:
 DAG Parameters:
 - `synapse_conn_id`: Connection ID for the Synapse service account, used to send
   completion emails.
+- `dpe_slack_bot_conn`: Connection ID for the Slack bot used to post the completion
+  message.
 - `tower_conn_id`: Connection ID for the Nextflow Tower workspace.
 - `tower_compute_env_type`: Tower compute environment to launch the workflow on.
 - `tower_run_name`: Name assigned to the Tower workflow run.
@@ -39,8 +41,8 @@ DAG Parameters:
 from datetime import datetime
 from typing import Any
 
-from airflow.sdk import DAG, Param, Variable, dag, task
-from slack_sdk import WebClient
+from airflow.sdk import DAG, Param, dag, task
+from airflow.providers.slack.hooks.slack import SlackHook
 
 from src.nextflow_tower_hook import LaunchInfo, NextflowTowerHook
 from src.synapse_alerts import synapse_failure_callback
@@ -70,6 +72,7 @@ dag_params = {
     ),
     "dataset": Param(None, type=["null", "string"]),
     "slack_channel": Param("nf-agora-notifications", type="string"),
+    "dpe_slack_bot_conn": Param("DPE_SLACK_BOT_CONN", type="string"),
     # ADT Airflow Notifications team
     "synapse_team_id": Param("3600443", type="string"),
     # who to alert if any task fails (comma-separated usernames or numeric ids)
@@ -193,12 +196,13 @@ def agora_nf_run_dag() -> DAG:
 
         Args:
             message: Summary message produced by generate_message.
-            context: Airflow task context; used to read the slack_channel param.
+            context: Airflow task context; used to read the slack_channel and
+                dpe_slack_bot_conn params.
 
         Returns:
             True if the Slack API call returned a result, False otherwise.
         """
-        client = WebClient(token=Variable.get("SLACK_DPE_TEAM_BOT_TOKEN"))
+        client = SlackHook(slack_conn_id=context["params"]["dpe_slack_bot_conn"]).client
         result = client.chat_postMessage(channel=context["params"]["slack_channel"], text=message)
         print(f"Result of posting to slack: [{result}]")
         return result is not None
@@ -238,8 +242,9 @@ if __name__ == "__main__":
         connection_ids=[
             dag_params["tower_conn_id"].value,
             dag_params["synapse_conn_id"].value,
+            dag_params["dpe_slack_bot_conn"].value,
         ],
-        variable_names=["SLACK_DPE_TEAM_BOT_TOKEN"],
+        variable_names=[],
     )
     dag.test(run_conf={"dataset": "",
                        "slack_channel": "test-agora-nextflow",

@@ -23,9 +23,9 @@ from datetime import date, datetime, timezone
 from typing import List
 
 import synapseclient
-from airflow.sdk import Param, Variable, dag, task
+from airflow.sdk import Param, dag, task
+from airflow.providers.slack.hooks.slack import SlackHook
 from airflow.providers.snowflake.hooks.snowflake import SnowflakeHook
-from slack_sdk import WebClient
 
 from src.synapse_hook import SynapseHook
 
@@ -33,6 +33,7 @@ dag_params = {
     "snowflake_developer_service_conn": Param("SNOWFLAKE_DEVELOPER_SERVICE_RAW_CONN", type="string"),
     "synapse_conn_id": Param("SYNAPSE_ORCA_SERVICE_ACCOUNT_CONN", type="string"),
     "slack_channel": Param("hotdrops", type="string"),
+    "dpe_slack_bot_conn": Param("DPE_SLACK_BOT_CONN", type="string"),
     "current_date_time": Param(
         datetime.now(timezone.utc).strftime("%Y-%m-%d  %H:%M:%S"), type="string"
     ),
@@ -185,7 +186,7 @@ def datasets_or_projects_created_7_days() -> None:
     @task
     def post_slack_messages(message: str, **context) -> bool:
         """Post the top downloads to the slack channel."""
-        client = WebClient(token=Variable.get("SLACK_DPE_TEAM_BOT_TOKEN"))
+        client = SlackHook(slack_conn_id=context["params"]["dpe_slack_bot_conn"]).client
         result = client.chat_postMessage(
             channel=context["params"]["slack_channel"], text=message
         )
