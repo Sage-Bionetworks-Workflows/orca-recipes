@@ -15,10 +15,10 @@ from datetime import date, datetime, timedelta, timezone
 from typing import List, Optional, Sized
 
 import synapseclient
-from airflow.sdk import Param, Variable, dag, task
+from airflow.sdk import Param, dag, task
+from airflow.providers.slack.hooks.slack import SlackHook
 from airflow.providers.snowflake.hooks.snowflake import SnowflakeHook
 from src.synapse_alerts import synapse_failure_callback
-from slack_sdk import WebClient
 import json
 
 from src.synapse_hook import SynapseHook
@@ -77,6 +77,7 @@ dag_params = {
         "SNOWFLAKE_DEVELOPER_SERVICE_RAW_CONN", type="string"),
     "synapse_conn_id": Param("SYNAPSE_ORCA_SERVICE_ACCOUNT_CONN", type="string"),
     "slack_channel": Param("topcharts", type="string"),
+    "dpe_slack_bot_conn": Param("DPE_SLACK_BOT_CONN", type="string"),
     # who to alert on failure (comma-separated usernames or numeric ids)
     "dev_user_list": Param("3485485", type="string"),  # DPE service team
     # hours_time_delta is the number of hours to subtract from the current date to get
@@ -634,12 +635,13 @@ def top_public_synapse_projects_from_snowflake() -> None:
             message: Formatted message containing top download information
             context: Airflow context dictionary containing DAG parameters
                 - slack_channel: Slack channel to post the message to
+                - dpe_slack_bot_conn: Connection ID for the Slack bot
 
         Returns:
             bool: True if message was successfully posted, False otherwise
         """
 
-        client = WebClient(token=Variable.get("SLACK_DPE_TEAM_BOT_TOKEN"))
+        client = SlackHook(slack_conn_id=context["params"]["dpe_slack_bot_conn"]).client
         result = client.chat_postMessage(
             channel=context["params"]["slack_channel"], text=message
         )

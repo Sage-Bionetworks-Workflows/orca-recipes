@@ -10,3 +10,9 @@ AGORA_PROJECT_TOWER_CONN:
 SYNAPSE_ORCA_SERVICE_ACCOUNT_CONN:
   conn_type: syn
   password: <Your personal access token>
+
+# Used by SlackHook for any DAG that posts to Slack. Only the bot token is
+# needed; it goes in `password`.
+DPE_SLACK_BOT_CONN:
+  conn_type: slack
+  password: "<your-slack-bot-token>"

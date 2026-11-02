@@ -244,7 +244,7 @@ Steps to Run:
 
 There are two distinct ways to test a DAG's task logic without deploying to Airflow:
 
-- **Unit tests** — mock external dependencies (hooks like `NextflowTowerHook`/`SynapseHook`, `WebClient`, `Variable`, etc.) and call each task's `python_callable` directly. These are fast, require no credentials or network access, and run automatically in CI on every push. They validate your Python logic (parameter wiring, branching, string formatting), not whether the real external services behave as you assume. See `tests/` for examples.
+- **Unit tests** — mock external dependencies (hooks like `NextflowTowerHook`/`SynapseHook`, `Variable`, etc.) and call each task's `python_callable` directly. These are fast, require no credentials or network access, and run automatically in CI on every push. They validate your Python logic (parameter wiring, branching, string formatting), not whether the real external services behave as you assume. See `tests/` for examples.
 
 - **Local integration runs** via `dag.test()` — hit real external services using real credentials. Credentials can come from AWS Secrets Manager (matching production) or from a local `connections.yaml/AIRFLOW_VAR_*` configuration via `LocalFilesystemBackend`. These validate the real integration (e.g., actually launching a Nextflow Tower workflow or posting to Slack), but are slower, require AWS SSO access, and can have real side effects. Use this as a manual sanity check before/after changing integration behavior, not as an automated substitute for unit tests.
 
@@ -298,14 +298,14 @@ AGORA_PROJECT_TOWER_CONN:
 
 ##### Handling Airflow Variables Locally
 
-`LocalFilesystemBackend`'s `connections_file_path` config above only covers Connections, not Airflow **Variables**. Some DAGs also call `Variable.get("SOME_NAME")` — for example, `SLACK_DPE_TEAM_BOT_TOKEN`, a Slack bot token normally pulled from AWS Secrets Manager. Once you switch away from `SecretsManagerBackend`, there's no source for Variables at all — a plain env var like `SLACK_DPE_TEAM_BOT_TOKEN` in your shell or `.env` is **not** visible to `Variable.get()`. There are two ways to fill that gap without AWS access:
+`LocalFilesystemBackend`'s `connections_file_path` config above only covers Connections, not Airflow **Variables**. Some DAGs also call `Variable.get("SOME_NAME")` — for example, `ZENODO_API_TOKEN`, an API token normally pulled from AWS Secrets Manager. Once you switch away from `SecretsManagerBackend`, there's no source for Variables at all — a plain env var like `ZENODO_API_TOKEN` in your shell or `.env` is **not** visible to `Variable.get()`. There are two ways to fill that gap without AWS access:
 
 **Option A: `AIRFLOW_VAR_` environment variable**
 
-Prefix the Variable's name with `AIRFLOW_VAR_` and export it as a regular environment variable, e.g. `AIRFLOW_VAR_SLACK_DPE_TEAM_BOT_TOKEN`. Airflow checks for this automatically, regardless of which secrets backend is configured — so it works even with `LocalFilesystemBackend`, which has no Variables source of its own.
+Prefix the Variable's name with `AIRFLOW_VAR_` and export it as a regular environment variable, e.g. `AIRFLOW_VAR_ZENODO_API_TOKEN`. Airflow checks for this automatically, regardless of which secrets backend is configured — so it works even with `LocalFilesystemBackend`, which has no Variables source of its own.
 
 ```console
-export AIRFLOW_VAR_SLACK_DPE_TEAM_BOT_TOKEN="<the-secret-value>"
+export AIRFLOW_VAR_ZENODO_API_TOKEN="<the-secret-value>"
 ```
 
 **Option B: `variables_file_path` via `LocalFilesystemBackend`**
@@ -321,7 +321,7 @@ Then create `variables.json` with the Variables your DAG needs:
 
 ```json
 {
-  "SLACK_DPE_TEAM_BOT_TOKEN": "<the-secret-value>"
+  "ZENODO_API_TOKEN": "<the-secret-value>"
 }
 ```
 
@@ -351,8 +351,9 @@ GitHub Actions workflow that runs the tests
 `schedule_interval` -> `schedule`, `execution_date`, moved import paths) so DAGs
 don't silently break when the Airflow runtime is upgraded.
 
-`ruff` is included in [requirements-dev.txt](./requirements-dev.txt), so once
-your dev environment is set up via:
+`ruff` is included in [requirements-dev.txt](./requirements-dev.txt). Once your
+[local Airflow environment](./README.md#local-development) is set up via
+`bash scripts/install_local_airflow.sh`, add it with:
 
 ```console
 pip install -r requirements-dev.txt -c mwaa/constraints.txt
