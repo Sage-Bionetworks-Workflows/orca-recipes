@@ -244,7 +244,7 @@ Steps to Run:
 
 There are two distinct ways to test a DAG's task logic without deploying to Airflow:
 
-- **Unit tests** — mock external dependencies (hooks like `NextflowTowerHook`/`SynapseHook`, `WebClient`, `Variable`, etc.) and call each task's `python_callable` directly. These are fast, require no credentials or network access, and run automatically in CI on every push. They validate your Python logic (parameter wiring, branching, string formatting), not whether the real external services behave as you assume. See `tests/` for examples.
+- **Unit tests** — mock external dependencies (hooks like `NextflowTowerHook`/`SynapseHook`, `Variable`, etc.) and call each task's `python_callable` directly. These are fast, require no credentials or network access, and run automatically in CI on every push. They validate your Python logic (parameter wiring, branching, string formatting), not whether the real external services behave as you assume. See `tests/` for examples.
 
 - **Local integration runs** via `dag.test()` — hit real external services using real credentials. Credentials can come from AWS Secrets Manager (matching production) or from a local `connections.yaml/AIRFLOW_VAR_*` configuration via `LocalFilesystemBackend`. These validate the real integration (e.g., actually launching a Nextflow Tower workflow or posting to Slack), but are slower, require AWS SSO access, and can have real side effects. Use this as a manual sanity check before/after changing integration behavior, not as an automated substitute for unit tests.
 
@@ -351,8 +351,9 @@ GitHub Actions workflow that runs the tests
 `schedule_interval` -> `schedule`, `execution_date`, moved import paths) so DAGs
 don't silently break when the Airflow runtime is upgraded.
 
-`ruff` is included in [requirements-dev.txt](./requirements-dev.txt), so once
-your dev environment is set up via:
+`ruff` is included in [requirements-dev.txt](./requirements-dev.txt). Once your
+[local Airflow environment](./README.md#local-development) is set up via
+`bash scripts/install_local_airflow.sh`, add it with:
 
 ```console
 pip install -r requirements-dev.txt -c mwaa/constraints.txt
