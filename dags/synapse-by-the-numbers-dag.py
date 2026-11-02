@@ -11,6 +11,7 @@ import synapseclient
 from airflow.sdk import Param, dag, task
 from airflow.providers.snowflake.hooks.snowflake import SnowflakeHook
 
+from src.environment import by_environment
 from src.synapse_hook import SynapseHook
 
 dag_params = {
@@ -18,7 +19,8 @@ dag_params = {
     "synapse_conn_id": Param("SYNAPSE_ORCA_SERVICE_ACCOUNT_CONN", type="string"),
     # date string with the format: YYYY-MM-DD including the month that we want to run the queries for
     "month_to_run": Param((date.today() - relativedelta(months=1)).strftime("%Y-%m-%d"), type="string"),
-    "synapse_results_table": Param("syn61588123", type="string"),
+    # Staging Synapse table on dev
+    "synapse_results_table": Param(by_environment(dev="syn74496297", prod="syn61588123"), type="string"),
 }
 
 dag_config = {
@@ -162,5 +164,4 @@ def synapse_by_the_numbers_past_month() -> None:
 dag = synapse_by_the_numbers_past_month()
 
 if __name__ == "__main__":
-    # This is a staging Synapse table
-    dag.test(run_conf={"synapse_results_table": "syn74496297"})
+    dag.test()

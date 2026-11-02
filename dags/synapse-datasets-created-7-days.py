@@ -11,7 +11,7 @@ the results to Slack.
 DAG Parameters:
 - `snowflake_developer_service_conn`: A JSON-formatted string containing the connection details required to authenticate and connect to Snowflake.
 - `synapse_conn_id`: The connection ID for the Synapse connection.
-- `slack_channel`: The Slack channel to post the results to. Defaults to `hotdrops`.
+- `slack_channel`: The Slack channel to post the results to. Defaults to `hotdrops` on prod and `hotdrop_test` on dev.
 - 'current_date_time': The current date time in UTC timezone
 - `backfill`: Whether to backfill the data. Defaults to `False`.
 - `backfill_date_time`: The date time to backfill the data from. in UTC time zone. Will be ignored if `backfill` is `False`.
@@ -27,12 +27,14 @@ from airflow.sdk import Param, dag, task
 from airflow.providers.slack.hooks.slack import SlackHook
 from airflow.providers.snowflake.hooks.snowflake import SnowflakeHook
 
+from src.environment import by_environment
 from src.synapse_hook import SynapseHook
 
 dag_params = {
     "snowflake_developer_service_conn": Param("SNOWFLAKE_DEVELOPER_SERVICE_RAW_CONN", type="string"),
     "synapse_conn_id": Param("SYNAPSE_ORCA_SERVICE_ACCOUNT_CONN", type="string"),
-    "slack_channel": Param("hotdrops", type="string"),
+    # The DPE bot must be a member of the channel
+    "slack_channel": Param(by_environment(dev="hotdrop_test", prod="hotdrops"), type="string"),
     "dpe_slack_bot_conn": Param("DPE_SLACK_BOT_CONN", type="string"),
     "current_date_time": Param(
         datetime.now(timezone.utc).strftime("%Y-%m-%d  %H:%M:%S"), type="string"
@@ -40,8 +42,8 @@ dag_params = {
     "backfill": Param(False, type="boolean"),
     # backfill_date_time string format: YYYY-MM-DD HH:MM:SS
     "backfill_date_time": Param("1900-01-01 00:00:00", type="string"),
-    "synapse_results_table": Param("syn64951484", type="string"),
-    "synapse_public_results_table": Param("syn69855119", type="string"),
+    "synapse_results_table": Param(by_environment(dev="syn77135279", prod="syn64951484"), type="string"),
+    "synapse_public_results_table": Param(by_environment(dev="syn77135280", prod="syn69855119"), type="string"),
 }
 
 dag_config = {
@@ -278,14 +280,5 @@ def datasets_or_projects_created_7_days() -> None:
 dag = datasets_or_projects_created_7_days()
 
 if __name__ == "__main__":
-    # backfill=False so the Slack branch runs; slack_channel redirects the post
-    # to #hotdrop_test for local testing (the DPE bot must be a member of that channel).
-    # These are staging Synapse tables.
-    dag.test(
-        run_conf={
-            "backfill": False,
-            "slack_channel": "hotdrop_test",
-            "synapse_results_table": "syn77135279",
-            "synapse_public_results_table": "syn77135280",
-        }
-    )
+    # backfill=False so the Slack branch runs
+    dag.test(run_conf={"backfill": False})
