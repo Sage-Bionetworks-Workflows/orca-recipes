@@ -1,10 +1,12 @@
 """This script is used to run the main GENIE validation workflow on Seqera Tower.
-This runs twice a day. The workflow is configured to only run the data validation process."""
+On prod this runs twice a day; on dev it is triggered manually and validates the
+test project. The workflow is configured to only run the data validation process."""
 
 from datetime import datetime
 
 from airflow.sdk import Param, dag, task
 
+from src.environment import by_environment
 from src.nextflow_tower_hook import LaunchInfo, NextflowTowerHook
 
 dag_params = {
@@ -15,12 +17,13 @@ dag_params = {
     "revision": Param("main", type="string"),
     "profile": Param("aws_prod", type="string"),
     "process_type": Param("only_validate", type="string"),
-    "release": Param("13.3-consortium", type="string"),
+    # TEST.* releases run on the test project
+    "release": Param(by_environment(dev="TEST.consortium", prod="13.3-consortium"), type="string"),
     "work_dir": Param("s3://genie-bpc-project-tower-scratch/1days", type="string"),
 }
 
 dag_config = {
-    "schedule": "0 5,17 * * *",
+    "schedule": by_environment(dev=None, prod="0 5,17 * * *"),
     "start_date": datetime(2023, 2, 21),
     "catchup": False,
     "default_args": {
@@ -85,9 +88,4 @@ def genie_nf_validate_dag():
 dag = genie_nf_validate_dag()
 
 if __name__ == "__main__":
-    dag.test(
-        run_conf={
-            # run on test project
-            "release": "TEST.consortium",
-            }
-    )
+    dag.test()
