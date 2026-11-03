@@ -16,6 +16,8 @@ Steps:
 DAG Parameters:
 - `synapse_conn_id`: Connection ID for the Synapse service account, used to send
   completion emails.
+- `dpe_slack_bot_conn`: Connection ID for the Slack bot used to post the completion
+  message.
 - `tower_conn_id`: Connection ID for the Nextflow Tower workspace.
 - `tower_compute_env_type`: Tower compute environment to launch the workflow on.
 - `tower_run_name`: Name assigned to the Tower workflow run.
@@ -31,7 +33,8 @@ DAG Parameters:
   processed.
 - `slack_channel`: Slack channel where the workflow completion message is posted.
 - `synapse_team_id`: Synapse team ID that receives the completion email (defaults to
-  the ADT Airflow Notifications team).
+  the ADT Airflow Notifications team on prod and the Orca airflow DAGs testing team
+  on dev).
 - `dev_user_list`: Comma-separated Synapse usernames or numeric IDs emailed when any
   task fails (defaults to the DPE service team).
 """
@@ -39,12 +42,10 @@ DAG Parameters:
 from datetime import datetime
 from typing import Any
 
-from airflow.decorators import dag, task
-from airflow.models import Variable
-from airflow.models.dag import DAG
-from airflow.models.param import Param
-from slack_sdk import WebClient
+from airflow.sdk import DAG, Param, dag, task
+from airflow.providers.slack.hooks.slack import SlackHook
 
+from src.environment import by_environment
 from src.nextflow_tower_hook import LaunchInfo, NextflowTowerHook
 from src.synapse_alerts import synapse_failure_callback
 from src.synapse_hook import SynapseHook
@@ -61,7 +62,7 @@ dag_params = {
         "AGORA_PROJECT_TOWER_CONN", type="string"
     ),  # personal access token belongs to Lingling Peng
     "tower_compute_env_type": Param("agora-project-ondemand-v13", type="string"),
-    "tower_run_name": Param("airflow-agora-model-ad", type="string"),
+    "tower_run_name": Param(by_environment(dev="test_airflow-agora-model-ad", prod="airflow-agora-model-ad"), type="string"),
     "pipeline": Param("Sage-Bionetworks-Workflows/nf-agora", type="string"),
     "revision": Param("main", type="string"),
     "profile": Param("model_ad_preprod", type="string"),
@@ -72,15 +73,18 @@ dag_params = {
         "rna_de_individual,rna_de_aggregate", type=["null", "string"]
     ),
     "dataset": Param(None, type=["null", "string"]),
-    "slack_channel": Param("nf-agora-notifications", type="string"),
-    # ADT Airflow Notifications team
-    "synapse_team_id": Param("3600443", type="string"),
+    # The DPE bot must be a member of the channel
+    "slack_channel": Param(by_environment(dev="test-agora-nextflow", prod="nf-agora-notifications"), type="string"),
+    "dpe_slack_bot_conn": Param("DPE_SLACK_BOT_CONN", type="string"),
+    # Orca airflow dags testing team on dev, ADT Airflow Notifications team on prod
+    "synapse_team_id": Param(by_environment(dev="3622772", prod="3600443"), type="string"),
     # who to alert if any task fails (comma-separated usernames or numeric ids)
     "dev_user_list": Param("3485485", type="string"),  # DPE service team
 }
 
 dag_config = {
-    "schedule": "0 3 * * *",
+    # Dev runs are triggered manually so dev and prod don't both launch nf-agora daily
+    "schedule": by_environment(dev=None, prod="0 3 * * *"),
     # July 10, 2026 at 03:00 UTC (11 PM ET or 8 PM PT)
     "start_date": datetime(2026, 7, 10, 3, 0),
     "catchup": False,
@@ -196,12 +200,13 @@ def agora_nf_run_dag() -> DAG:
 
         Args:
             message: Summary message produced by generate_message.
-            context: Airflow task context; used to read the slack_channel param.
+            context: Airflow task context; used to read the slack_channel and
+                dpe_slack_bot_conn params.
 
         Returns:
             True if the Slack API call returned a result, False otherwise.
         """
-        client = WebClient(token=Variable.get("SLACK_DPE_TEAM_BOT_TOKEN"))
+        client = SlackHook(slack_conn_id=context["params"]["dpe_slack_bot_conn"]).client
         result = client.chat_postMessage(channel=context["params"]["slack_channel"], text=message)
         print(f"Result of posting to slack: [{result}]")
         return result is not None
@@ -241,12 +246,10 @@ if __name__ == "__main__":
         connection_ids=[
             dag_params["tower_conn_id"].value,
             dag_params["synapse_conn_id"].value,
+            dag_params["dpe_slack_bot_conn"].value,
         ],
-        variable_names=["SLACK_DPE_TEAM_BOT_TOKEN"],
+        variable_names=[],
     )
     dag.test(run_conf={"dataset": "",
-                       "slack_channel": "test-agora-nextflow",
-                       "tower_run_name": "test_airflow-agora-model-ad",
-                       "synapse_team_id": "3622772", # Orca airflow dags testing team
                        "dev_user_list": "3443707" # linglp
                        })

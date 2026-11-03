@@ -64,7 +64,7 @@ class SynapseHook:
 
     def _get_connection(self) -> str:
         try:
-            from airflow.hooks.base import BaseHook
+            from airflow.sdk import BaseHook
 
             return BaseHook.get_connection(self.conn_id).password
         except AirflowNotFoundException:

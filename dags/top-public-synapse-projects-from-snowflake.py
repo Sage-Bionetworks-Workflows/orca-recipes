@@ -15,14 +15,13 @@ from datetime import date, datetime, timedelta, timezone
 from typing import List, Optional, Sized
 
 import synapseclient
-from airflow.decorators import dag, task
-from airflow.models import Variable
-from airflow.models.param import Param
+from airflow.sdk import Param, dag, task
+from airflow.providers.slack.hooks.slack import SlackHook
 from airflow.providers.snowflake.hooks.snowflake import SnowflakeHook
 from src.synapse_alerts import synapse_failure_callback
-from slack_sdk import WebClient
 import json
 
+from src.environment import by_environment
 from src.synapse_hook import SynapseHook
 from src.utils import get_logger
 
@@ -78,7 +77,9 @@ dag_params = {
     "snowflake_developer_service_conn": Param(
         "SNOWFLAKE_DEVELOPER_SERVICE_RAW_CONN", type="string"),
     "synapse_conn_id": Param("SYNAPSE_ORCA_SERVICE_ACCOUNT_CONN", type="string"),
-    "slack_channel": Param("topcharts", type="string"),
+    # The DPE bot must be a member of the channel
+    "slack_channel": Param(by_environment(dev="dpe-prs", prod="topcharts"), type="string"),
+    "dpe_slack_bot_conn": Param("DPE_SLACK_BOT_CONN", type="string"),
     # who to alert on failure (comma-separated usernames or numeric ids)
     "dev_user_list": Param("3485485", type="string"),  # DPE service team
     # hours_time_delta is the number of hours to subtract from the current date to get
@@ -93,7 +94,7 @@ dag_params = {
     #           {"file_view_id": "789012", "group_name": "Group B"}]'
     "fileview_groups": Param(
         '[{"file_view_id": "20446927", "group_name": "HTAN1"},{"file_view_id": "51489960", "group_name": "ELITE"},{"file_view_id": "16858331", "group_name": "NF-OSI"},{"file_view_id": "27210848", "group_name": "MC2"},{"file_view_id": "52794526", "group_name": "GENIE"}]', type="string"),
-    "synapse_results_table": Param("syn53696951", type="string"),
+    "synapse_results_table": Param(by_environment(dev="syn74496611", prod="syn53696951"), type="string"),
 }
 
 dag_config = {
@@ -636,12 +637,13 @@ def top_public_synapse_projects_from_snowflake() -> None:
             message: Formatted message containing top download information
             context: Airflow context dictionary containing DAG parameters
                 - slack_channel: Slack channel to post the message to
+                - dpe_slack_bot_conn: Connection ID for the Slack bot
 
         Returns:
             bool: True if message was successfully posted, False otherwise
         """
 
-        client = WebClient(token=Variable.get("SLACK_DPE_TEAM_BOT_TOKEN"))
+        client = SlackHook(slack_conn_id=context["params"]["dpe_slack_bot_conn"]).client
         result = client.chat_postMessage(
             channel=context["params"]["slack_channel"], text=message
         )
@@ -735,12 +737,8 @@ def top_public_synapse_projects_from_snowflake() -> None:
 dag = top_public_synapse_projects_from_snowflake()
 
 if __name__ == "__main__":
-    # backfill=False so the Slack branch runs; slack_channel redirects the post
-    # to #dpe-prs for local testing (the DPE bot must be a member of that channel).
-    # This is a staging Synapse table
+    # backfill=False so the Slack branch runs
     dag.test(run_conf={
         "backfill": False,
         "backfill_date": date.today().strftime("%Y-%m-%d"),
-        "slack_channel": "dpe-prs",
-        "synapse_results_table": "syn74496611",
     })

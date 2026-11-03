@@ -85,13 +85,11 @@ jobs:
           python-version: ${{ steps.versions.outputs.python }}
 
       - name: Install the MWAA Airflow version and requirements
-        # --only-binary :all: installs only wheels, so pip never runs a package's setup
-        # script. python-nvd3 (an Airflow dependency) is only published as an sdist, so it
-        # is the one package built from source. Its version is pinned by mwaa/constraints.txt
+        # --only-binary :all: installs only wheels, so pip never runs a package's setup script
         env:
           AIRFLOW_VERSION: ${{ steps.versions.outputs.airflow }}
         run: |
-          pip install --only-binary :all: --no-binary python-nvd3 \
+          pip install --only-binary :all: \
             "apache-airflow[amazon,celery,snowflake]==${AIRFLOW_VERSION}" \
             -r requirements-airflow.txt pytest pytest-mock \
             -c mwaa/constraints.txt

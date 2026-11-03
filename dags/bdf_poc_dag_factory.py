@@ -35,10 +35,8 @@ from pathlib import Path
 from typing import Any, Optional
 
 import yaml
-from airflow.decorators import dag, task
+from airflow.sdk import DAG, Param, dag, task
 from airflow.exceptions import AirflowException
-from airflow.models.dag import DAG
-from airflow.models.param import Param
 from airflow.providers.amazon.aws.hooks.s3 import S3Hook
 from src.nextflow_tower_hook import LaunchInfo, NextflowTowerClient, NextflowTowerHook
 from src.synapse_hook import SynapseHook

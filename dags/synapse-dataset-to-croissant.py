@@ -22,23 +22,21 @@ pushes the results to a Croissant file in S3. The S3 bucket is stored in the
 `org-sagebase-dpe-prod` AWS account. That S3 bucket is deployed to AWS through the code
 in this PR: https://github.com/Sage-Bionetworks-Workflows/eks-stack/pull/57 .
 
-Additional note on the pushing to S3. The way that the S3 hook is set up is that it will
-log in as an AWS user to accomplish the required work. In order for this DAG to run the
-user that is running the DAG must have the correct permissions to access the S3 bucket
-and write to it. This was set up on the `airflow-secrets-backend` user in the
-`org-sagebase-dpe-prod` AWS account. The user has an inline policy to grant PutObject,
-GetObject, DeleteObject, and ListBucket permissions to the S3 bucket.
+Additional note on the pushing to S3. The S3 hook (`S3Hook(aws_conn_id=None)`) uses the
+default AWS credential chain: your SSO profile (`AWS_PROFILE`) when run locally, and the
+environment's execution role on MWAA. Those credentials need PutObject, GetObject,
+DeleteObject, and ListBucket permissions on the S3 bucket.
 
-In addition this DAG has been set up with the first iteration of the OpenTelemetry
-integration for Apache Airflow. OTEL support is officially added in 2.10.0, but requires
-that we also set up the production Airflow server to support OTEL.
+The DAG sends its own traces and logs to SigNoz over OTLP with the OpenTelemetry SDK,
+authenticated with the `SIGNOZ_INGESTION_KEY` Airflow Variable. This does not depend on
+Airflow's built-in OpenTelemetry integration, so it needs no Airflow configuration.
 
 DAG Parameters:
 - Review the DAG Parameters under the `@dag` decorated function
 
 Running locally (`python dags/synapse-dataset-to-croissant.py`):
 Follow the README's local development steps, which cover AWS credentials and the Airflow secrets backend:
-https://github.com/Sage-Bionetworks-Workflows/orca-recipes/blob/main/README.md#local-development-without-dev-container
+https://github.com/Sage-Bionetworks-Workflows/orca-recipes/blob/main/README.md#local-development
 
 This DAG also needs one setting of its own, in the same terminal:
 
@@ -69,9 +67,7 @@ from types import MethodType
 from typing import Any, Dict, List
 from urllib.parse import quote_plus
 
-from airflow.decorators import dag, task
-from airflow.models import Variable
-from airflow.models.param import Param
+from airflow.sdk import Param, Variable, dag, task
 from airflow.providers.amazon.aws.hooks.s3 import S3Hook
 from airflow.providers.snowflake.hooks.snowflake import SnowflakeHook
 from opentelemetry import context as otel_context
@@ -96,6 +92,7 @@ from synapseclient.core.exceptions import (SynapseAuthenticationError,
 from synapseclient.core.retry import with_retry
 from synapseclient.models import File
 from src.croissant_utils import build_croissant_metadata
+from src.environment import ENVIRONMENT, by_environment
 
 from src.synapse_hook import SynapseHook
 from src.utils import validate_aws_credentials, validate_required_secrets
@@ -104,9 +101,9 @@ dag_params = {
     "snowflake_developer_service_conn": Param("SNOWFLAKE_DEVELOPER_SERVICE_RAW_CONN", type="string"),
     "synapse_conn_id": Param("SYNAPSE_ORCA_SERVICE_ACCOUNT_CONN", type="string"),
     # Synapse table holding the links to the croissant files in S3
-    "synapse_table_for_croissant_links": Param("syn65903895", type="string"),
-    # Public S3 bucket the croissant files are written to
-    "bucket_name": Param("synapse-croissant-metadata", type="string"),
+    "synapse_table_for_croissant_links": Param(by_environment(dev="syn77524795", prod="syn65903895"), type="string"),
+    # S3 bucket the croissant files are written to. The prod bucket is public
+    "bucket_name": Param(by_environment(dev="synapse-croissant-metadata-dev", prod="synapse-croissant-metadata"), type="string"),
     "dataset_collections": Param(["syn50913342", "syn68939725", "syn71493541", "syn74529385", "syn77025587"], type="array"),
     "push_results_to_s3": Param(True, type="boolean"),
     "push_links_to_synapse": Param(True, type="boolean"),
@@ -136,8 +133,7 @@ MY_SERVICE_NAME = "airflow-synapse-dataset-to-croissant"
 # Used to set `deployment.environment` in the telemetry data.
 # Since tracing and logging is getting set up outside of the DAG, we need to set
 # the deployment environment here.
-MY_DEPLOYMENT_ENVIRONMENT = "prod"
-# MY_DEPLOYMENT_ENVIRONMENT = "local"
+MY_DEPLOYMENT_ENVIRONMENT = ENVIRONMENT
 
 # Regular expression to match `_{dataset_id}.{dataset_version}_`
 DATASET_ID_VERSION_PATTERN = r"_syn\d+\.\d+_"
@@ -1067,12 +1063,10 @@ def dataset_to_croissant() -> None:
 dag = dataset_to_croissant()
 
 if __name__ == "__main__":
-    # Staging Synapse table and test S3 bucket. The test bucket lives in the same
-    # `org-sagebase-dpe-prod` account as the production bucket, so the ambient AWS
-    # credentials are unchanged.
+    # Test S3 bucket in the `org-sagebase-dpe-prod` account, which the local AWS
+    # credentials can write to. The dev bucket is in the MWAA dev account.
     dag.test(
         run_conf={
-            "synapse_table_for_croissant_links": "syn77524795",
             "bucket_name": "test-synapse-croissant-metadata",
         }
     )

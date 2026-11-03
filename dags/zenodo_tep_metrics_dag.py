@@ -36,11 +36,11 @@ import os
 from datetime import datetime
 from typing import Any, Dict, List, NamedTuple
 
-from airflow.decorators import dag, task
-from airflow.models import DAG as AirflowDAG, Param, Variable
+from airflow.sdk import DAG as AirflowDAG, Param, Variable, dag, task
 import requests
 from synapseclient.models import Activity, File, UsedURL
 
+from src.environment import by_environment
 from src.synapse_hook import SynapseHook
 from src.synapse_alerts import send_synapse_message, synapse_failure_callback
 from src.utils import get_logger
@@ -99,11 +99,13 @@ CSV_HEADERS = [
 dag_params = {
     "synapse_conn_id": Param("SYNAPSE_ORCA_SERVICE_ACCOUNT_CONN", type="string"),
     # Synapse id of the Synapse folder/project the csv report is uploaded to
-    # (Zenodo Metrics folder under the TREAT-AD Internal Sharing Site)
-    "synapse_export_folder_id": Param("syn76890261", type="string"),
+    # (Zenodo Metrics folder under the TREAT-AD Internal Sharing Site; the
+    # TREAT-AD zenodo metrics testing folder on dev)
+    "synapse_export_folder_id": Param(by_environment(dev="syn77470158", prod="syn76890261"), type="string"),
     # Comma-separated Synapse usernames of collaborator(s) to notify when the
     # monthly report is available. (No support for python lists in Params.)
-    "collaborator_user_list": Param("3409149,3598645", type="string"), # Model-AD collaborators
+    # Model-AD collaborators on prod, DPE service team on dev
+    "collaborator_user_list": Param(by_environment(dev="3485485", prod="3409149,3598645"), type="string"),
     # Comma-separated Synapse usernames or IDs of DPE/developers to
     # alert on failure.
     "dev_user_list": Param("3485485", type="string"), # DPE service team
@@ -598,11 +600,4 @@ def zenodo_tep_metrics_dag() -> AirflowDAG:
 dag = zenodo_tep_metrics_dag()
 
 if __name__ == "__main__":
-    dag.test(
-        run_conf={
-            # TREAT-AD zenodo metrics testing folder
-            "synapse_export_folder_id": "syn77470158",
-            # Use DPE or your own user when testing
-            "collaborator_user_list":"3485485"
-            }
-    )
+    dag.test()

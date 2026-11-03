@@ -3,14 +3,14 @@ A home for recipes used for launching Nextflow Tower workflows for iAtlas Data P
 
 ## Setup
 
-These instructions assume that you already have Python (>3.10.0), a Python version manager (`pyenv`), and `pipenv` installed.
+These instructions assume that you already have Python 3.10 installed.
 
 ### Python Environment
 
 Set up your Python environment for using these scripts by ruinning from the `orca-recipes` home directory.
 ```
-pipenv install --dev
-pipenv shell
+bash local/dev_setup.sh
+source venv/bin/activate
 ```
 
 ### Environment Variables

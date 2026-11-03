@@ -13,7 +13,7 @@ call (e.g. fetching a Synapse entity's status).
 """
 from datetime import datetime, timezone
 
-from airflow.decorators import dag, task
+from airflow.sdk import dag, task
 
 RUN_DURATION_SECONDS = 2 * 60 * 60  # simulate polling for a couple hours
 

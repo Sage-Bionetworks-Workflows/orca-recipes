@@ -78,7 +78,7 @@ class TestValidateRequiredSecrets:
 
         # Then each one is looked up exactly once
         mock_base_hook.get_connection.assert_called_once_with("conn_a")
-        mock_variable.get.assert_called_once_with("var_a")
+        mock_variable.get.assert_called_once_with("var_a", default=None)
 
     @patch("dags.src.utils.Variable")
     @patch("dags.src.utils.BaseHook")
@@ -117,8 +117,7 @@ class TestValidateRequiredSecrets:
         mock_base_hook.get_connection.side_effect = (
             AirflowNotFoundException() if connection_fails else None
         )
-        mock_variable.get.side_effect = KeyError("var_a") if variable_fails else None
-        mock_variable.get.return_value = "some_value"
+        mock_variable.get.return_value = None if variable_fails else "some_value"
 
         # When the connection and/or variable can't be resolved
         with pytest.raises(ValueError) as exc_info:

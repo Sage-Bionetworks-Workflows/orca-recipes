@@ -10,7 +10,7 @@ Synapse table. This DAG updates the Trending Projects Snapshots Synapse table
 - Export date (the last time this table was updated)
 """
 
-from airflow.decorators import dag
+from airflow.sdk import Param, dag, task
 
 from dataclasses import dataclass
 from datetime import date, datetime
@@ -18,10 +18,9 @@ from typing import List
 from dateutil.relativedelta import relativedelta
 
 import synapseclient
-from airflow.decorators import dag, task
-from airflow.models.param import Param
 from airflow.providers.snowflake.hooks.snowflake import SnowflakeHook
 
+from src.environment import by_environment
 from src.synapse_hook import SynapseHook
 
 
@@ -32,7 +31,8 @@ dag_params = {
     "synapse_conn_id": Param("SYNAPSE_ORCA_SERVICE_ACCOUNT_CONN", type="string"),
     "current_date": Param(date.today().strftime("%Y-%m-%d"), type="string"),
     "month_to_run": Param((date.today() - relativedelta(months=1)).strftime("%Y-%m-%d"), type="string"),
-    "synapse_results_table": Param("syn61597055", type="string"),
+    # Staging Synapse table on dev
+    "synapse_results_table": Param(by_environment(dev="syn74496614", prod="syn61597055"), type="string"),
     }
 
 dag_config = {
@@ -195,5 +195,4 @@ def trending_projects_snapshot() -> None:
 dag = trending_projects_snapshot()
 
 if __name__ == "__main__":
-    # This is a staging Synapse table
-    dag.test(run_conf={"synapse_results_table": "syn74496614"})
+    dag.test()
