@@ -238,7 +238,7 @@ Steps to Run:
 4. Once you've confirmed the result, **re-pause** the DAG so it doesn't keep running or getting triggered unintentionally.
 
 > [!NOTE]
-> You can also run these **locally** as plain scripts instead of triggering them through the Airflow UI — see [Running Integration Test DAGs Locally](#running-integration-test-dags-locally) below, which covers the environment variables a local run needs.
+> You can also run most of these **locally** as plain scripts instead of triggering them through the Airflow UI. For exceptions, read the module docstring of the DAG (for example, `test_xcom_dataclass.py`). See [Running Integration Test DAGs Locally](#running-integration-test-dags-locally) below, which covers the environment variables a local run needs.
 
 #### Testing DAGs Locally
 
@@ -250,7 +250,7 @@ There are two distinct ways to test a DAG's task logic without deploying to Airf
 
 ##### Running Integration Test DAGs Locally
 
-The integration test DAGs under [`dags/integration_tests/`](./dags/integration_tests/) (see [Running Integration Test DAGs Before Infra Changes](#running-integration-test-dags-before-infra-changes) for what each one validates) can be run as plain scripts, without the Airflow UI:
+The integration test DAGs under [`dags/integration_tests/`](./dags/integration_tests/) (see [Running Integration Test DAGs Before Infra Changes](#running-integration-test-dags-before-infra-changes) for what each one validates) can be run as plain scripts, without the Airflow UI. For exceptions, read the module docstring of the DAG (for example, `test_xcom_dataclass.py`):
 
 ```console
 python3 dags/integration_tests/test_synapse_hook.py
@@ -631,17 +631,10 @@ Typically, Snowflake secrets are used in accordance with Snowflake Service Users
    - private_key_content
    - authenticator
 
-If choosing the [serializing with json method](https://airflow.apache.org/docs/apache-airflow-providers-snowflake/stable/connections/snowflake.html#json-format-example), this is a way to turn the private key to a single line that could fit into the json under `private_key_content`:
+Put the private key in `private_key_content` as base64-encoded PEM. Base64 is one line, so it fits in the [serializing with json method](https://airflow.apache.org/docs/apache-airflow-providers-snowflake/stable/connections/snowflake.html#json-format-example) with no escape characters. The provider also accepts PEM text. To encode the key:
 
-```python
-def single_liner():
-    with open("<path_to_private_key_file>", "r") as f:
-        lines = f.read().splitlines()
-
-    single_line = "\n".join(lines)
-    print(single_line)
-
-single_liner()
+```console
+base64 < <path_to_private_key_file> | tr -d '\n'
 ```
 
 Within a DAG, you can then use your connection when instantiating a `Hook` [object](https://airflow.apache.org/docs/apache-airflow/stable/authoring-and-scheduling/connections.html#hooks), like:

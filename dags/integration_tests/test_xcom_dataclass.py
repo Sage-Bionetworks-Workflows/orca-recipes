@@ -5,9 +5,10 @@ second task fails with "was not found in allow list for deserialization imports"
 unless `[core] allowed_deserialization_classes_regexp` allows the class. MWAA sets
 it to `.*`, and so does `.env.example`.
 
-Trigger it from the Airflow UI or with `airflow dags test`. A run with
-`python dags/integration_tests/test_xcom_dataclass.py` passes even without the
-setting, because the class is then `__main__.Point`, which the default allows.
+Run it only with `airflow dags test` or from the Airflow UI. A run with
+`python dags/integration_tests/test_xcom_dataclass.py` does not test the
+setting. That run passes when the setting is not there, because the class
+is then `__main__.Point`, which the default allows.
 
 This is a plain runnable script, not a pytest test. Its DAG function is
 intentionally not named with a `test_` prefix (unlike the file name) so

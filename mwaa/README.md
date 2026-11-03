@@ -147,11 +147,29 @@ Once this resolves cleanly, continue with the deployment steps in
 2. Add a row to the Overrides table in the header: package, upstream version, new
    version, and the requirement that forces it.
 3. Re-run the [check](#changing-a-dependency-in-requirements-airflowtxt).
-4. In the check environment, run `/tmp/mwaa-check/bin/python -m pip show <package>`. If
-   `Required-by` is empty, nothing in `requirements-airflow.txt` needs the package. MWAA
-   only has it because its image installs it, so pip keeps the image's version. Add the
-   package without a version to the end of `requirements-airflow.txt`, as for
-   `virtualenv` and `werkzeug`, so pip upgrades it to the override.
+4. Check whether a package from `requirements-airflow.txt` requires the package:
+
+   ```bash
+   /tmp/mwaa-check/bin/python -m pip show <package>
+   ```
+
+   - `Required-by` lists one or more packages: make no other change. pip installs the
+     package as a dependency, at the version in `mwaa/constraints.txt`.
+   - `Required-by` is empty, or pip shows `Package(s) not found`: nothing in
+     `requirements-airflow.txt` needs the package. If the
+     [MWAA 3.3.1 Python BOM](https://github.com/aws/amazon-mwaa-docker-images/blob/main/images/airflow/3.3.1/BillOfMaterials/3.3.1/Python-Packages-BOM.txt)
+     lists it, MWAA has it only because its image installs it, so pip keeps the
+     image's version. Add the package without a version to the end of
+     `requirements-airflow.txt`, so pip upgrades it to the override. Keep the version
+     only in `mwaa/constraints.txt`. `virtualenv` and `werkzeug` are handled this way:
+
+     ```text
+     # requirements-airflow.txt
+     virtualenv
+
+     # mwaa/constraints.txt
+     virtualenv==21.10.0  # override
+     ```
 
 ### Upgrading the MWAA Airflow version
 
