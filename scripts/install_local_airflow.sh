@@ -12,7 +12,7 @@ fi
 
 echo "Installing Airflow ${airflow_version} and dependencies..."
 python -m pip install "apache-airflow[amazon,celery,snowflake]==${airflow_version}" \
-  -r requirements-local-airflow.txt
+  -r requirements-airflow.txt -c mwaa/constraints.txt
 
 echo "Verifying environment..."
 python -m pip check
