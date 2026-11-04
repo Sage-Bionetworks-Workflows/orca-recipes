@@ -1,5 +1,0 @@
-# Local Airflow for running DAGs with dag.test(), matching MWAA. Install with
-# scripts/install_local_airflow.sh, which adds the apache-airflow version from
-# mwaa/constraints.txt
--c mwaa/constraints.txt
--r requirements-airflow.txt

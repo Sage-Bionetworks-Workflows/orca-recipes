@@ -110,8 +110,11 @@ grep override mwaa/constraints.txt
 
 ### Vulnerability alerts
 
-Dependabot does not read `constraints.txt`. On every push to `main` that changes it or
-`requirements-airflow.txt`, `.github/workflows/mwaa-dependency-submission.yml` resolves
+Dependabot does not read `constraints.txt`. Do not reference it with `-c` from a
+`requirements*.txt` file: Dependabot would follow it and alert on every upstream pin,
+including the many packages MWAA does not install. On every push to `main` that changes
+`constraints.txt` or `requirements-airflow.txt`,
+`.github/workflows/mwaa-dependency-submission.yml` resolves
 the packages MWAA installs and submits them to the dependency graph, so Dependabot
 raises alerts for them under `mwaa/constraints.txt`. Fix an alert by overriding the pin
 as described in [Overriding a pin](#overriding-a-pin).
