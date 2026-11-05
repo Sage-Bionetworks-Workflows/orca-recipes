@@ -29,8 +29,8 @@
 # | sqlparse                                   | 0.5.5     | 0.6.0      | Vulnerability alerts, fixed in 0.6.0                         |
 # | tornado                                    | 6.5.8     | 6.6        | Vulnerability alerts, fixed in 6.5.9 and 6.6                 |
 # | urllib3                                    | 2.7.0     | 2.8.0      | Vulnerability alerts, fixed in 2.8.0                         |
-# | virtualenv                                 | 21.7.2    | 21.14.10   | Vulnerability alerts, fixed in 21.14.9 and 21.14.10          |
-# | python-discovery                           | 1.5.1     | 1.6.1      | virtualenv 21.14.10 requires python-discovery>=1.6.1         |
+# | virtualenv                                 | 21.7.2    | 21.14.13   | Vulnerability alerts, fixed in 21.14.9, 21.14.10, 21.14.13   |
+# | python-discovery                           | 1.5.1     | 1.6.1      | virtualenv 21.14.13 requires python-discovery>=1.6.1         |
 # | Werkzeug                                   | 3.1.8     | 3.1.9      | Vulnerability alert, fixed in 3.1.9                          |
 #
 # See mwaa/README.md for how to update this file.
@@ -740,7 +740,7 @@ uvloop==0.22.1
 validators==0.35.0
 vertica-python==1.4.0
 vine==5.1.0
-virtualenv==21.14.10  # override
+virtualenv==21.14.13  # override
 watchfiles==1.2.0
 watchtower==3.4.0
 wcwidth==0.8.2
