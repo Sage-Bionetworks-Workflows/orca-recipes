@@ -83,11 +83,11 @@ dag_params = {
 }
 
 dag_config = {
-    "schedule": "0 0 * * 1",
+    "schedule": "0 2 * * 1",
     "start_date": datetime(2025, 2, 1),
     "catchup": False,
     "default_args": {
-        "retries": 1,
+        "retries": 3,
     },
     "params": dag_params,
 }
@@ -299,7 +299,7 @@ def execute_push_to_s3(dataset: Entity, dataset_id: str, s3_key: str, croissant_
 def save_minimal_jsonld_to_s3() -> None:
     """Execute a query on Snowflake and report the results to a Synapse table."""
 
-    def execute_push_to_synapse(push_to_synapse: bool, dataset: Entity, dataset_id: str, s3_url: str, **context) -> None:
+    def execute_push_to_synapse(push_to_synapse: bool, dataset: Entity, dataset_id: str, s3_url: str, syn_client: Synapse, **context) -> None:
         """
         Handle the push to Synapse of the croissant file link. This is done by using
         an authenticated Synapse client to first query the table to determine if an
@@ -313,7 +313,7 @@ def save_minimal_jsonld_to_s3() -> None:
             dataset: The dataset to push to Synapse.
             dataset_id: The ID of the dataset.
             s3_url: The S3 URL to use for the value of the cell in the table.
-            syn_client: The unauthenticated Synapse client to use to query the table.
+            syn_client: The authenticated Synapse client to use to query and update the table.
             context: The context of the DAG run.
 
         Returns:
@@ -331,13 +331,7 @@ def save_minimal_jsonld_to_s3() -> None:
                 f"Uploading croissant file link to Synapse table {links_table}"
             )
 
-            # Warning: Using an authenticated Synapse Client during this section of code
-            syn_hook = SynapseHook(
-                context["params"]["synapse_conn_id"])
-            authenticated_syn_client: Synapse = syn_hook.client
-            authenticated_syn_client._rest_call = MethodType(
-                _rest_call_replacement, authenticated_syn_client)
-            existing_row_df = query(query=f"SELECT * FROM {links_table} WHERE dataset = '{dataset_id}'", synapse_client=authenticated_syn_client)
+            existing_row_df = query(query=f"SELECT * FROM {links_table} WHERE dataset = '{dataset_id}'", synapse_client=syn_client)
 
             if not existing_row_df.empty and existing_row_df["minimal_croissant_file_s3_object"].values[0] == s3_url:
                 otel_logger.info(
@@ -353,13 +347,13 @@ def save_minimal_jsonld_to_s3() -> None:
             if existing_row_df.empty:
                 # If the row does not exist, create a new row
                 print("Creating new row in Synapse table")
-                Table(id=links_table).store_rows(values=df)
+                Table(id=links_table).store_rows(values=df, synapse_client=syn_client)
 
             else:
                 # Update the existing row with the new value
                 print("Updating existing row in Synapse table")
                 existing_row_df["minimal_croissant_file_s3_object"] = [s3_url]
-                Table(id=links_table).store_rows(values=existing_row_df)
+                Table(id=links_table).store_rows(values=existing_row_df, synapse_client=syn_client)
 
         except Exception as ex:
             otel_logger.exception(
@@ -598,6 +592,7 @@ def save_minimal_jsonld_to_s3() -> None:
         """
         syn_hook = SynapseHook(context["params"]["synapse_conn_id"])
         syn_client: Synapse = syn_hook.client
+        syn_client._rest_call = MethodType(_rest_call_replacement, syn_client)
 
         table = query(f"select * from {SYNAPSE_DATA_CATALOG}", synapse_client=syn_client)
 
@@ -639,7 +634,7 @@ def save_minimal_jsonld_to_s3() -> None:
             execute_push_to_s3(dataset=dataset,dataset_id=row["id"],s3_key=s3_key, croissant_file=minimal_croissant_file, push_to_s3=push_to_s3, **context)
 
             s3_url = f"https://{context['params']['bucket_name']}.s3.us-east-1.amazonaws.com/{quote_plus(s3_key)}"
-            execute_push_to_synapse(push_to_synapse=push_to_synapse, dataset=dataset, dataset_id=dataset_id, s3_url=s3_url, **context)
+            execute_push_to_synapse(push_to_synapse=push_to_synapse, dataset=dataset, dataset_id=dataset_id, s3_url=s3_url, syn_client=syn_client, **context)
 
         return combined_dataset_name_and_id
 
