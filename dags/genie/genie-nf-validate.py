@@ -27,7 +27,7 @@ dag_config = {
     "start_date": datetime(2023, 2, 21),
     "catchup": False,
     "default_args": {
-        "retries": 1,
+        "retries": 3,
     },
     "tags": ["nextflow_tower"],
     "params": dag_params,
