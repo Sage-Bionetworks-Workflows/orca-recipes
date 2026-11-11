@@ -2,8 +2,7 @@ from datetime import datetime
 
 import pandas as pd
 import synapseclient
-from airflow.decorators import dag, task
-from airflow.models.param import Param
+from airflow.sdk import Param, dag, task
 from airflow.providers.snowflake.hooks.snowflake import SnowflakeHook
 from snowflake.connector.pandas_tools import write_pandas
 

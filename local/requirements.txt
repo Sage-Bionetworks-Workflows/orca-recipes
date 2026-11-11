@@ -1,0 +1,11 @@
+# Packages for the scripts in local/. Install with local/dev_setup.sh
+# py-orca pins apache-airflow==2.10.5, sqlalchemy<2.0, pydantic 1 and Python <3.12, so
+# these cannot share an environment with the MWAA Airflow 3 packages in
+# requirements-airflow.txt.
+py-orca[all] == 1.5.2
+fs-synapse >=2.0,<3.0
+s3fs ~=2023.5
+metaflow ~=2.9
+pandas
+PyYAML
+boto3

@@ -56,6 +56,7 @@ def fake_context() -> dict[str, dict[str, Any]]:
             "large_memory_datasets": "dataset_a,dataset_b",
             "dataset": DATASET,
             "slack_channel": "test-agora-nextflow",
+            "dpe_slack_bot_conn": "dpe_slack_bot_test",
             "synapse_team_id": "1234567",
         }
     }
@@ -181,17 +182,19 @@ def test_generate_message(
 
 def test_post_slack_messages(fake_context: dict[str, dict[str, Any]]) -> None:
     """Tests that post_slack_messages returns True when the Slack API call succeeds."""
-    with (
-        patch("dags.agora_nf.WebClient") as mock_web_client,
-        patch("dags.agora_nf.Variable.get", return_value="fake-token"),
-    ):
-        mock_web_client.return_value.chat_postMessage.return_value = {"ok": True}
+    with patch("dags.agora_nf.SlackHook") as mock_slack_hook:
+        mock_client = MagicMock()
+        mock_slack_hook.return_value.client = mock_client
+        mock_client.chat_postMessage.return_value = {"ok": True}
 
         raw_python_function = dag.get_task("post_slack_messages").python_callable
         result = raw_python_function(message="Test message", **fake_context)
 
         assert result is True
-        mock_web_client.return_value.chat_postMessage.assert_called_once_with(
+        mock_slack_hook.assert_called_once_with(
+            slack_conn_id=fake_context["params"]["dpe_slack_bot_conn"]
+        )
+        mock_client.chat_postMessage.assert_called_once_with(
             channel=fake_context["params"]["slack_channel"], text="Test message"
         )
 
@@ -224,7 +227,14 @@ def test_task_failure_alerts_dev_user_list(
     """Tests that a failing task emails the dev_user_list with the task and exception."""
     sent: dict[str, Any] = {}
 
-    def mock_send(conn_id: str, usernames: list[str], subject: str, body: str) -> None:
+    def mock_send(
+        conn_id: str,
+        subject: str,
+        body: str,
+        *,
+        usernames: list[str] | None = None,
+        team_ids: list[str] | None = None,
+    ) -> None:
         sent.update(conn_id=conn_id, usernames=usernames, subject=subject, body=body)
 
     monkeypatch.setattr(synapse_alerts, "send_synapse_message", mock_send)

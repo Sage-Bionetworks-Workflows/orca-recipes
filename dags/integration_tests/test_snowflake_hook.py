@@ -20,8 +20,7 @@ Prerequisites:
       DAG queries.
 """
 from airflow.providers.snowflake.hooks.snowflake import SnowflakeHook
-from airflow.decorators import dag, task
-from airflow.models.param import Param
+from airflow.sdk import Param, dag, task
 
 from src.utils import validate_required_secrets
 

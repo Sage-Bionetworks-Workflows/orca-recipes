@@ -10,8 +10,7 @@ is intentionally not named with a `test_` prefix (unlike the file name) so
 pytest's `testpaths = tests` config doesn't try to collect and run it as a
 real test.
 """
-from airflow.models import Param
-from airflow.decorators import dag, task
+from airflow.sdk import Param, dag, task
 from src.synapse_hook import SynapseHook
 from synapseclient.models import Team
 

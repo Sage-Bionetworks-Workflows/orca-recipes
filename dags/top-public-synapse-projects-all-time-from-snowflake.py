@@ -7,16 +7,17 @@ from datetime import date, datetime
 from typing import List
 
 import synapseclient
-from airflow.decorators import dag, task
-from airflow.models.param import Param
+from airflow.sdk import Param, dag, task
 from airflow.providers.snowflake.hooks.snowflake import SnowflakeHook
 
+from src.environment import by_environment
 from src.synapse_hook import SynapseHook
 
 dag_params = {
     "snowflake_developer_service_conn": Param("SNOWFLAKE_DEVELOPER_SERVICE_RAW_CONN", type="string"),
     "synapse_conn_id": Param("SYNAPSE_ORCA_SERVICE_ACCOUNT_CONN", type="string"),
-    "synapse_results_table": Param("syn55259224", type="string"),
+    # Staging Synapse table on dev
+    "synapse_results_table": Param(by_environment(dev="syn74496606", prod="syn55259224"), type="string"),
 }
 
 dag_config = {
@@ -167,5 +168,4 @@ def top_public_synapse_projects_all_time_from_snowflake() -> None:
 dag = top_public_synapse_projects_all_time_from_snowflake()
 
 if __name__ == "__main__":
-    # This is a staging Synapse table
-    dag.test(run_conf={"synapse_results_table": "syn74496606"})
+    dag.test()

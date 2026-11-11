@@ -457,7 +457,7 @@ def test_build_provenance_records_source_and_code():
 # DAG specific tests
 @pytest.fixture
 def dagbag():
-    return DagBag(dag_folder="dags/zenodo_tep_metrics_dag.py", include_examples=False)
+    return DagBag(dag_folder="dags/zenodo_tep_metrics_dag.py")
 
 
 def test_dag_structure_is_correct(dagbag):

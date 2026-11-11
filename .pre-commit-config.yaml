@@ -18,7 +18,7 @@ repos:
     hooks:
       - id: ruff-check
         name: ruff (Airflow AIR3 deprecations, dags/)
-        args: [--select, AIR3, --exit-zero] # report, don't block; no --fix
+        args: [--select, AIR3] # no --fix
         files: ^dags/.*\.py$
         verbose: true  # show findings even when passing
 
