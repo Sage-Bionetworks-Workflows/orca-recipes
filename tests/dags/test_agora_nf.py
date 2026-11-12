@@ -227,7 +227,14 @@ def test_task_failure_alerts_dev_user_list(
     """Tests that a failing task emails the dev_user_list with the task and exception."""
     sent: dict[str, Any] = {}
 
-    def mock_send(conn_id: str, usernames: list[str], subject: str, body: str) -> None:
+    def mock_send(
+        conn_id: str,
+        subject: str,
+        body: str,
+        *,
+        usernames: list[str] | None = None,
+        team_ids: list[str] | None = None,
+    ) -> None:
         sent.update(conn_id=conn_id, usernames=usernames, subject=subject, body=body)
 
     monkeypatch.setattr(synapse_alerts, "send_synapse_message", mock_send)
