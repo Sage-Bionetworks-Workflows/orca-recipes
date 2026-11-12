@@ -545,9 +545,10 @@ from src.synapse_alerts import synapse_failure_callback
     params={
         "synapse_conn_id": Param("SYNAPSE_ORCA_SERVICE_ACCOUNT_CONN", type="string"),
         # who to alert on failure: comma-separated usernames or numeric ids...
-        "dev_user_list": Param(by_environment(dev="", prod="3460442"), type="string"),
+        # nullable, so the trigger form allows leaving the unused list blank
+        "dev_user_list": Param(by_environment(dev=None, prod="3460442"), type=["null", "string"]),
         # ...and/or comma-separated team ids (Orca airflow DAGs testing team on dev)
-        "dev_team_list": Param(by_environment(dev="3622772", prod=""), type="string"),
+        "dev_team_list": Param(by_environment(dev="3622772", prod=None), type=["null", "string"]),
     },
     ...
 )

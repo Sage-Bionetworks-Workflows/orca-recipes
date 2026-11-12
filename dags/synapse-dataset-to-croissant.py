@@ -113,8 +113,9 @@ dag_params = {
     # Emailed when any task fails. Comma-separated Synapse usernames/IDs (dev_user_list)
     # and team IDs (dev_team_list). Dev alerts the Orca airflow DAGs testing team
     # (3622772); prod alerts users. At least one list must be set in each environment.
-    "dev_user_list": Param(by_environment(dev="", prod="3485485"), type="string"), # DPE service team
-    "dev_team_list": Param(by_environment(dev="3622772", prod=""), type="string"),
+    # Unused lists are None (nullable) so the trigger form doesn't flag them as required.
+    "dev_user_list": Param(by_environment(dev=None, prod="3485485"), type=["null", "string"]), # DPE service team
+    "dev_team_list": Param(by_environment(dev="3622772", prod=None), type=["null", "string"]),
 }
 
 dag_config = {

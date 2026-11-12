@@ -84,13 +84,14 @@ dag_params = {
     "delete_out_of_date_from_synapse": Param(True, type="boolean"),
     # Recipients are comma-separated Synapse usernames/IDs (*_user_list) and team IDs
     # (*_team_list). Dev alerts the Orca airflow DAGs testing team (3622772); prod
-    # alerts users. At least one list must be set in each environment.
-    # Emailed when a catalog dataset can't be read (lack of READ access).
-    "collaborator_user_list": Param(by_environment(dev="", prod="3459953"), type="string"), # croissant data collaborators
-    "collaborator_team_list": Param(by_environment(dev="3622772", prod=""), type="string"),
+    # alerts users. At least one list must be set in each environment. Unused lists
+    # are None (nullable) so the trigger form doesn't flag them as required.
+    # Emailed when a catalog dataset can't be read (lack of READ access)
+    "collaborator_user_list": Param(by_environment(dev=None, prod="3459953"), type=["null", "string"]), # croissant data collaborators
+    "collaborator_team_list": Param(by_environment(dev="3622772", prod=None), type=["null", "string"]),
     # Emailed when any task fails.
-    "dev_user_list": Param(by_environment(dev="", prod="3485485"), type="string"), # DPE service team
-    "dev_team_list": Param(by_environment(dev="3622772", prod=""), type="string"),
+    "dev_user_list": Param(by_environment(dev=None, prod="3485485"), type=["null", "string"]), # DPE service team
+    "dev_team_list": Param(by_environment(dev="3622772", prod=None), type=["null", "string"]),
 }
 
 dag_config = {
@@ -647,8 +648,8 @@ def save_minimal_jsonld_to_s3() -> None:
                     otel_logger.error(f"Failed to get JSON-LD file {dataset_id}: {message}")
                     send_synapse_message(
                         conn_id=context["params"]["synapse_conn_id"],
-                        usernames=context["params"]["collaborator_user_list"].split(","),
-                        team_ids=context["params"]["collaborator_team_list"].split(","),
+                        usernames=(context["params"]["collaborator_user_list"] or "").split(","),
+                        team_ids=(context["params"]["collaborator_team_list"] or "").split(","),
                         subject="Minimal Croissant Dataset Synapse Data Catalog Access Issue",
                         body=f"Failed to get JSON-LD file {dataset_id} from the synapse data catalog due to lack of READ access. "
                             "Note that this file will not be processed and will be removed from the data catalog. "
