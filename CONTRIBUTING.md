@@ -510,9 +510,12 @@ someone watching the Airflow UI. There are two pieces to this:
 already use a `SynapseHook`, the simplest, dependency-free way to notify people
 is [`synapse_client.sendMessage`](https://python-docs.synapse.org/en/stable/reference/client/?h=sendmessage#synapseclient.Synapse.sendMessage), which Synapse delivers as an
 email. Rather than calling it directly, use the shared helper
-`send_synapse_message(conn_id, usernames, subject, body)` in
+`send_synapse_message(conn_id, subject, body, usernames=..., team_ids=...)` in
 [dags/src/synapse_alerts.py](./dags/src/synapse_alerts.py) — it resolves Synapse
-usernames/numeric ids to owner ids and sends the message for you. This avoids
+usernames/numeric ids to owner ids, adds any team ids as-is, and sends the message
+for you. `usernames` and `team_ids` are keyword-only and both optional, but at
+least one must contain a recipient or it raises `ValueError`. To message a team,
+the Synapse account behind `conn_id` must be allowed to message that team. This avoids
 configuring SMTP on the Airflow deployment and works for **any** alert (task
 failures, "report is ready" notices, data-quality warnings, etc.).
 
@@ -531,6 +534,7 @@ a notification failure can never mask the original task error.
 ```python
 from airflow.sdk import Param, dag
 
+from src.environment import by_environment
 from src.synapse_alerts import synapse_failure_callback
 
 
@@ -540,8 +544,11 @@ from src.synapse_alerts import synapse_failure_callback
     ),
     params={
         "synapse_conn_id": Param("SYNAPSE_ORCA_SERVICE_ACCOUNT_CONN", type="string"),
-        # who to alert on failure (comma-separated usernames or numeric ids)
-        "dev_user_list": Param("3460442", type="string"),
+        # who to alert on failure: comma-separated usernames or numeric ids...
+        # nullable, so the trigger form allows leaving the unused list blank
+        "dev_user_list": Param(by_environment(dev=None, prod="3460442"), type=["null", "string"]),
+        # ...and/or comma-separated team ids (Orca airflow DAGs testing team on dev)
+        "dev_team_list": Param(by_environment(dev="3622772", prod=None), type=["null", "string"]),
     },
     ...
 )
@@ -549,10 +556,14 @@ def my_dag():
     ...
 ```
 
-By default the callback reads the `synapse_conn_id` and `dev_user_list` params;
-pass `conn_id_param` / `user_list_param` to `synapse_failure_callback(...)` if
-your DAG names them differently. See it wired up in
-[dags/zenodo_tep_metrics_dag.py](./dags/zenodo_tep_metrics_dag.py).
+By default the callback reads the `synapse_conn_id`, `dev_user_list` and
+`dev_team_list` params and messages everyone in both lists. Either list can be
+empty or left out, but if both are empty the alert isn't sent (the error is
+logged). Pass `conn_id_param` / `user_list_param` / `team_list_param` to
+`synapse_failure_callback(...)` if your DAG names them differently. Use
+`by_environment` (see above) to alert a team on dev and users on prod. See it
+wired up in
+[dags/synapse_dataset_to_croissant_minimal.py](./dags/synapse_dataset_to_croissant_minimal.py).
 
 **Testing the alert:**
 

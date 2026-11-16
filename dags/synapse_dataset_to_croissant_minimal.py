@@ -37,6 +37,7 @@ from airflow.sdk import Param, Variable, dag, task
 from datetime import datetime
 from synapseclient.models import query
 from synapseclient import Entity, Synapse
+from synapseclient.core.exceptions import SynapseHTTPError
 from synapseclient.models import Table
 import pandas as pd
 from pandas import DataFrame
@@ -67,6 +68,7 @@ from synapseclient.core.retry import with_retry
 
 from src.environment import ENVIRONMENT, by_environment
 from src.synapse_hook import SynapseHook
+from src.synapse_alerts import send_synapse_message, synapse_failure_callback
 from src.utils import validate_aws_credentials, validate_required_secrets
 
 dag_params = {
@@ -80,6 +82,16 @@ dag_params = {
     "push_links_to_synapse": Param(True, type="boolean"),
     "delete_out_of_date_from_s3": Param(True, type="boolean"),
     "delete_out_of_date_from_synapse": Param(True, type="boolean"),
+    # Recipients are comma-separated Synapse usernames/IDs (*_user_list) and team IDs
+    # (*_team_list). Dev alerts the Orca airflow DAGs testing team (3622772); prod
+    # alerts users. At least one list must be set in each environment. Unused lists
+    # are None (nullable) so the trigger form doesn't flag them as required.
+    # Emailed when a catalog dataset can't be read (lack of READ access)
+    "collaborator_user_list": Param(by_environment(dev=None, prod="3459953"), type=["null", "string"]), # croissant data collaborators
+    "collaborator_team_list": Param(by_environment(dev="3622772", prod=None), type=["null", "string"]),
+    # Emailed when any task fails.
+    "dev_user_list": Param(by_environment(dev=None, prod="3485485"), type=["null", "string"]), # DPE service team
+    "dev_team_list": Param(by_environment(dev="3622772", prod=None), type=["null", "string"]),
 }
 
 dag_config = {
@@ -295,7 +307,14 @@ def execute_push_to_s3(dataset: Entity, dataset_id: str, s3_key: str, croissant_
         raise ex
 
 
-@dag(**dag_config)
+@dag(
+    on_failure_callback=synapse_failure_callback(
+        message=(
+            "The minimal Croissant JSON-LD file processing failed. Please review the task logs."
+        )
+    ),
+    **dag_config,
+)
 def save_minimal_jsonld_to_s3() -> None:
     """Execute a query on Snowflake and report the results to a Synapse table."""
 
@@ -584,6 +603,9 @@ def save_minimal_jsonld_to_s3() -> None:
         """
         Create and save the minimal croissant JSON-LD files to S3 and links to a synapse table for all datasets in the home page of data catalog.
 
+        If the JSON-LD file cannot be accessed due to lack of READ access,
+        it will be skipped and a notification will be sent to the collaborators and developers.
+
         Arguments:
             dataset_collection: The dataset collection to query for datasets.
 
@@ -612,7 +634,25 @@ def save_minimal_jsonld_to_s3() -> None:
                 "dataset_id": dataset_id,
                 "dataset_name": dataset_name
             })
-            dataset = syn_client.get(dataset_id, downloadFile=False)
+            try:
+                dataset = syn_client.get(dataset_id, downloadFile=False)
+            except SynapseHTTPError as err:
+                message = err.args[0]
+                # only handle the case where the error is due to lack of READ access
+                if "lack READ access" in message:
+                    otel_logger.error(f"Failed to get JSON-LD file {dataset_id}: {message}")
+                    send_synapse_message(
+                        conn_id=context["params"]["synapse_conn_id"],
+                        usernames=(context["params"]["collaborator_user_list"] or "").split(","),
+                        team_ids=(context["params"]["collaborator_team_list"] or "").split(","),
+                        subject="Minimal Croissant Dataset Synapse Data Catalog Access Issue",
+                        body=f"Failed to get JSON-LD file {dataset_id} from the synapse data catalog due to lack of READ access. "
+                            "Note that this file will not be processed and will be removed from the data catalog. "
+                            "Please make the file publicly accessible in the future if you would like it to be included in "
+                            "the minimal croissant dataset.",
+                    )
+                    continue
+                raise
 
             link = f"https://www.synapse.org/Synapse:{row['id']}"
 
@@ -657,7 +697,8 @@ if __name__ == "__main__":
     # Test S3 bucket in the `org-sagebase-dpe-prod` account, which the local AWS
     # credentials can write to. The dev bucket is in the MWAA dev account. Sharing one test bucket with the full croissant DAG
     # is safe: each DAG's S3 cleanup only considers keys matching its own naming
-    # pattern and ignores everything else.
+    # pattern and ignores everything else. Alert recipients need no override: local
+    # runs use the dev values, which message the Orca airflow DAGs testing team.
     dag.test(
         run_conf={
             "bucket_name": "test-synapse-croissant-metadata-minimal",

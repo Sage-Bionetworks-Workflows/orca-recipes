@@ -93,7 +93,7 @@ from synapseclient.core.retry import with_retry
 from synapseclient.models import File
 from src.croissant_utils import build_croissant_metadata
 from src.environment import ENVIRONMENT, by_environment
-
+from src.synapse_alerts import synapse_failure_callback
 from src.synapse_hook import SynapseHook
 from src.utils import validate_aws_credentials, validate_required_secrets
 
@@ -110,6 +110,12 @@ dag_params = {
     "delete_out_of_date_from_s3": Param(True, type="boolean"),
     "delete_out_of_date_from_synapse": Param(True, type="boolean"),
     "dataset_collections_for_cleanup": Param(["syn50913342", "syn68939725", "syn71493541", "syn74529385", "syn77025587"], type="array"),
+    # Emailed when any task fails. Comma-separated Synapse usernames/IDs (dev_user_list)
+    # and team IDs (dev_team_list). Dev alerts the Orca airflow DAGs testing team
+    # (3622772); prod alerts users. At least one list must be set in each environment.
+    # Unused lists are None (nullable) so the trigger form doesn't flag them as required.
+    "dev_user_list": Param(by_environment(dev=None, prod="3485485"), type=["null", "string"]), # DPE service team
+    "dev_team_list": Param(by_environment(dev="3622772", prod=None), type=["null", "string"]),
 }
 
 dag_config = {
@@ -665,7 +671,14 @@ def execute_push_to_synapse(push_to_synapse: bool, dataset: Entity, dataset_id: 
         raise ex
 
 
-@dag(**dag_config)
+@dag(
+    on_failure_callback=synapse_failure_callback(
+        message=(
+            "The Croissant JSON-LD file processing failed. Please review the task logs."
+        )
+    ),
+    **dag_config,
+)
 def dataset_to_croissant() -> None:
     """Execute api calls to Synapse, and queries on snowflake to convert datasets into croissant JSON-LD files.
 
