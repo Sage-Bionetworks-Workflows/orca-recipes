@@ -139,20 +139,19 @@ def agora_nf_run_dag() -> DAG:
 
     @task.sensor(poke_interval=300, timeout=604800, mode="reschedule")
     def monitor_nf_agora_workflow(run_id: str, **context: Any) -> bool:
-        """Poll the Tower workflow until it reaches a terminal state.
+        """Poll the Tower workflow until it finishes.
 
         Args:
             run_id: Tower run ID returned by launch_agora_on_tower.
             context: Airflow task context; used to read the tower_conn_id param.
 
         Returns:
-            True once the workflow has reached a terminal state (success,
-            failure, or cancellation), signaling the sensor to stop poking.
+            True once the workflow has SUCCEEDED or ended UNKNOWN, signaling the
+            sensor to stop poking. A FAILED or CANCELLED run fails this task
+            (without retries), which alerts the dev list.
         """
         hook = NextflowTowerHook(context["params"]["tower_conn_id"])
-        workflow = hook.get_workflow(run_id)
-        print(f"Current workflow state: {workflow.status.state.value}")
-        return workflow.status.is_done
+        return hook.monitor_workflow_status(run_id)
 
     @task
     def generate_message(run_id: str, **context: Any) -> str:

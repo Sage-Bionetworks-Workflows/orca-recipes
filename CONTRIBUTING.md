@@ -29,6 +29,7 @@
   - [Shared Utilities](#shared-utilities)
     - [Logging](#logging)
     - [Validating Required Secrets](#validating-required-secrets)
+    - [Monitoring Nextflow Tower Workflows](#monitoring-nextflow-tower-workflows)
   - [Testing and Validation](#testing-and-validation)
     - [Environment-specific values](#environment-specific-values)
   - [DAG Failure Alerts](#dag-failure-alerts)
@@ -424,7 +425,7 @@ Follow these best practices when developing DAGs to ensure reliability and maint
 
 ### Shared Utilities
 
-The repository provides shared helper functions in `src.utils` and `src.environment` for common DAG development tasks. Prefer using these helpers rather than duplicating the logic in individual DAGs.
+The repository provides shared helper functions in `src.utils`, `src.environment` and `src.nextflow_tower_hook` for common DAG development tasks. Prefer using these helpers rather than duplicating the logic in individual DAGs.
 
 #### Logging
 
@@ -471,6 +472,37 @@ Missing required secrets before running locally:
 ```
 
 This is particularly useful when developing locally with `LocalFilesystemBackend`, where missing connections or variables are a common source of configuration errors.
+
+#### Monitoring Nextflow Tower Workflows
+
+DAGs that launch a Nextflow Tower (Seqera Platform) workflow should wait for it with a `@task.sensor` that calls `NextflowTowerHook.monitor_workflow_status()`, rather than writing their own state checks:
+
+```python
+from airflow.sdk import task
+
+from src.nextflow_tower_hook import NextflowTowerHook
+
+
+@task.sensor(poke_interval=300, timeout=604800, mode="reschedule")
+def monitor_workflow(run_id: str, **context) -> bool:
+    hook = NextflowTowerHook(context["params"]["tower_conn_id"])
+    return hook.monitor_workflow_status(run_id)
+```
+
+Each call checks the run's state once and logs it (`Current workflow state: ...`):
+
+| Tower state | Result | Effect on the sensor |
+| --- | --- | --- |
+| `SUBMITTED`, `RUNNING` | returns `False` | checks again after `poke_interval` |
+| `SUCCEEDED` | returns `True` | passes, so downstream tasks run |
+| `UNKNOWN` (finished, but Tower couldn't confirm the outcome) | returns `True` | passes, matching how `launch_workflow` treats `UNKNOWN` |
+| `FAILED`, `CANCELLED` | raises `AirflowFailException` | fails without retries (the state is final), so the DAG run fails and the DAG's [failure alert](#dag-failure-alerts) fires |
+
+* **Set polling per DAG on the decorator** - The helper doesn't wait or loop. `poke_interval` (how often to check), `timeout` (how long before giving up) and `mode` belong on each DAG's `@task.sensor`, so they stay visible in the DAG file
+* **Remember that downstream tasks are skipped on failure** - With the default trigger rule, tasks after the sensor (e.g. completion messages) don't run when the workflow fails or is cancelled. Add a [failure alert](#dag-failure-alerts) if someone needs to be alerted
+* **Unit test the sensor with a mocked hook** - Patch `NextflowTowerHook.get_workflow` to return each state and call the sensor's `python_callable`. See `test_monitor_agora_workflow_state` in [tests/dags/test_agora_nf.py](./tests/dags/test_agora_nf.py)
+
+See it used in [dags/agora_nf.py](./dags/agora_nf.py) and [dags/genie/genie-nf-validate.py](./dags/genie/genie-nf-validate.py).
 
 ### Testing and Validation
 
