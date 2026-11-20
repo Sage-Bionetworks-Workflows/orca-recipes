@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 
 from airflow.sdk import BaseHook
 import pytest
-from airflow.exceptions import AirflowNotFoundException
+from airflow.exceptions import AirflowFailException, AirflowNotFoundException
 from requests.exceptions import HTTPError
 
 from src import nextflow_tower_hook
@@ -628,6 +628,32 @@ def test_get_workflow():
     assert workflow.status.is_done is False
     # Every workspace-scoped request carries the workspace ID.
     assert hook._client.calls == [("/workflow/1abc", {"workspaceId": WORKSPACE_ID})]
+
+
+@pytest.mark.parametrize(
+    "state, expected",
+    [
+        ("SUBMITTED", False),
+        ("RUNNING", False),
+        ("SUCCEEDED", True),
+        # Finished but unconfirmed; treated like success, as in launch_workflow
+        ("UNKNOWN", True),
+    ],
+)
+def test_monitor_workflow_status(state, expected):
+    hook = make_hook({"/workflow/1abc": {"workflow": {"id": "1abc", "status": state}}})
+
+    assert hook.monitor_workflow_status("1abc") is expected
+    # One request per call: the sensor, not the hook, decides when to check again.
+    assert len(hook._client.calls) == 1
+
+
+@pytest.mark.parametrize("state", ["FAILED", "CANCELLED"])
+def test_monitor_workflow_status_fails_without_retry(state):
+    hook = make_hook({"/workflow/1abc": {"workflow": {"id": "1abc", "status": state}}})
+
+    with pytest.raises(AirflowFailException, match=f"1abc ended with state {state}"):
+        hook.monitor_workflow_status("1abc")
 
 
 def test_list_workflows_filters_on_launch_label():

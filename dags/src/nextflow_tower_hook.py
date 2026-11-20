@@ -36,7 +36,7 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Iterable, Optional, TypeVar
 
-from airflow.exceptions import AirflowNotFoundException
+from airflow.exceptions import AirflowFailException, AirflowNotFoundException
 import requests
 from requests.exceptions import HTTPError
 
@@ -871,6 +871,36 @@ class NextflowTowerHook:
         """
         json = self.client.get(f"/workflow/{workflow_id}", params=self._params())
         return Workflow.from_json(self.client.unwrap(json, "workflow"))
+
+    def monitor_workflow_status(self, workflow_id: str) -> bool:
+        """Check a workflow run's state once, for use as an Airflow sensor's poke.
+
+        This doesn't wait or loop: each call makes one request. Call it from a
+        @task.sensor so the DAG decides how often to check (poke_interval),
+        how long to wait (timeout), and whether to free the worker between
+        checks (mode="reschedule").
+
+        Args:
+            workflow_id: Workflow run ID
+
+        Returns:
+            False while the run is in progress, True once it has SUCCEEDED or
+            ended UNKNOWN (finished state, but Tower couldn't confirm the outcome).
+
+        Raises:
+            AirflowFailException: If the run ended FAILED or CANCELLED. Retries are
+                skipped since the run can't leave that state.
+        """
+        workflow = self.get_workflow(workflow_id)
+        state = workflow.status.state
+        logger.info(f"Current workflow state: {state.value}")
+        if not workflow.status.is_done:
+            return False
+        if state in {WorkflowState.FAILED, WorkflowState.CANCELLED}:
+            raise AirflowFailException(
+                f"Tower workflow run {workflow_id} ended with state {state.value}"
+            )
+        return True
 
     def list_workflows(self, search_filter: str = "") -> list[Workflow]:
         """List workflow runs launched by this hook that match a search filter.

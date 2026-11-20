@@ -8,6 +8,7 @@ from airflow.sdk import Param, dag, task
 
 from src.environment import by_environment
 from src.nextflow_tower_hook import LaunchInfo, NextflowTowerHook
+from src.utils import validate_required_secrets
 
 dag_params = {
     "tower_conn_id": Param("GENIE_BPC_PROJECT_TOWER_CONN", type="string"),
@@ -76,10 +77,13 @@ def genie_nf_validate_dag():
 
     @task.sensor(poke_interval=300, timeout=604800, mode="reschedule")
     def monitor_nf_genie_workflow(run_id: str, **context):
+        """Poll the Tower workflow until it finishes.
+
+        Returns True once it has SUCCEEDED or ended UNKNOWN. A FAILED or
+        CANCELLED run fails this task (without retries), failing the DAG run.
+        """
         hook = NextflowTowerHook(context["params"]["tower_conn_id"])
-        workflow = hook.get_workflow(run_id)
-        print(f"Current workflow state: {workflow.status.state.value}")
-        return workflow.status.is_done
+        return hook.monitor_workflow_status(run_id)
 
     run_id = launch_nf_genie_on_tower()
     monitor_nf_genie_workflow(run_id=run_id)
@@ -88,4 +92,10 @@ def genie_nf_validate_dag():
 dag = genie_nf_validate_dag()
 
 if __name__ == "__main__":
+    validate_required_secrets(
+        connection_ids=[
+            dag_params["tower_conn_id"].value,
+        ],
+        variable_names=[],
+    )
     dag.test()
