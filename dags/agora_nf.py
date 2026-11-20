@@ -89,7 +89,7 @@ dag_config = {
     "start_date": datetime(2026, 7, 10, 3, 0),
     "catchup": False,
     "default_args": {
-        "retries": 1,
+        "retries": 3,
         # Set per task (not on the DAG) so that a failure in any task, including
         # generate_message and the Slack/email tasks, still alerts someone with the
         # failing task and exception. Slack and email can't be relied on for that.

@@ -656,7 +656,7 @@ def create_bdf_dag(name: str, config: dict[str, Any]) -> DAG:
         "schedule": config.get("schedule"),
         "start_date": datetime(2026, 7, 15),
         "catchup": False,
-        "default_args": {"retries": config.get("retries", 1)},
+        "default_args": {"retries": config.get("retries", 3)},
         "tags": ["nextflow_tower", "synapse", "bdf", name],
         "params": dag_params,
     }
