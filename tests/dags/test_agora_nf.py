@@ -5,6 +5,7 @@ from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
+from airflow.exceptions import AirflowFailException
 
 from dags.agora_nf import dag
 from src import synapse_alerts
@@ -93,24 +94,40 @@ def test_launch_agora_on_tower(
     assert called_kwargs == {"ignore_previous_runs": True}
 
 @pytest.mark.parametrize(
-    "state",
-    [WorkflowState.SUCCEEDED, WorkflowState.FAILED, WorkflowState.CANCELLED, WorkflowState.UNKNOWN, WorkflowState.RUNNING],
+    "state, expected",
+    [
+        (WorkflowState.RUNNING, False),
+        (WorkflowState.SUCCEEDED, True),
+        (WorkflowState.UNKNOWN, True),
+    ],
 )
 def test_monitor_agora_workflow_state(
-    fake_context: dict[str, dict[str, Any]], mock_tower: MagicMock, state: WorkflowState
+    fake_context: dict[str, dict[str, Any]],
+    mock_tower: MagicMock,
+    state: WorkflowState,
+    expected: bool,
 ) -> None:
-    """Tests that monitor_nf_agora_workflow reports done only for terminal workflow states."""
+    """Tests that the sensor keeps poking while running and passes on SUCCEEDED or
+    UNKNOWN."""
     mock_tower.get_workflow.return_value.status = WorkflowStatus(state=state)
 
     raw_python_function = dag.get_task("monitor_nf_agora_workflow").python_callable
-    workflow_state = raw_python_function(run_id=RUN_ID, **fake_context)
-
-    # RUNNING is the only non-terminal state in this list, so it's the only one expecting False
-    if state == WorkflowState.RUNNING:
-        assert workflow_state is False
-    else:
-        assert workflow_state is True
+    assert raw_python_function(run_id=RUN_ID, **fake_context) is expected
     mock_tower.get_workflow.assert_called_once_with(RUN_ID)
+
+
+@pytest.mark.parametrize("state", [WorkflowState.FAILED, WorkflowState.CANCELLED])
+def test_monitor_agora_workflow_fails_on_failed_run(
+    fake_context: dict[str, dict[str, Any]],
+    mock_tower: MagicMock,
+    state: WorkflowState,
+) -> None:
+    """Tests that a FAILED or CANCELLED run fails the sensor without retries."""
+    mock_tower.get_workflow.return_value.status = WorkflowStatus(state=state)
+
+    raw_python_function = dag.get_task("monitor_nf_agora_workflow").python_callable
+    with pytest.raises(AirflowFailException, match=state.value):
+        raw_python_function(run_id=RUN_ID, **fake_context)
 
 
 def make_workflow(state: WorkflowState, **overrides: Any) -> Workflow:
