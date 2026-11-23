@@ -103,9 +103,7 @@ def nextflow_tower_hook_test_dag():
                 stop poking.
         """
         hook = NextflowTowerHook(context["params"]["tower_conn_id"])
-        workflow = hook.get_workflow(run_id)
-        print(f"Current workflow state: {workflow.status.state.value}")
-        return workflow.status.is_done
+        return hook.monitor_workflow_status(run_id)
 
     run_id = launch_nf_hello_on_tower()
     monitor_nf_hello_workflow(run_id=run_id)
